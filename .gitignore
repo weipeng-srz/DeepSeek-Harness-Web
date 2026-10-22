@@ -1,0 +1,13 @@
+# Runtime data and secrets
+data/
+config.json
+*.log
+
+# Local environment
+.env
+.env.*
+node_modules/
+.DS_Store
+
+# Generated QA artifacts
+reports/

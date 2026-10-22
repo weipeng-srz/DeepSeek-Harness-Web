@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <meta name="description" content="DSH Chat：由 DeepSeek Harness 驱动的内网智能助手，支持流式回答、工具过程、文件与跨设备续接。" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#212121" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <title>DSH Chat</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icon-180.png" />
+    <link rel="stylesheet" href="/css/bundle.css?v=41" />
+  </head>
+  <body>
+    <a class="skip-link" href="#input">跳到输入框</a>
+    <div id="aurora" class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-menu" viewBox="0 0 24 24">
+        <path d="M4 7h16M4 12h16M4 17h16" />
+      </symbol>
+      <symbol id="i-edit" viewBox="0 0 24 24">
+        <path d="M4 20h4.5L19 9.5a2.12 2.12 0 0 0-3-3L5.5 17 4 20Z" />
+        <path d="M13.5 6.5l3 3" />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path d="M6 6l12 12M18 6L6 18" />
+      </symbol>
+      <symbol id="i-up" viewBox="0 0 24 24">
+        <path d="M12 19V5M6 11l6-6 6 6" stroke-width="2.1" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="M6 9l6 6 6-6" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" />
+      </symbol>
+      <symbol id="i-copy" viewBox="0 0 24 24">
+        <rect x="9" y="9" width="11" height="11" rx="2.5" />
+        <path d="M15 5.5A1.5 1.5 0 0 0 13.5 4h-8A1.5 1.5 0 0 0 4 5.5v8A1.5 1.5 0 0 0 5.5 15" />
+      </symbol>
+      <symbol id="i-check" viewBox="0 0 24 24">
+        <path d="M5 12.5l4.5 4.5L19 7.5" stroke-width="2.1" />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4.2" />
+        <path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4" />
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4 8.5 8.5 0 1 0 20 14.5Z" />
+      </symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24">
+        <path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4" />
+        <path d="M10 8l-4 4 4 4M6 12h11" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14M5 12h14" />
+      </symbol>
+      <symbol id="i-chart" viewBox="0 0 24 24">
+        <path d="M4 19V5M4 19h16M8 16l3.2-5.2L14.5 14 20 5.5" />
+      </symbol>
+      <symbol id="i-monitor" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="13" rx="2.5" />
+        <path d="M9 21h6M12 17v4" />
+      </symbol>
+      <symbol id="i-calendar" viewBox="0 0 24 24">
+        <rect x="3" y="5" width="18" height="16" rx="3" />
+        <path d="M8 3v4M16 3v4M3 10h18" />
+      </symbol>
+      <symbol id="i-paperclip" viewBox="0 0 24 24">
+        <path d="M20.5 11.6l-8 8a5.1 5.1 0 0 1-7.2-7.2l8.3-8.3a3.4 3.4 0 1 1 4.8 4.8l-8.3 8.3a1.7 1.7 0 1 1-2.4-2.4l7.6-7.6" />
+      </symbol>
+      <symbol id="i-download" viewBox="0 0 24 24">
+        <path d="M12 4v11M7.5 10.5L12 15l4.5-4.5M5 20h14" />
+      </symbol>
+      <symbol id="i-image" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <circle cx="8.5" cy="9" r="1.4" />
+        <path d="M4 17l5-5 4 4 3-3 4 4" />
+      </symbol>
+      <symbol id="i-external" viewBox="0 0 24 24">
+        <path d="M14 4h6v6M20 4l-8.5 8.5M9 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-4" />
+      </symbol>
+      <symbol id="i-terminal" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="16" rx="3" />
+        <path d="M7 9l3 3-3 3M12.5 15H17" />
+      </symbol>
+      <symbol id="i-file" viewBox="0 0 24 24">
+        <path d="M6 3h8l4 4v14H6z" />
+        <path d="M14 3v5h5M9 13h6M9 17h4" />
+      </symbol>
+      <symbol id="i-search" viewBox="0 0 24 24">
+        <circle cx="11" cy="11" r="6.5" />
+        <path d="M16 16l4 4" />
+      </symbol>
+      <symbol id="i-globe" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.5" />
+        <path d="M3.5 12h17M12 3.5c2.4 2.3 3.6 5.2 3.6 8.5S14.4 18.2 12 20.5c-2.4-2.3-3.6-5.2-3.6-8.5S9.6 5.8 12 3.5Z" />
+      </symbol>
+      <symbol id="i-tool" viewBox="0 0 24 24">
+        <path d="M14.5 6.5a4 4 0 0 1 5-5l-2.6 2.6 1.9 1.9L21.5 3.4a4 4 0 0 1-5 5L8 17l-1.9-.1L4 19a2.1 2.1 0 0 0 3 3l2-2.1-.1-1.9 8.6-8.5Z" />
+      </symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7.5v5.5M12 16.6v.1" />
+      </symbol>
+      <symbol id="i-shield" viewBox="0 0 24 24">
+        <path d="M12 3.2l7 2.8v5.1c0 4.4-2.9 7.8-7 9.7-4.1-1.9-7-5.3-7-9.7V6l7-2.8Z" />
+        <path d="M9 12.1l2.1 2.1 4-4" />
+      </symbol>
+      <symbol id="i-more" viewBox="0 0 24 24">
+        <circle cx="5.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+        <circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none" />
+        <circle cx="18.5" cy="12" r="1.6" fill="currentColor" stroke="none" />
+      </symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24">
+        <path d="M9 3h6l-1.2 5.2 3.2 3.1-.6 2.2H13v6.5L12 21l-1-1V13H7.6l-.6-2.2 3.2-3.1L9 3Z" />
+      </symbol>
+      <symbol id="i-refresh" viewBox="0 0 24 24">
+        <path d="M20 11a8 8 0 1 0-2.3 6.3M20 4.5V11h-6.5" />
+      </symbol>
+      <symbol id="i-share" viewBox="0 0 24 24">
+        <path d="M12 15V4M8 7.5L12 3.5l4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3.2" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.11a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.11A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6h.09A1.7 1.7 0 0 0 10.1 3V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9v.09A1.7 1.7 0 0 0 21 10.1h.09a2 2 0 1 1 0 4H21a1.7 1.7 0 0 0-1.6 1Z" />
+      </symbol>
+      <symbol id="i-archive" viewBox="0 0 24 24">
+        <rect x="3" y="4" width="18" height="5" rx="1.5" />
+        <path d="M5 9v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9M9.5 13h5" />
+      </symbol>
+      <symbol id="i-info" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 10.8V17M12 7.2v.1" />
+      </symbol>
+      <symbol id="i-star" viewBox="0 0 24 24">
+        <path d="M12 3.5l2.6 5.5 6 .8-4.4 4.2 1.1 5.9L12 17l-5.3 2.9 1.1-5.9L3.4 9.8l6-.8L12 3.5Z" />
+      </symbol>
+      <symbol id="i-keyboard" viewBox="0 0 24 24">
+        <rect x="2.5" y="6" width="19" height="12" rx="2.5" />
+        <path d="M6 10h.1M10 10h.1M14 10h.1M18 10h.1M6 14h.1M18 14h.1M9.5 14h5" />
+      </symbol>
+      <symbol id="i-spark" viewBox="0 0 24 24">
+        <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3Z" />
+        <path d="M18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8.8-2.2Z" />
+      </symbol>
+      <symbol id="i-logo" viewBox="0 0 32 32">
+        <path
+          d="M9.2 11.6c1.7-2.5 4.4-3.6 7.2-3.1 2.3.4 4.1 1.9 5.1 3.9.8 1.6 2 2.6 3.8 2.9l-1.5 2.1c-1.1 1.5-2.7 2.4-4.5 2.7-2.7.4-5.2-.7-6.8-2.8-1-1.4-2.4-2.2-4.2-2.4l.9-3.3Z"
+          fill="currentColor"
+          stroke="none"
+        />
+        <circle cx="13.2" cy="13.2" r="2.05" fill="var(--logo-eye, #0d0d0d)" stroke="none" />
+        <circle cx="21.3" cy="13.9" r="1.6" fill="var(--logo-eye, #0d0d0d)" stroke="none" />
+        <path d="M11.5 20.4l-1.2 3.2 3.6-1.6" fill="currentColor" stroke="none" />
+      </symbol>
+    </svg>
+
+    <section id="loginView" class="login" hidden>
+      <div class="login-card">
+        <div class="login-logo"><svg><use href="#i-logo" /></svg></div>
+        <h1>DSH Chat</h1>
+        <p>由 DeepSeek Harness 驱动的内网智能助手</p>
+        <form id="loginForm" autocomplete="off">
+          <label for="accessCode">访问码</label>
+          <input
+            id="accessCode"
+            name="accessCode"
+            type="password"
+            inputmode="text"
+            autocomplete="off"
+            autocapitalize="characters"
+            spellcheck="false"
+            placeholder="请输入访问码"
+            required
+          />
+          <button id="loginBtn" class="primary-btn" type="submit">进入对话</button>
+          <p id="loginError" class="login-error" role="alert" hidden></p>
+        </form>
+        <p class="login-foot">访问码由部署者提供，仅限内网使用</p>
+      </div>
+    </section>
+
+    <div id="shell" class="shell" hidden>
+      <div id="scrim" class="scrim"></div>
+
+      <aside id="sidebar" class="sidebar" aria-label="会话列表">
+        <div class="sidebar-head">
+          <div class="brand">
+            <span class="brand-logo"><svg><use href="#i-logo" /></svg></span>
+            <span class="brand-text">DSH Chat</span>
+            <span class="brand-tag">Local</span>
+          </div>
+          <button id="sidebarClose" class="icon-btn only-mobile" aria-label="关闭菜单">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </div>
+
+        <button id="newChat" class="new-chat" type="button">
+          <svg><use href="#i-plus" /></svg>
+          <span>新对话</span>
+        </button>
+
+        <div class="sidebar-links" aria-label="资料入口">
+          <button id="bookmarksBtn" class="sidebar-link" type="button">
+            <svg aria-hidden="true"><use href="#i-star" /></svg>
+            <span>收藏</span>
+          </button>
+          <button id="promptsBtn" class="sidebar-link" type="button">
+            <svg aria-hidden="true"><use href="#i-spark" /></svg>
+            <span>提示词</span>
+          </button>
+        </div>
+
+        <div class="conv-search">
+          <svg><use href="#i-search" /></svg>
+          <input id="convSearch" type="search" placeholder="搜索标题与消息" autocomplete="off" aria-label="搜索对话标题与消息" />
+          <button id="convSearchClear" class="conv-search-clear" type="button" aria-label="清除搜索" hidden>
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </div>
+
+        <div class="conv-toolbar">
+          <span id="convHeading" class="conv-heading">最近</span>
+          <p id="convResultCount" class="conv-result-count" role="status" hidden></p>
+          <div class="conv-toolbar-actions">
+            <button id="manageBtn" class="sidebar-tool" type="button">管理</button>
+            <button id="archiveBtn" class="sidebar-tool" type="button">归档</button>
+          </div>
+        </div>
+
+        <div class="conv-scroll">
+          <div id="convLabel" class="conv-label" hidden>最近</div>
+          <nav id="convList" class="conv-list"></nav>
+          <p id="convEmpty" class="conv-empty">还没有对话记录</p>
+          <button id="convLoadMore" class="conv-load-more" type="button" hidden>加载更多</button>
+        </div>
+
+        <div class="sidebar-foot">
+          <button
+            id="statusBtn"
+            class="model-chip"
+            type="button"
+            aria-expanded="false"
+            aria-controls="connectionDetail"
+            title="查看连接与运行方式"
+          >
+            <span class="live-dot" aria-hidden="true"></span>
+            <span id="modelName">DeepSeek Harness</span>
+            <svg class="model-chip-chevron" aria-hidden="true"><use href="#i-chevron" /></svg>
+          </button>
+          <div id="connectionDetail" class="connection-detail" hidden>
+            <dl>
+              <div><dt>连接</dt><dd id="detailConnection">桌面版</dd></div>
+              <div><dt>引擎</dt><dd id="detailEngine">DSH</dd></div>
+              <div><dt>运行</dt><dd><span id="modeBadge" class="mode-badge">原生</span></dd></div>
+              <div><dt>会话</dt><dd><span id="sharedBadge" class="shared-badge" title="所有登录设备共享同一份会话">仅本设备</span></dd></div>
+              <div><dt>模型</dt><dd id="detailModel">DeepSeek Harness</dd></div>
+            </dl>
+            <p class="connection-note">“在线”指与桌面版的连接；不同引擎的可用工具可能不同。</p>
+          </div>
+          <div class="foot-actions" aria-label="偏好设置">
+            <span class="foot-label" aria-hidden="true">偏好</span>
+            <button id="shortcutsBtn" class="icon-btn" type="button" aria-label="键盘快捷键" title="键盘快捷键 (?)">
+              <svg><use href="#i-keyboard" /></svg>
+            </button>
+            <button id="settingsBtn" class="icon-btn" type="button" aria-label="设置">
+              <svg><use href="#i-settings" /></svg>
+            </button>
+            <button id="themeBtn" class="icon-btn" type="button" aria-label="切换主题">
+              <svg class="theme-sun"><use href="#i-sun" /></svg>
+              <svg class="theme-moon"><use href="#i-moon" /></svg>
+            </button>
+            <button id="logoutBtn" class="icon-btn" type="button" aria-label="退出登录" hidden>
+              <svg><use href="#i-logout" /></svg>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div class="main">
+        <header class="topbar">
+          <button id="menuBtn" class="icon-btn" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="sidebar">
+            <svg><use href="#i-menu" /></svg>
+          </button>
+          <button
+            id="chatInfoBtn"
+            class="topbar-title"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+            aria-controls="chatInfo"
+            aria-label="查看会话标题、模型与运行方式"
+            title="查看完整标题、模型与运行方式"
+          >
+            <span id="topbarName" class="topbar-name">DSH Chat</span>
+            <span id="topbarSub" class="topbar-sub">DeepSeek Harness</span>
+          </button>
+          <div class="topbar-actions">
+            <button id="scenarioBtn" class="icon-btn" type="button" aria-label="浏览场景">
+              <svg><use href="#i-spark" /></svg>
+            </button>
+            <button id="newChatTop" class="icon-btn" type="button" aria-label="新对话">
+              <svg><use href="#i-edit" /></svg>
+            </button>
+          </div>
+        </header>
+
+        <div id="chatInfo" class="chat-info" role="dialog" aria-labelledby="chatInfoHeading" hidden>
+          <header class="chat-info-head">
+            <span id="chatInfoHeading" class="chat-info-heading">会话信息</span>
+            <button id="chatInfoClose" class="icon-btn" type="button" aria-label="关闭会话信息">
+              <svg><use href="#i-close" /></svg>
+            </button>
+          </header>
+          <p id="chatInfoFullTitle" class="chat-info-title">DSH Chat</p>
+          <dl class="chat-info-list">
+            <div><dt>引擎</dt><dd id="chatInfoEngine">DSH</dd></div>
+            <div><dt>模型</dt><dd id="chatInfoModel">DeepSeek Harness</dd></div>
+            <div><dt>运行方式</dt><dd id="chatInfoMode">原生</dd></div>
+            <div><dt>权限</dt><dd id="chatInfoPermission">标准</dd></div>
+          </dl>
+          <p class="chat-info-hint">模型与运行方式由当前使用的引擎决定。</p>
+        </div>
+
+        <div id="reconnectBar" class="reconnect-bar" role="status" aria-live="polite" hidden>
+          <span class="reconnect-dot" aria-hidden="true"></span>
+          <span id="reconnectText">正在同步…</span>
+          <button id="reconnectRetry" class="reconnect-retry" type="button">重试</button>
+        </div>
+
+        <div id="findBar" class="find-bar" role="search" hidden>
+          <svg class="find-icon" aria-hidden="true"><use href="#i-search" /></svg>
+          <input id="findInput" type="search" placeholder="在对话中查找" autocomplete="off" aria-label="在对话中查找" />
+          <span id="findCount" class="find-count" aria-live="polite">0/0</span>
+          <button id="findPrev" class="find-btn" type="button" aria-label="上一个匹配">
+            <svg><use href="#i-chevron" /></svg>
+          </button>
+          <button id="findNext" class="find-btn next" type="button" aria-label="下一个匹配">
+            <svg><use href="#i-chevron" /></svg>
+          </button>
+          <button id="findClose" class="find-btn" type="button" aria-label="关闭查找">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </div>
+
+        <div id="readProgress" class="read-progress" aria-hidden="true"></div>
+
+        <div id="batchBar" class="batch-bar" hidden>
+          <span id="batchCount" class="batch-count">已选 0 条</span>
+          <button id="batchArchive" class="batch-btn" type="button">归档</button>
+          <button id="batchDelete" class="batch-btn danger" type="button">删除</button>
+          <button id="batchCancel" class="batch-btn ghost" type="button">取消</button>
+        </div>
+
+        <main id="scrollArea" class="scroll-area">
+          <section id="emptyState" class="empty">
+            <div class="hero">
+              <div class="hero-orb" aria-hidden="true">
+                <span class="hero-orb-inner"></span>
+              </div>
+              <p class="empty-eyebrow">
+                <span class="hero-status"><span id="heroDot" class="hero-dot"></span><span id="heroStatus">桌面 Agent 在线</span></span>
+                <span class="hero-sep">·</span>
+                DSH Chat
+              </p>
+              <h1>把想法，<br /><span class="hero-gradient">交给桌面。</span></h1>
+              <p class="empty-sub">
+                <span class="hero-sub-full">总结网页、分析内容、整理日报，或让 Agent 直接操作你的 Mac。</span>
+                <span class="hero-sub-short">总结网页、整理日报，或直接操作 Mac。</span>
+              </p>
+              <div class="hero-actions">
+                <button id="heroStart" class="hero-link" type="button">直接提问 <span aria-hidden="true">→</span></button>
+                <button id="heroScenarios" class="hero-link muted" type="button">浏览场景</button>
+              </div>
+            </div>
+            <div id="scenarioGrid" class="scenario-grid"></div>
+            <p class="scenario-note">点按场景会把示例填入输入框，可改完再发送。</p>
+            <p class="empty-hint"><span class="hint-dot"></span><span id="emptyHintText">本地运行 · 文件可下载 · 与桌面版同步</span></p>
+          </section>
+          <div id="thread" class="thread" hidden></div>
+        </main>
+
+        <div class="composer-wrap">
+          <button id="scrollBottom" class="scroll-bottom" type="button" aria-label="回到底部" hidden>
+            <svg><use href="#i-chevron" /></svg>
+          </button>
+          <div id="questionSlot" class="question-slot" hidden aria-live="polite"></div>
+          <div id="engineBar" class="engine-bar" hidden>
+            <span class="engine-label">引擎</span>
+            <div class="engine-switch" role="radiogroup" aria-label="选择引擎">
+              <button id="engineDsr" class="active" type="button" role="radio" aria-checked="true" data-engine="dsr">DSH</button>
+              <button id="engineCodex" type="button" role="radio" aria-checked="false" data-engine="codex">Codex</button>
+            </div>
+            <span id="engineHint" class="engine-hint">共享桌面会话与文件</span>
+            <button
+              id="engineInfoBtn"
+              class="engine-info"
+              type="button"
+              aria-expanded="false"
+              aria-controls="engineInfo"
+              aria-label="引擎区别说明"
+              title="引擎区别说明"
+            >?</button>
+            <div id="engineInfo" class="engine-info-pop" role="dialog" aria-label="引擎区别" hidden>
+              <p><strong>DSH</strong><span>使用当前桌面 Harness 的模型，与桌面版共享会话和文件。</span></p>
+              <p><strong>Codex</strong><span>使用桌面 Codex app-server，在独立工作区运行，工具与模型可能不同。</span></p>
+              <p class="engine-info-note">“在线”只表示与桌面版的连接状态，不代表每个引擎都能执行所有操作。</p>
+            </div>
+          </div>
+          <div id="filesBar" class="files-bar" hidden>
+            <button id="filesBtn" class="files-pill" type="button" aria-label="查看对话文件">
+              <svg><use href="#i-paperclip" /></svg>
+              <span>文件</span>
+              <span id="filesCount" class="files-count">0</span>
+            </button>
+          </div>
+          <form id="composer" class="composer" autocomplete="off">
+            <div id="permissionMenu" class="permission-menu" role="dialog" aria-label="选择权限等级" hidden></div>
+            <div id="commandMenu" class="command-menu" role="listbox" aria-label="快捷命令" hidden></div>
+            <div class="composer-inner">
+              <div id="attachmentTray" class="attachment-tray" hidden></div>
+              <div id="permissionInline" class="permission-inline" hidden></div>
+              <div class="composer-row">
+                <button id="uploadBtn" class="composer-tool" type="button" aria-label="上传文件">
+                  <svg><use href="#i-plus" /></svg>
+                </button>
+                <button
+                  id="permissionBtn"
+                  class="permission-chip"
+                  type="button"
+                  aria-haspopup="dialog"
+                  aria-expanded="false"
+                  aria-label="权限等级：标准"
+                  title="权限等级：标准"
+                  data-tone="standard"
+                >
+                  <svg><use href="#i-shield" /></svg>
+                  <span id="permissionLabel">标准</span>
+                </button>
+                <textarea
+                  id="input"
+                  rows="1"
+                  placeholder="询问任何问题"
+                  enterkeyhint="send"
+                  aria-label="消息输入框"
+                ></textarea>
+                <button id="sendBtn" class="send-btn" type="button" aria-label="发送" disabled>
+                  <svg class="icon-send"><use href="#i-up" /></svg>
+                  <svg class="icon-stop"><use href="#i-stop" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="composer-foot">
+              <span id="composerHint" class="composer-hint">Enter 发送 · Shift + Enter 换行</span>
+              <span id="charCount" class="char-count" aria-live="polite" hidden></span>
+            </div>
+          </form>
+          <input id="fileInput" type="file" multiple hidden />
+    <input id="backupInput" type="file" accept="application/json,.json" hidden />
+        </div>
+      </div>
+    </div>
+
+
+    <div id="filesSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-files-close></div>
+      <section class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="filesTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="filesTitle">对话文件 <span id="filesSheetCount" class="sheet-count"></span></h2>
+          <div class="files-head-actions">
+            <button id="filesUploadBtn" class="icon-btn" type="button" aria-label="上传文件到当前对话">
+              <svg><use href="#i-plus" /></svg>
+            </button>
+            <button class="icon-btn" type="button" data-files-close aria-label="关闭文件列表">
+              <svg><use href="#i-close" /></svg>
+            </button>
+          </div>
+        </header>
+        <div id="filesList" class="files-list"></div>
+      </section>
+    </div>
+
+
+
+    <div id="palette" class="palette" hidden>
+      <div class="palette-backdrop" data-palette-close></div>
+      <section class="palette-card" role="dialog" aria-modal="true" aria-labelledby="paletteTitle">
+        <h2 id="paletteTitle" class="sr-only">命令面板</h2>
+        <div class="palette-search">
+          <svg aria-hidden="true"><use href="#i-search" /></svg>
+          <input
+            id="paletteInput"
+            type="text"
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded="true"
+            aria-controls="paletteResults"
+            aria-activedescendant=""
+            placeholder="搜索对话或输入命令…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <kbd>esc</kbd>
+        </div>
+        <div id="paletteResults" class="palette-results" role="listbox" aria-label="命令与对话"></div>
+        <footer class="palette-foot">
+          <span><kbd>↑</kbd><kbd>↓</kbd> 选择</span>
+          <span><kbd>↵</kbd> 打开</span>
+          <span><kbd>⌘K</kbd> 随时呼出</span>
+        </footer>
+      </section>
+    </div>
+    <div id="filePreview" class="sheet file-preview-sheet" hidden>
+      <div class="sheet-backdrop" data-preview-close></div>
+      <section class="sheet-panel file-preview-panel" role="dialog" aria-modal="true" aria-labelledby="filePreviewTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head file-preview-head">
+          <div class="file-preview-heading">
+            <span id="filePreviewIcon" class="file-preview-icon"></span>
+            <div>
+              <h2 id="filePreviewTitle">文件预览</h2>
+              <p id="filePreviewMeta" class="file-preview-meta"></p>
+            </div>
+          </div>
+          <button class="icon-btn" type="button" data-preview-close aria-label="关闭文件预览">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <div id="filePreviewBody" class="file-preview-body" aria-live="polite"></div>
+        <footer class="file-preview-foot">
+          <a id="filePreviewOpen" class="ghost-btn file-preview-action" href="#" target="_blank" rel="noopener noreferrer">在新标签打开</a>
+          <a id="filePreviewDownload" class="primary-btn file-preview-action" href="#" download>下载文件</a>
+        </footer>
+      </section>
+    </div>
+    <div id="scenarioSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-scenario-close></div>
+      <section class="sheet-panel scenario-panel" role="dialog" aria-modal="true" aria-labelledby="scenarioTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="scenarioTitle">场景</h2>
+          <button class="icon-btn" type="button" data-scenario-close aria-label="关闭场景列表">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <p class="sheet-sub">选一个场景，填入你的内容后发送</p>
+        <div id="scenarioList" class="scenario-list"></div>
+      </section>
+    </div>
+
+    <div id="dropOverlay" class="drop-overlay" hidden aria-hidden="true">
+      <div class="drop-card">
+        <svg><use href="#i-paperclip" /></svg>
+        <strong>松手添加附件</strong>
+        <span>最多 5 个，每个 ≤ 25MB</span>
+      </div>
+    </div>
+
+    <div id="quickSwitcher" class="modal quick-modal" hidden>
+      <div class="quick-card" role="dialog" aria-modal="true" aria-labelledby="quickTitle">
+        <h2 id="quickTitle" class="sr-only">快速切换对话</h2>
+        <div class="quick-input-wrap">
+          <svg aria-hidden="true"><use href="#i-search" /></svg>
+          <input id="quickInput" type="search" placeholder="搜索对话标题或内容…" autocomplete="off" aria-label="快速切换对话" />
+          <kbd>Esc</kbd>
+        </div>
+        <div id="quickList" class="quick-list" role="listbox" aria-label="对话列表"></div>
+        <p class="quick-foot">↑ ↓ 选择 · Enter 打开</p>
+      </div>
+    </div>
+
+    <div id="statsModal" class="modal" hidden>
+      <div class="modal-card stats-card" role="dialog" aria-modal="true" aria-labelledby="statsTitle">
+        <h2 id="statsTitle">对话统计</h2>
+        <div id="statsList" class="stats-list"></div>
+        <div class="modal-actions">
+          <button id="statsClose" class="ghost-btn" type="button">关闭</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="settingsSheet" class="sheet settings-sheet" hidden>
+      <div class="sheet-backdrop" data-settings-close></div>
+      <section class="sheet-panel settings-panel" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="settingsTitle">设置</h2>
+          <button class="icon-btn" type="button" data-settings-close aria-label="关闭设置">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <div class="settings-body">
+          <div class="settings-group">
+            <div class="settings-label">外观</div>
+            <div class="settings-options" id="themeOptions" role="radiogroup" aria-label="外观">
+              <button type="button" data-theme-option="auto" role="radio">跟随系统</button>
+              <button type="button" data-theme-option="light" role="radio">浅色</button>
+              <button type="button" data-theme-option="dark" role="radio">深色</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-label">阅读密度</div>
+            <div class="settings-options" id="densityOptions" role="radiogroup" aria-label="阅读密度">
+              <button type="button" data-density="comfortable" role="radio">舒适</button>
+              <button type="button" data-density="compact" role="radio">紧凑</button>
+            </div>
+          </div>
+          <div class="settings-group">
+            <div class="settings-label">正文字号</div>
+            <div class="settings-options" id="fontOptions" role="radiogroup" aria-label="正文字号">
+              <button type="button" data-font="0.94" role="radio">小</button>
+              <button type="button" data-font="1" role="radio">标准</button>
+              <button type="button" data-font="1.1" role="radio">大</button>
+            </div>
+          </div>
+          <div class="settings-group settings-preview-group">
+            <div class="settings-label">效果预览</div>
+            <div class="settings-preview" aria-label="阅读效果预览">
+              <p class="settings-preview-title">长回答的阅读效果</p>
+              <p class="settings-preview-text">正文按当前字号与密度排版，标题和列表保持清楚。</p>
+              <ul class="settings-preview-list">
+                <li>要点一：结论先行</li>
+                <li>要点二：细节随后</li>
+              </ul>
+            </div>
+          </div>
+          <div class="settings-group settings-row">
+            <div>
+              <div class="settings-label">完成通知</div>
+              <p class="settings-desc">页面在后台时，任务完成发送系统通知。</p>
+            </div>
+            <button id="notifyToggle" class="switch" type="button" role="switch" aria-checked="false" aria-label="完成通知">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span id="notifyState" class="switch-state">已关闭</span>
+            </button>
+          </div>
+          <div class="settings-group settings-row">
+            <div>
+              <div class="settings-label">备份全部对话</div>
+              <p class="settings-desc">导出/导入 JSON（含消息，不含工作区文件）。</p>
+            </div>
+            <div class="settings-actions">
+              <button id="backupBtn" class="ghost-btn" type="button">导出</button>
+              <button id="importBtn" class="ghost-btn" type="button">导入</button>
+            </div>
+          </div>
+          <div class="settings-group settings-row">
+            <div>
+              <div class="settings-label">未读</div>
+              <p class="settings-desc">把所有对话标记为已读，清除侧栏蓝点。</p>
+            </div>
+            <button id="markAllReadBtn" class="ghost-btn" type="button">全部已读</button>
+          </div>
+        </div>
+        <footer class="settings-footwrap">
+          <p class="settings-foot">外观与阅读设置保存在此设备；权限随对话保存在服务端。</p>
+          <details class="settings-storage">
+            <summary>存储详情</summary>
+            <p id="storageInfo" class="settings-storage-info">正在读取存储占用…</p>
+          </details>
+        </footer>
+      </section>
+    </div>
+
+    <div id="archiveSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-archive-close></div>
+      <section class="sheet-panel archive-panel" role="dialog" aria-modal="true" aria-labelledby="archiveTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="archiveTitle">归档箱</h2>
+          <button class="icon-btn" type="button" data-archive-close aria-label="关闭归档箱">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <p class="sheet-sub">归档的对话不会出现在主列表，仍可搜索与恢复。</p>
+        <div id="archiveList" class="archive-list"></div>
+      </section>
+    </div>
+
+    <div id="bookmarksSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-bookmarks-close></div>
+      <section class="sheet-panel bookmarks-panel" role="dialog" aria-modal="true" aria-labelledby="bookmarksTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="bookmarksTitle">收藏</h2>
+          <button class="icon-btn" type="button" data-bookmarks-close aria-label="关闭收藏">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <p class="sheet-sub">收藏重要的提问或回答，点按跳回原位置。</p>
+        <div id="bookmarksList" class="bookmarks-list"></div>
+      </section>
+    </div>
+
+    <div id="promptSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-prompts-close></div>
+      <section class="sheet-panel prompts-panel" role="dialog" aria-modal="true" aria-labelledby="promptsTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="promptsTitle">提示词库</h2>
+          <button class="icon-btn" type="button" data-prompts-close aria-label="关闭提示词库">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <p class="sheet-sub">把常用请求存下来，一键插入输入框。</p>
+        <div id="promptList" class="prompt-list"></div>
+        <form id="promptForm" class="prompt-form">
+          <input id="promptName" type="text" maxlength="24" placeholder="名称，如「周报」" aria-label="提示词名称" />
+          <textarea id="promptText" rows="2" maxlength="2000" placeholder="提示词内容…" aria-label="提示词内容"></textarea>
+          <button class="primary-btn" type="submit">保存提示词</button>
+        </form>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <div id="confirmModal" class="modal" hidden>
+      <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <h2 id="confirmTitle">删除这个对话？</h2>
+        <p id="confirmBody">对话内容将从服务器移除，且无法恢复。</p>
+        <div class="modal-actions">
+          <button id="confirmCancel" class="ghost-btn" type="button">取消</button>
+          <button id="confirmOk" class="danger-btn" type="button">删除</button>
+        </div>
+      </div>
+    </div>
+
+
+
+
+
+
+
+    <div id="renameModal" class="modal" hidden>
+      <div class="modal-card modal-card--compact" role="dialog" aria-modal="true" aria-labelledby="renameTitle">
+        <h2 id="renameTitle">重命名对话</h2>
+        <p>给这段对话一个更容易找回的名字。</p>
+        <form id="renameForm" autocomplete="off">
+          <label class="sr-only" for="renameInput">对话标题</label>
+          <input id="renameInput" class="modal-input" type="text" maxlength="60" placeholder="对话标题" />
+          <p id="renameError" class="modal-error" role="alert" hidden></p>
+          <div class="modal-actions">
+            <button id="renameCancel" class="ghost-btn" type="button">取消</button>
+            <button id="renameSave" class="primary-btn modal-primary" type="submit">保存</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    <div id="shortcutsSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-shortcuts-close></div>
+      <section class="sheet-panel shortcuts-panel" role="dialog" aria-modal="true" aria-labelledby="shortcutsTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="shortcutsTitle">键盘快捷键</h2>
+          <button class="icon-btn" type="button" data-shortcuts-close aria-label="关闭快捷键">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <p class="sheet-sub">让双手留在键盘上。发送键在输入框中始终可用。</p>
+        <div id="shortcutsList" class="shortcuts-list"></div>
+      </section>
+    </div>
+
+
+
+    <noscript><p class="noscript">请启用 JavaScript 后使用 DSH Chat。</p></noscript>
+    <script defer src="/js/markdown.js?v=33"></script>
+    <script defer src="/js/app.js?v=50"></script>
+    <script defer src="/js/codex.js?v=1"></script>
+  </body>
+</html>

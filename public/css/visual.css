@@ -1,0 +1,1800 @@
+/* ─────────────────────────────────────────────────────────────────────
+   DSH Chat · visual alignment layer
+   A single source of truth for page gutters, reading measure, optical
+   centers and component rhythm. Loaded last; keeps the visual language
+   intact while fixing drift introduced by incremental features.
+   ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  --page-gutter: 14px;
+  --page-gutter-desktop: 20px;
+  --chat-measure: 760px;
+  --chat-shell: 800px;
+  --composer-h: 108px;
+  --control-gap: 4px;
+}
+
+/* ── top bar: 44 / flexible title / auto actions ────────────────────── */
+
+.topbar {
+  display: grid !important;
+  grid-template-columns: 44px minmax(0, 1fr) auto !important;
+  align-items: center;
+  gap: 6px;
+  height: calc(52px + env(safe-area-inset-top));
+  padding: env(safe-area-inset-top) 10px 0;
+}
+
+.topbar-title {
+  width: 100%;
+  min-width: 0;
+  align-items: center;
+  justify-content: center;
+  justify-self: stretch;
+}
+
+.topbar-name,
+.topbar-sub {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.topbar-actions {
+  margin-left: 0 !important;
+  justify-self: end;
+  align-self: center;
+}
+
+.topbar-actions .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+
+/* ── one reading measure for thread, composer and its satellites ────── */
+
+.thread {
+  max-width: var(--chat-shell);
+  padding: 18px 20px 12px;
+}
+
+.composer {
+  max-width: var(--chat-measure);
+}
+
+.composer-wrap {
+  padding: 8px var(--page-gutter) calc(10px + env(safe-area-inset-bottom));
+}
+
+.files-bar,
+.engine-bar {
+  max-width: var(--chat-measure);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.composer-foot {
+  max-width: var(--chat-measure);
+  min-height: 18px;
+  margin: 6px auto 0;
+  padding: 0 10px;
+}
+
+/* The capsule holds controls only. Helper text sits below it, like a
+   native input accessory, so the control row is optically centered. */
+.composer-inner {
+  padding: 0;
+  overflow: hidden;
+}
+
+.composer-row {
+  min-height: 54px;
+  padding: 5px 5px 5px 6px;
+  align-items: center;
+  gap: var(--control-gap);
+}
+
+.composer-tool,
+.send-btn {
+  margin: 0;
+}
+
+.composer-tool {
+  width: 44px;
+  height: 44px;
+}
+
+.send-btn {
+  width: 44px;
+  height: 44px;
+}
+
+/* ── empty state: same mobile gutter as the thread ──────────────────── */
+
+@media (max-width: 1023px) {
+  .empty {
+    padding: 20px var(--page-gutter) 40px;
+  }
+
+  .hero {
+    max-width: var(--chat-measure);
+    margin: 0 auto;
+  }
+
+  .hero h1 {
+    font-size: clamp(38px, 10.8vw, 46px);
+  }
+
+  .hero-orb {
+    margin-bottom: 16px;
+  }
+
+  .empty-sub {
+    margin-top: 14px;
+  }
+
+  .hero-actions {
+    margin-top: 16px;
+  }
+
+  .scenario-grid {
+    width: 100%;
+    max-width: var(--chat-measure);
+    margin-top: 28px;
+    gap: 10px;
+  }
+
+  .empty-hint {
+    margin-top: 20px;
+  }
+
+  .thread {
+    padding: 16px var(--page-gutter) 10px;
+  }
+
+  .composer-wrap {
+    padding: 8px var(--page-gutter) calc(10px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── sidebar: align search, tools and footer to the same 12px rail ──── */
+
+.conv-search {
+  width: 100%;
+  margin: 0 0 8px;
+}
+
+.sidebar-tools {
+  padding: 0 0 6px;
+}
+
+.sidebar-tool {
+  flex: 1 1 0;
+  min-width: 0;
+  text-align: center;
+}
+
+.sidebar-foot {
+  padding: 9px 0 2px;
+}
+
+/* ── settings: equal segments, one gutter, row-based secondary actions ─ */
+
+.settings-group {
+  padding: 10px 0;
+}
+
+.settings-options {
+  flex-wrap: nowrap;
+  gap: 4px;
+}
+
+.settings-options button {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+}
+
+.settings-row {
+  gap: 12px;
+}
+
+.settings-actions {
+  flex-direction: row;
+  flex-wrap: nowrap;
+  justify-content: flex-end;
+}
+
+.settings-actions .ghost-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  min-height: 36px;
+}
+
+.settings-foot {
+  margin: 12px 0 8px;
+}
+
+@media (max-width: 420px) {
+  .settings-actions {
+    gap: 4px;
+  }
+  .settings-actions .ghost-btn {
+    padding: 0 9px;
+  }
+}
+
+/* ── quick switcher centered inside the viewport ─────────────────────── */
+
+.quick-modal {
+  padding: 12vh 14px 24px;
+}
+
+.quick-card {
+  width: min(560px, 100%) !important;
+}
+
+/* ── prompts: form uses the same 17px content rail as the header ────── */
+
+.prompt-form {
+  padding: 10px 0 12px;
+}
+
+/* ── files: header actions and rows on one line ──────────────────────── */
+
+.files-head-actions .icon-btn {
+  width: 44px;
+  height: 44px;
+}
+
+.file-row {
+  flex-wrap: nowrap;
+}
+
+.file-row-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.file-row-actions {
+  flex: 0 0 auto;
+  max-width: none;
+  margin-top: 0;
+}
+
+@media (max-width: 640px) {
+  .file-row {
+    flex-wrap: nowrap;
+  }
+  .file-row-main {
+    flex-basis: auto;
+  }
+  .file-row-actions {
+    flex-basis: auto;
+    max-width: none;
+    margin-top: 0;
+  }
+  .file-row-actions .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* ── floating bulk bar sits above the real composer height ───────────── */
+
+.batch-bar {
+  bottom: calc(var(--composer-h) + 10px + env(safe-area-inset-bottom));
+}
+
+/* ── modal actions: comfortable hit areas on touch ───────────────────── */
+
+@media (max-width: 640px) {
+  .stats-card .modal-actions .ghost-btn,
+  .stats-card .modal-actions .danger-btn {
+    min-height: 44px;
+  }
+}
+
+/* ── reduce subpixel drift ───────────────────────────────────────────── */
+
+.msg,
+.tool-card,
+.file-row,
+.conv-item,
+.settings-group {
+  min-width: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .topbar,
+  .composer,
+  .thread,
+  .scenario-grid {
+    scroll-behavior: auto !important;
+  }
+}
+
+/* The title participates in the grid; it must not be a free-floating
+   absolute element, otherwise long titles render under the actions. */
+.topbar-title {
+  position: static !important;
+  left: auto !important;
+  width: auto !important;
+  transform: none !important;
+  overflow: hidden;
+}
+
+/* The grid track already reserves room for both icon groups. */
+.topbar-title {
+  max-width: 100% !important;
+}
+
+/* Desktop navigation titles stay on the optical center of the content
+   column instead of drifting with the number of trailing actions. */
+@media (min-width: 1024px) {
+  .topbar {
+    position: relative;
+  }
+  .topbar-title {
+    position: absolute !important;
+    left: 50% !important;
+    width: min(560px, calc(100% - 320px)) !important;
+    max-width: none !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
+/* Segmented controls are full-width equal segments on every platform. */
+.settings-options button {
+  min-height: 44px;
+}
+
+/* File preview footer: equal, aligned actions on touch. */
+.file-preview-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.file-preview-action {
+  flex: 0 0 auto;
+  min-width: 112px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+@media (max-width: 640px) {
+  .file-preview-foot {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: stretch;
+  }
+  .file-preview-action {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+/* The filename itself opens the preview; on phones the extra open icon
+   steals width from the filename and duplicates the same action. */
+@media (max-width: 640px) {
+  .file-row-actions a[aria-label^="打开 "] {
+    display: none;
+  }
+}
+
+.file-preview-action.primary-btn {
+  margin: 0;
+}
+
+/* On phones, five 44px actions plus duration and token text cannot share
+   one row. Keep the actions/token/time row intact and hide the redundant
+   duration when token metadata is present; duration remains on desktop. */
+@media (max-width: 480px) {
+  .msg.assistant .msg-actions.has-usage .msg-meta {
+    display: none;
+  }
+  .msg.assistant .msg-actions {
+    align-items: center;
+  }
+  .msg.assistant .msg-actions .msg-time {
+    align-self: center;
+  }
+}
+
+/* Find bar controls use the same 44px touch geometry as the rest of the UI. */
+.find-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+}
+
+.find-bar {
+  min-height: 58px;
+}
+
+@media (max-width: 640px) {
+  .find-bar {
+    padding-right: 8px;
+    padding-left: 8px;
+  }
+  .find-icon {
+    margin-left: 4px;
+  }
+}
+
+/* At the 1024px desktop breakpoint, keep the composer on the same rail as
+   the thread content (20px), not the phone 14px gutter. */
+@media (min-width: 1024px) {
+  .composer-wrap {
+    padding: 8px 20px 14px;
+  }
+}
+
+/* Contextual bars belong to the chat column, not the window center, when
+   the desktop sidebar is visible. */
+@media (min-width: 1024px) {
+  .find-bar,
+  .batch-bar {
+    left: calc(50% + 145px);
+  }
+  body.sidebar-collapsed .find-bar,
+  body.sidebar-collapsed .batch-bar {
+    left: 50%;
+  }
+}
+
+/* Floating feedback must clear the composer, whatever its current height
+   (engine bar, attachments or the Codex footer can change it). */
+.toast {
+  bottom: calc(var(--composer-h) + 12px + env(safe-area-inset-bottom));
+}
+
+/* Row-level ellipsis sits on the optical center of the two-line row. */
+.conv-more {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+/* Small secondary controls still get a full touch target on phones. */
+@media (max-width: 640px) {
+  .settings-actions .ghost-btn,
+  .batch-btn,
+  .stats-card .modal-actions .ghost-btn {
+    min-height: 44px;
+  }
+  .settings-actions .ghost-btn {
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+}
+
+/* Codex footer pill follows the right rail even when the hint is hidden. */
+.codex-foot {
+  margin-left: auto;
+}
+
+/* Popovers must clear the composer capsule, not sit on its border. */
+.permission-menu {
+  bottom: calc(100% + 8px);
+}
+
+/* Secondary compact controls keep a 44px touch envelope on phones. */
+@media (max-width: 640px) {
+  .codex-pill,
+  .switch,
+  #markAllReadBtn,
+  .sheet-head .icon-btn {
+    min-height: 44px;
+  }
+  .batch-btn {
+    min-width: 44px;
+  }
+}
+
+/* Find results on the narrowest phone: count yields to the input. */
+@media (max-width: 360px) {
+  #findCount {
+    display: none;
+  }
+  .find-bar {
+    width: calc(100vw - 24px);
+  }
+}
+
+.sheet-head .icon-btn {
+  width: 44px;
+  min-width: 44px;
+}
+
+/* Phones: two top-bar actions, a truly centered title, and no desktop-only
+   "open in Codex" affordance competing for the title's space. */
+@media (max-width: 640px) {
+  .codex-open {
+    display: none !important;
+  }
+  .topbar {
+    position: relative;
+  }
+  .topbar-title {
+    position: absolute !important;
+    left: 50% !important;
+    width: calc(100% - 220px) !important;
+    max-width: calc(100% - 220px) !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
+/* Tablet: enough room for a centered title beside the three actions. */
+@media (min-width: 641px) and (max-width: 1023px) {
+  .topbar {
+    position: relative;
+  }
+  .topbar-title {
+    position: absolute !important;
+    left: 50% !important;
+    width: calc(100% - 300px) !important;
+    max-width: calc(100% - 300px) !important;
+    transform: translateX(-50%) !important;
+  }
+}
+
+/* Back-to-bottom control hugs the reading column on wide screens instead
+   of floating at an arbitrary viewport offset. */
+.scroll-bottom {
+  right: max(18px, calc((100% - 760px) / 2 + 10px));
+  width: 44px;
+  height: 44px;
+}
+
+/* Desktop welcome surface: a compact 2-row bento puts all five entry
+   points above the fold instead of one wide card plus a 2×2 block. */
+@media (min-width: 1024px) {
+  .empty {
+    padding-top: 28px;
+  }
+
+  .hero h1 {
+    font-size: clamp(44px, 4.8vw, 60px);
+  }
+
+  .scenario-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    max-width: var(--chat-measure);
+    margin-top: 30px;
+  }
+
+  .scenario-card.featured {
+    grid-column: span 2;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 180px);
+    min-height: 164px;
+  }
+
+  .scenario-card:not(.featured) {
+    min-height: 132px;
+  }
+
+  .empty-hint {
+    margin-top: 18px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .empty {
+    padding-top: 18px;
+  }
+  .hero h1 {
+    font-size: clamp(44px, 4.8vw, 58px);
+  }
+  .scenario-grid {
+    margin-top: 26px;
+  }
+}
+
+/* Decorative corner art stays inside the rounded card. */
+.scenario-card:not(.featured) .scenario-art {
+  right: 4px;
+}
+
+/* Mobile back-to-bottom sits on the composer's right rail; desktop keeps
+   a 10px inset from the 760px reading column. */
+@media (max-width: 1023px) {
+  .scroll-bottom {
+    right: 14px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .scroll-bottom {
+    right: max(30px, calc((100% - 760px) / 2 + 10px));
+  }
+}
+
+/* 320px: keep the primary file and message actions, defer secondary ones. */
+@media (max-width: 360px) {
+  .file-row-actions button[aria-label^="把 "] {
+    display: none;
+  }
+  .msg.assistant .msg-actions [aria-label="导出这条回答"],
+  .msg.assistant .msg-actions [aria-label="复制这条消息的链接"] {
+    display: none;
+  }
+}
+
+.toast-action {
+  min-height: 44px;
+}
+
+@media (min-width: 641px) {
+  .file-preview-action,
+  .file-preview-action.primary-btn {
+    width: auto !important;
+    flex: 0 0 auto !important;
+    min-width: 112px;
+  }
+}
+
+/* Feedback follows the chat column on desktop, like the composer. */
+@media (min-width: 1024px) {
+  .toast {
+    left: calc(50% + 145px);
+  }
+  body.sidebar-collapsed .toast {
+    left: 50%;
+  }
+}
+
+/* Command palette and find bar sit on the same 14px mobile rail as the
+   thread and composer. */
+@media (max-width: 640px) {
+  .palette {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+  .find-bar {
+    width: min(520px, calc(100vw - 28px));
+  }
+}
+
+@media (min-width: 1024px) {
+  .hero-orb {
+    margin-bottom: 14px;
+  }
+  .hero h1 {
+    margin-top: 15px;
+  }
+  .empty-sub {
+    margin-top: 13px;
+  }
+  .hero-actions {
+    margin-top: 17px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .empty {
+    padding-top: 14px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .scenario-grid {
+    margin-top: 18px;
+  }
+}
+
+/* Inline utility controls in messages keep a 44px phone target. */
+.code-copy {
+  min-height: 32px;
+  padding: 6px 10px;
+}
+
+.think-toggle,
+.tool-copy,
+.msg-retry {
+  min-height: 36px;
+}
+
+@media (max-width: 640px) {
+  .code-copy,
+  .think-toggle,
+  .tool-copy,
+  .msg-retry {
+    min-height: 44px;
+  }
+}
+
+/* Prompt library rows share the sheet's content gutter and touch geometry. */
+.prompt-card {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+@media (max-width: 640px) {
+  .prompt-actions button,
+  .prompt-form .primary-btn {
+    min-height: 44px;
+  }
+}
+
+/* Bookmark and prompt rows use the same edge as the sheet header. */
+.bookmark-row {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+.bookmark-remove {
+  width: 44px;
+  height: 44px;
+}
+
+.archive-row {
+  padding-right: 0;
+  padding-left: 0;
+}
+
+@media (max-width: 640px) {
+  .archive-actions button {
+    min-height: 44px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .empty-hint {
+    margin-top: 16px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Design review round 2 (2026-10-22)
+   Layout ownership: the top bar fits two lines, the reading progress
+   belongs to the chat column, and the settings sheet keeps its footer
+   inside the panel. Later rules here intentionally supersede the
+   incremental layers above.
+   ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  --topbar-h: 58px;
+  --topbar-h-phone: 54px;
+}
+
+/* ── 01 · top bar fits title + model, long titles open details ──────── */
+
+.topbar {
+  height: calc(var(--topbar-h) + env(safe-area-inset-top)) !important;
+  padding-top: env(safe-area-inset-top) !important;
+}
+
+.topbar-title {
+  pointer-events: auto !important;
+  min-height: 44px;
+  padding: 3px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1.15;
+  cursor: pointer;
+  transition: background 0.15s var(--ease);
+}
+
+.topbar-title:hover {
+  background: color-mix(in srgb, var(--hover) 72%, transparent);
+}
+
+.topbar-title:active {
+  background: var(--hover);
+}
+
+.topbar-name {
+  font-size: 15.5px;
+  line-height: 1.2;
+}
+
+.topbar-sub {
+  margin-top: 2px;
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+@media (min-width: 1024px) {
+  .topbar-title {
+    top: calc(env(safe-area-inset-top) + (var(--topbar-h) / 2));
+  }
+}
+
+@media (max-width: 767px) {
+  .topbar {
+    height: calc(var(--topbar-h-phone) + env(safe-area-inset-top)) !important;
+  }
+  .topbar-title {
+    min-height: 42px;
+    padding: 2px 6px;
+  }
+  .topbar-name {
+    font-size: 15px;
+  }
+  /* On phones the conversation title wins; the full engine/model pair
+     lives in the tap-to-open detail card. */
+  .topbar-sub {
+    display: none;
+  }
+}
+
+.chat-info {
+  position: absolute;
+  z-index: 80;
+  top: calc(env(safe-area-inset-top) + var(--topbar-h) + 6px);
+  left: 50%;
+  width: min(420px, calc(100% - 20px));
+  padding: 11px 14px 13px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elevated);
+  box-shadow: var(--refine-pop);
+  transform: translateX(-50%);
+}
+
+@media (max-width: 767px) {
+  .chat-info {
+    top: calc(env(safe-area-inset-top) + var(--topbar-h-phone) + 6px);
+  }
+}
+
+.chat-info-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.chat-info-heading {
+  color: var(--text-3);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.chat-info-head .icon-btn {
+  width: 32px;
+  height: 32px;
+}
+
+.chat-info-title {
+  margin: 0 0 9px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.chat-info-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.chat-info-list > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.chat-info-list dt {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+
+.chat-info-list dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11.5px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.chat-info-hint {
+  margin: 9px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+/* ── 03 · progress line belongs to the chat column, not the shell ───── */
+
+.read-progress {
+  position: absolute;
+  top: calc(env(safe-area-inset-top) + var(--topbar-h));
+  right: auto;
+  left: 0;
+  z-index: 18;
+  height: 2px;
+  background: var(--accent-blue);
+  border-radius: 0 2px 2px 0;
+  opacity: 0.72;
+}
+
+@media (max-width: 767px) {
+  .read-progress {
+    top: calc(env(safe-area-inset-top) + var(--topbar-h-phone));
+  }
+}
+
+/* ── 04/05 · phone home leads with input and task examples ──────────── */
+
+.hero-sub-short {
+  display: none;
+}
+
+.scenario-need {
+  margin-top: 1px;
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.scenario-note {
+  width: 100%;
+  max-width: 760px;
+  margin: 10px auto 0;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .empty {
+    justify-content: flex-start;
+    padding-top: 4px;
+    padding-bottom: 22px;
+  }
+
+  .hero {
+    align-items: center;
+  }
+
+  .hero-orb {
+    width: 34px;
+    height: 34px;
+    margin-bottom: 8px;
+    box-shadow: 0 6px 18px rgba(0, 113, 227, 0.2);
+  }
+
+  .hero-orb::before {
+    inset: 1.5px;
+  }
+
+  .hero-orb::after {
+    inset: 5px;
+  }
+
+  .hero-orb-inner {
+    inset: 9px;
+  }
+
+  .hero .empty-eyebrow {
+    gap: 6px;
+    font-size: 11px;
+  }
+
+  .hero h1 {
+    margin-top: 8px;
+    font-size: clamp(27px, 8.1vw, 32px);
+    line-height: 1.08;
+    letter-spacing: -0.04em;
+  }
+
+  .hero h1 br {
+    display: none;
+  }
+
+  .hero .empty-sub {
+    max-width: 330px;
+    margin-top: 7px;
+    font-size: 13.5px;
+    line-height: 1.45;
+  }
+
+  .hero-sub-full {
+    display: none;
+  }
+
+  .hero-sub-short {
+    display: inline;
+  }
+
+  .hero-actions {
+    gap: 16px;
+    margin-top: 8px;
+  }
+
+  .hero-link {
+    font-size: 13px;
+  }
+
+  /* Two compact examples per row, all five visible before the composer. */
+  .scenario-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .scenario-card,
+  .scenario-card.featured,
+  .scenario-grid .scenario-card:last-child,
+  .scenario-card:last-child {
+    display: grid;
+    grid-template-columns: 26px minmax(0, 1fr);
+    grid-template-areas: "icon copy";
+    align-items: start;
+    column-gap: 8px;
+    min-height: 86px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .scenario-top {
+    grid-area: icon;
+    align-self: start;
+  }
+
+  .scenario-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 8px;
+  }
+
+  .scenario-icon svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .scenario-arrow {
+    display: none;
+  }
+
+  .scenario-art {
+    display: none;
+  }
+
+  .scenario-copy,
+  .scenario-card.featured .scenario-copy {
+    grid-area: copy;
+    gap: 2px;
+    max-width: 100%;
+    margin-top: 0;
+    padding-top: 0;
+  }
+
+  .scenario-title,
+  .scenario-card.featured .scenario-title {
+    font-size: 13.5px;
+    line-height: 1.3;
+  }
+
+  .scenario-desc {
+    font-size: 11px;
+    line-height: 1.38;
+  }
+
+  .scenario-need {
+    font-size: 10px;
+  }
+
+  .scenario-note {
+    margin-top: 8px;
+    font-size: 10.5px;
+  }
+
+  .empty-hint {
+    display: none;
+  }
+
+  .settings-preview {
+    margin-top: 2px;
+  }
+}
+
+/* ── 06 · engines explain themselves; connection has its own detail ─── */
+
+.engine-bar {
+  position: relative;
+  gap: 6px;
+}
+
+.engine-info {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.engine-info:hover {
+  border-color: var(--text-3);
+  color: var(--text-2);
+}
+
+.engine-info-pop {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 34px;
+  z-index: 82;
+  width: min(310px, calc(100vw - 28px));
+  padding: 10px 12px 11px;
+  border: 1px solid var(--border);
+  border-radius: 13px;
+  background: var(--bg-elevated);
+  box-shadow: var(--refine-pop);
+}
+
+.engine-info-pop p {
+  display: flex;
+  gap: 7px;
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+
+.engine-info-pop strong {
+  flex: none;
+  color: var(--text);
+  font-weight: 600;
+}
+
+.engine-info-pop span {
+  min-width: 0;
+}
+
+.engine-info-pop .engine-info-note {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 10.5px;
+}
+
+@media (max-width: 600px) {
+  .engine-bar {
+    flex-wrap: nowrap;
+  }
+  .engine-hint {
+    display: block;
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 10px;
+    text-align: right;
+  }
+}
+
+/* ── 08/09/10/11 · sidebar hierarchy and scannable results ──────────── */
+
+.new-chat {
+  height: 44px;
+  margin: 2px 0 8px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 11px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.new-chat:hover {
+  background: color-mix(in srgb, var(--accent) 88%, var(--bg));
+}
+
+.new-chat svg {
+  color: currentColor;
+}
+
+.sidebar-links {
+  display: flex;
+  gap: 2px;
+  padding: 0 2px 8px;
+}
+
+.sidebar-link {
+  display: inline-flex;
+  flex: 1 1 0;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.sidebar-link:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.sidebar-link svg {
+  width: 14px;
+  height: 14px;
+  color: var(--text-3);
+}
+
+.conv-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  margin: 1px 0 2px;
+  padding: 0 6px;
+}
+
+.conv-heading {
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.conv-toolbar .conv-result-count {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-toolbar-actions {
+  flex: none;
+  display: flex;
+  gap: 1px;
+  margin-left: auto;
+}
+
+.conv-toolbar .sidebar-tool {
+  min-height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.conv-toolbar .sidebar-tool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.conv-toolbar .sidebar-tool.active {
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--accent-blue);
+}
+
+.conv-item {
+  padding: 4px 4px 4px 9px;
+}
+
+.conv-main {
+  padding: 6px 0;
+}
+
+.conv-title {
+  font-size: 14.5px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.conv-title mark,
+.conv-snippet mark {
+  border-radius: 3px;
+}
+
+.conv-preview {
+  margin-top: 1px;
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
+.conv-meta {
+  margin-top: 1px;
+  font-size: 10.5px;
+}
+
+.conv-snippet {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 11.5px;
+}
+
+.conv-hit {
+  flex: none;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-3);
+  font-size: 9.5px;
+  line-height: 1.5;
+}
+
+.conv-hit-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.conv-more {
+  width: 30px;
+  height: 30px;
+}
+
+.conv-main {
+  padding-right: 34px;
+}
+
+.conv-group {
+  padding: 7px 10px 3px;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+}
+
+/* ── 12 · footer separates connection state from preferences ────────── */
+
+.sidebar-foot {
+  position: relative;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 8px 2px 2px;
+}
+
+.model-chip {
+  width: 100%;
+  min-height: 34px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.model-chip:hover {
+  background: var(--hover);
+}
+
+.model-chip span:last-of-type {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-chip-chevron {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-left: auto;
+  color: var(--text-3);
+  transition: transform 0.18s var(--ease);
+}
+
+#statusBtn[aria-expanded="true"] .model-chip-chevron {
+  transform: rotate(180deg);
+}
+
+.connection-detail {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% - 4px);
+  left: 0;
+  z-index: 6;
+  padding: 10px 11px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow: var(--refine-pop);
+}
+
+.connection-detail dl {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.connection-detail dl > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.connection-detail dt {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.connection-detail dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.connection-note {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--text-3);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.foot-actions {
+  width: 100%;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding-top: 5px;
+  border-top: 1px solid var(--border);
+}
+
+.foot-label {
+  margin-right: auto;
+  color: var(--text-3);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+/* ── 02/16/17/18/19 · settings: fixed footer, preview, clear state ──── */
+
+.settings-panel {
+  overflow: hidden;
+  max-height: min(82dvh, 780px);
+  padding-bottom: 0;
+}
+
+.settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 0 2px 8px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+.settings-body::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-body::-webkit-scrollbar-thumb {
+  border-radius: 99px;
+  background: var(--border-strong);
+}
+
+.settings-footwrap {
+  flex: none;
+  padding: 9px 2px calc(13px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+  background: var(--bg-elevated);
+}
+
+.settings-foot {
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.settings-storage {
+  margin-top: 5px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.settings-storage summary {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-storage summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-storage summary::before {
+  content: "▸";
+  margin-right: 5px;
+  color: var(--text-3);
+  transition: transform 0.15s var(--ease);
+}
+
+.settings-storage[open] summary::before {
+  transform: rotate(90deg);
+}
+
+.settings-storage-info {
+  margin: 2px 0 0 12px;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+@media (min-width: 720px) {
+  .settings-sheet {
+    align-items: center;
+    padding: 24px;
+  }
+  .settings-sheet .settings-panel {
+    max-height: min(84vh, 760px);
+    padding: 5px 18px 0;
+    border: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    border-radius: 22px;
+  }
+  .settings-sheet .sheet-grip {
+    display: none;
+  }
+  .settings-sheet .settings-footwrap {
+    padding-bottom: 14px;
+  }
+}
+
+.settings-options button[aria-checked="true"] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--accent-blue);
+  font-weight: 600;
+}
+
+.settings-options button[aria-checked="true"]::before {
+  content: "✓";
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+:root[data-theme="dark"] .settings-options button[aria-checked="true"] {
+  border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--border));
+  background: color-mix(in srgb, var(--accent-blue) 17%, transparent);
+  color: var(--accent-blue);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .settings-options button[aria-checked="true"] {
+    border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--border));
+    background: color-mix(in srgb, var(--accent-blue) 17%, transparent);
+    color: var(--accent-blue);
+  }
+}
+
+.settings-preview {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.settings-preview-title {
+  margin: 0 0 4px;
+  color: var(--text);
+  font-size: calc(14px * var(--reading-scale));
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-preview-text {
+  margin: 0;
+  color: var(--text-2);
+  font-size: calc(12.5px * var(--reading-scale));
+  line-height: 1.55;
+}
+
+.settings-preview-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-2);
+  font-size: calc(12px * var(--reading-scale));
+  line-height: 1.5;
+}
+
+:root[data-density="compact"] .settings-preview {
+  padding: 7px 10px;
+}
+
+:root[data-density="compact"] .settings-preview-text,
+:root[data-density="compact"] .settings-preview-list {
+  line-height: 1.35;
+}
+
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.switch-track {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--border-strong);
+  transition: background 0.18s var(--ease);
+}
+
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.28);
+  transition: transform 0.18s var(--ease);
+}
+
+.switch[aria-checked="true"] .switch-track {
+  background: var(--accent-blue);
+}
+
+.switch[aria-checked="true"] .switch-thumb {
+  transform: translateX(16px);
+}
+
+.switch-state {
+  min-width: 40px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  text-align: left;
+}
+
+:root[data-theme="dark"] .switch-track {
+  background: #4a4a4f;
+}
+
+:root[data-theme="dark"] .switch[aria-checked="true"] .switch-track {
+  background: var(--accent-blue);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .switch-track {
+    background: #4a4a4f;
+  }
+  :root:not([data-theme="light"]) .switch[aria-checked="true"] .switch-track {
+    background: var(--accent-blue);
+  }
+}
+
+/* ── 13 · thinking uses a disclosure chevron, not the scenario star ─── */
+
+.think-toggle svg {
+  transform: rotate(-90deg);
+}
+
+.think.open .think-toggle svg {
+  transform: rotate(0deg);
+}
+
+.think-live-dot {
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-blue);
+  animation: think-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes think-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* ── 14 · inline paths break at slashes; long values are copyable ───── */
+
+.md :not(pre) > code {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--surface-2) 78%, transparent);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.md :not(pre) > code.code-path,
+.md :not(pre) > code.code-value {
+  white-space: normal;
+}
+
+.md :not(pre) > code.code-value {
+  cursor: copy;
+}
+
+.md :not(pre) > code.code-value:hover {
+  background: color-mix(in srgb, var(--accent-blue) 12%, var(--surface-2));
+}
+
+.md :not(pre) > code.code-value:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* ── 20 · composer guidance follows the actual input mode ───────────── */
+
+.composer-hint.is-touch {
+  color: var(--text-3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .think-live-dot {
+    animation: none;
+    opacity: 0.8;
+  }
+  .model-chip-chevron,
+  .switch-thumb {
+    transition: none;
+  }
+}
+

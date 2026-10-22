@@ -1,0 +1,10 @@
+{
+  "name": "dsh-chat-bridge",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Loopback SDK bridge for DSH Chat, mounted inside the DeepSeek Harness host",
+  "type": "module",
+  "main": "index.js",
+  "exports": { ".": "./index.js" },
+  "license": "MIT"
+}

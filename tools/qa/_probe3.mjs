@@ -1,0 +1,20 @@
+import { openApp, closeTab } from './cdp.mjs'
+const { cdp, tab } = await openApp({ width: 390, height: 844, mobile: true })
+cdp.on('Runtime.exceptionThrown', p => console.log('EXC', p.exceptionDetails?.exception?.description))
+cdp.on('Runtime.consoleAPICalled', p => console.log('CONSOLE', p.type, p.args.map(a=>a.value||a.description).join(' ')))
+await new Promise(r=>setTimeout(r,900))
+await cdp.eval(`window.__errs=[]; window.addEventListener('error', e => window.__errs.push(String(e.message)))`)
+const out = await cdp.eval(`(async () => {
+  document.querySelector('#convList .conv-main')?.click()
+  await new Promise(r=>setTimeout(r,900))
+  const item = document.querySelector('#convList .conv-item.active')
+  item.querySelector('.conv-more').click()
+  await new Promise(r=>setTimeout(r,150))
+  const menu = document.querySelector('#convPopover')
+  const rename = menu.querySelector('[data-action="rename"]')
+  rename.click()
+  await new Promise(r=>setTimeout(r,300))
+  return { errs: window.__errs, input: !!document.querySelector('.conv-rename-input'), renameConnected: rename.isConnected }
+})()`)
+console.log(out)
+cdp.close(); await closeTab(tab.id); process.exit(0)
