@@ -112,9 +112,15 @@
 
 /* ── empty state: same mobile gutter as the thread ──────────────────── */
 
+.empty {
+  justify-content: center;
+  padding-top: 24px;
+  padding-bottom: 24px;
+}
+
 @media (max-width: 1023px) {
   .empty {
-    padding: 20px var(--page-gutter) 40px;
+    padding: 24px var(--page-gutter);
   }
 
   .hero {
@@ -286,6 +292,13 @@
 
 .batch-bar {
   bottom: calc(var(--composer-h) + 10px + env(safe-area-inset-bottom));
+  width: max-content;
+  max-width: calc(100vw - 16px);
+}
+
+.batch-btn {
+  flex: none;
+  white-space: nowrap;
 }
 
 /* ── modal actions: comfortable hit areas on touch ───────────────────── */
@@ -554,10 +567,6 @@
 /* Desktop welcome surface: a compact 2-row bento puts all five entry
    points above the fold instead of one wide card plus a 2×2 block. */
 @media (min-width: 1024px) {
-  .empty {
-    padding-top: 28px;
-  }
-
   .hero h1 {
     font-size: clamp(44px, 4.8vw, 60px);
   }
@@ -584,9 +593,6 @@
 }
 
 @media (min-width: 1024px) {
-  .empty {
-    padding-top: 18px;
-  }
   .hero h1 {
     font-size: clamp(44px, 4.8vw, 58px);
   }
@@ -672,12 +678,6 @@
   }
   .hero-actions {
     margin-top: 17px;
-  }
-}
-
-@media (min-width: 1024px) {
-  .empty {
-    padding-top: 14px;
   }
 }
 
@@ -999,12 +999,6 @@
 }
 
 @media (max-width: 640px) {
-  .empty {
-    justify-content: flex-start;
-    padding-top: 4px;
-    padding-bottom: 22px;
-  }
-
   .hero {
     align-items: center;
   }
