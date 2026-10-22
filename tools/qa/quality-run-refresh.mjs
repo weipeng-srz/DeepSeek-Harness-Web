@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 import http from 'node:http'
 import { ROOT, createSandbox, launchBrowser, loginPage, sleep } from './quality-harness.mjs'
-const label = process.env.QA_LABEL || 'run-refresh-before'
+const label = process.env.QA_LABEL || 'run-refresh-current'
+const requireReconnect = process.env.QA_REQUIRE_RECONNECT === '1' || ['run-refresh-final', 'run-refresh-current'].includes(label)
 const out = path.join(ROOT, 'reports/quality', label); fs.mkdirSync(out, { recursive: true })
 const port = Number(process.env.QA_PORT || 8812), proxyPort = Number(process.env.QA_PROXY_PORT || 8813)
 const tool = (status, result = '') => ({ type: 'tool', id: 'qa-call', tool: 'read_file', input: { path: 'synthetic-qa.txt' }, status, result })
@@ -52,7 +53,7 @@ const context = await browser.newContext({ viewport: { width: 1280, height: 900 
 const proxySandbox = { ...sandbox, base: `http://127.0.0.1:${proxyPort}` }
 const getPage = async id => { const page = await context.newPage(); page.setDefaultTimeout(7000); page.on('pageerror', e => errors.push(e.message)); await page.goto(`${proxySandbox.base}/c/${id}`); await page.locator('.tool-card').waitFor(); return page }
 const stateOf = page => page.evaluate(() => ({ cards: [...document.querySelectorAll('.tool-card')].map(el => ({ status: el.dataset.status, badge: el.querySelector('.tool-badge').textContent, result: el.querySelector('pre[data-kind=result]')?.textContent || '' })), send: document.querySelector('#sendBtn').getAttribute('aria-label'), activeStatuses: [...document.querySelectorAll('.gen-status')].filter(el => !el.hidden).map(el => el.textContent), text: document.querySelector('#thread').innerText }))
-const check = async (name, run, diagnostic = false) => { const rows = diagnostic ? diagnostics : results; let page; try { const result = await run(p => { page = p }); rows.push({ name, status: result.ok ? 'passed' : 'failed', evidence: result }); console.log(`${diagnostic ? 'DIAGNOSTIC ' : ''}${result.ok ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify(result)}`) } catch (error) { rows.push({ name, status: 'failed', evidence: { error: error.message, ...(page ? { rendered: await stateOf(page).catch(() => null) } : {}) } }); console.log(`${diagnostic ? 'DIAGNOSTIC ' : ''}FAIL ${name} ${error.message}`) } finally { if (page) { await page.screenshot({ path: path.join(out, `${diagnostic ? 'diagnostic' : 'case'}-${rows.length}.png`), fullPage: true }); await page.close() } } }
+const check = async (name, run, diagnostic = false) => { const rows = diagnostic ? diagnostics : results; let page; try { const result = await run(p => { page = p }); rows.push({ name, status: result.ok ? 'passed' : 'failed', evidence: result }); console.log(`${diagnostic ? 'DIAGNOSTIC ' : ''}${result.ok ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify(result)}`) } catch (error) { rows.push({ name, status: 'failed', evidence: { error: error.message, ...(page ? { rendered: await stateOf(page).catch(() => null) } : {}) } }); console.log(`${diagnostic ? 'DIAGNOSTIC ' : ''}FAIL ${name} ${error.message}`) } finally { if (page) { await page.waitForTimeout(500); await page.screenshot({ path: path.join(out, `${diagnostic ? 'diagnostic' : 'case'}-${rows.length}.png`), fullPage: true }); await page.close() } } }
 try {
   const login = await context.newPage(); await loginPage(login, proxySandbox); await login.close()
   for (const [id, expected] of [['qa-completed', '完成'], ['qa-error', '失败'], ['qa-failed', '失败']]) await check(`persisted ${id} tool keeps its terminal badge after refresh`, async assign => {
@@ -75,6 +76,10 @@ try {
   }, id === 'qa-drop')
   results.push({ name: 'refresh flows have no uncaught browser exceptions', status: errors.length ? 'failed' : 'passed', evidence: { errors } })
 } finally {
-  fs.writeFileSync(path.join(out, 'run-refresh.json'), JSON.stringify({ label, generatedAt: new Date().toISOString(), sourceSnapshot: sandbox.dir, sourceFiles: sandbox.sourceFiles, scope: 'Real isolated server and Chrome. Persisted completed/error/failed/stopped/interrupted tool fixtures use actual storage/API. Active model state and NDJSON chunks are deliberately simulated through a local HTTP proxy; no real model/tool execution. Tests target displayed badge as well as data-status and composer. Raw socket reconnect is explicitly separate diagnostic, not a badge-fix acceptance requirement. No undocumented 204 endpoint behavior is assumed.', results, diagnostics }, null, 2))
+  const acceptance = [...results, ...(requireReconnect ? diagnostics : [])]
+  const summary = { passed: acceptance.filter(result => result.status === 'passed').length, failed: acceptance.filter(result => result.status !== 'passed').length, total: acceptance.length }
+  fs.writeFileSync(path.join(out, 'run-refresh.json'), JSON.stringify({ label, generatedAt: new Date().toISOString(), sourceSnapshot: sandbox.dir, sourceFiles: sandbox.sourceFiles, scope: 'Real isolated server and Chrome. Persisted completed/error/failed/stopped/interrupted tool fixtures use actual storage/API. Active model state and NDJSON chunks are deliberately simulated through a local HTTP proxy; no real model/tool execution. Tests target displayed badge as well as data-status and composer. Raw socket reconnect is retained in diagnostics and counts in acceptance only when requireReconnect is true. No undocumented 204 endpoint behavior is assumed.', requireReconnect, summary, results, diagnostics }, null, 2))
   await context.close(); await browser.close(); for (const socket of sockets) socket.destroy(); await new Promise(resolve => proxy.close(resolve)); await sandbox.stop()
+  process.exitCode = summary.failed ? 1 : 0
+  console.log(`ACCEPTANCE ${summary.passed}/${summary.total}; exit ${process.exitCode}`)
 }

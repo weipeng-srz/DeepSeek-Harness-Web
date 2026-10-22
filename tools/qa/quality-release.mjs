@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { ROOT, createSandbox, launchBrowser, loginPage } from './quality-harness.mjs'
 const label = process.env.QA_LABEL || 'round5'
 const baselineRef = process.env.QA_BASELINE_REF || '2df5d3d0c601d681f59362c8807c09b90b002590'
@@ -14,6 +15,21 @@ function expectedAssets(publicDir) {
 const out = path.join(ROOT, 'reports/quality', label)
 fs.mkdirSync(out, { recursive: true })
 const sandbox = await createSandbox({ port: Number(process.env.QA_PORT || 8799), label: `${label}-release` })
+async function assetContentHashes(publicDir, assets) {
+  const hashes = {}
+  for (const [key, url] of Object.entries(assets)) {
+    let content
+    if (key === 'bundle') {
+      // Read the generated route from the isolated server while this exact
+      // public tree is installed; a fixed CSS list could miss a new layer.
+      const response = await fetch(sandbox.base + url, { cache: 'no-store' })
+      if (!response.ok || !response.headers.get('content-type')?.includes('text/css')) throw new Error(`Cannot fingerprint CSS bundle (${response.status})`)
+      content = Buffer.from(await response.arrayBuffer())
+    } else content = fs.readFileSync(path.join(publicDir, url.split('?')[0]))
+    hashes[key] = createHash('sha256').update(content).digest('hex')
+  }
+  return hashes
+}
 const browser = await launchBrowser()
 const results = []
 const record = (name, ok, evidence = {}) => { results.push({ name, status: ok ? 'passed' : 'failed', evidence }); console.log(`${ok ? 'PASS' : 'FAIL'} ${name} ${JSON.stringify(evidence)}`) }
@@ -51,6 +67,7 @@ try {
   const finalPublicDir = path.join(sandbox.dir, 'public-release-snapshot')
   fs.cpSync(publicDir, finalPublicDir, { recursive: true })
   const expectedNew = expectedAssets(finalPublicDir)
+  const newContentHashes = await assetContentHashes(finalPublicDir, expectedNew)
   fs.rmSync(publicDir, { recursive: true })
   if (baselinePublic) fs.cpSync(baselinePublic, publicDir, { recursive: true })
   else {
@@ -58,6 +75,7 @@ try {
     execFileSync('tar', ['-xf', '-', '-C', sandbox.dir], { input: oldPublicArchive })
   }
   const expectedOld = expectedAssets(publicDir)
+  const oldContentHashes = await assetContentHashes(publicDir, expectedOld)
   const swContext = await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'allow' })
   const swPage = await swContext.newPage(); await loginPage(swPage, sandbox)
   await swPage.evaluate(async () => { await navigator.serviceWorker.ready })
@@ -99,8 +117,9 @@ try {
     }, newQuickClose: Boolean(document.querySelector('#quickClose')) }
   })
   const newAssets = Object.entries(expectedNew).every(([key, value]) => updated.assets[key] === value)
-  const assetVersionsChanged = Object.keys(expectedOld).every(key => expectedOld[key] !== expectedNew[key])
-  record('installed client upgrade removes obsolete cache and loads new HTML and fresh assets', !updated.caches.includes(oldVersion) && updated.caches.includes(latestVersion) && !updated.stale && updated.controlled && updated.appVisible && newAssets && assetVersionsChanged && updated.newQuickClose, { ...updated, expected: expectedNew, assetVersionsChanged })
+  const assetChanges = Object.fromEntries(Object.keys(expectedOld).map(key => [key, { contentChanged: oldContentHashes[key] !== newContentHashes[key], urlChanged: expectedOld[key] !== expectedNew[key], oldHash: oldContentHashes[key], newHash: newContentHashes[key] }]))
+  const changedAssetsVersioned = Object.values(assetChanges).every(asset => !asset.contentChanged || asset.urlChanged)
+  record('installed client upgrade removes obsolete cache and loads new HTML and fresh assets', !updated.caches.includes(oldVersion) && updated.caches.includes(latestVersion) && !updated.stale && updated.controlled && updated.appVisible && newAssets && changedAssetsVersioned && updated.newQuickClose, { ...updated, expected: expectedNew, assetChanges, changedAssetsVersioned })
   // Reload online once so every dynamically requested shell asset is warmed.
   await swPage.reload(); await swPage.locator('#shell').waitFor({ state: 'visible' }); await swPage.waitForTimeout(1000)
   const cachedAPIs = await swPage.evaluate(async () => {
@@ -119,6 +138,6 @@ try {
   await swContext.close()
 } catch (error) { results.push({ name: 'release harness execution', status: 'blocked', evidence: { error: error.stack } }); console.error(error.stack) }
 finally {
-  fs.writeFileSync(path.join(out, 'release.json'), JSON.stringify({ label, generatedAt: new Date().toISOString(), baselineRef: baselinePublic ? null : baselineRef, baselinePublic, scope: 'Isolated service-worker-enabled Chrome. Full original public tree from a pinned revision or frozen baseline directory actually loaded, including HTML/JS/CSS. Restored final public tree and clicked the old client update action. Resource URLs verified against each source tree and required to change. Synthetic stale old static asset; no user site caches touched.', sourceSnapshot: sandbox.dir, results }, null, 2))
+  fs.writeFileSync(path.join(out, 'release.json'), JSON.stringify({ label, generatedAt: new Date().toISOString(), baselineRef: baselinePublic ? null : baselineRef, baselinePublic, scope: 'Isolated service-worker-enabled Chrome. Full original public tree from a pinned revision or frozen baseline directory actually loaded, including HTML/JS/CSS. Restored final public tree and clicked the old client update action. Resource URLs verified against each source tree; every resource with changed content must change URL, while byte-identical resources may reuse their URL. Generated CSS compared using actual isolated HTTP response content. Synthetic stale old static asset; no user site caches touched.', sourceSnapshot: sandbox.dir, results }, null, 2))
   await browser.close(); await sandbox.stop()
 }
