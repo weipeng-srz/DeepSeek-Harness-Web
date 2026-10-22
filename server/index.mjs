@@ -20,12 +20,13 @@ import {
 } from './config.mjs'
 import { writeHeadlessPatch } from './profile.mjs'
 import { ConversationStore } from './store.mjs'
+import { MemoryStore } from './memory-store.mjs'
 import { startDshRun } from './dsh.mjs'
 import { nativeBridge } from './native.mjs'
 import { codexBridge, effortLabel } from './codex-bridge.mjs'
 import { codexAvailable, ensureCodexHttpProvider, readCodexDefaults } from './codex.mjs'
 
-const VERSION = '3.0.0'
+const VERSION = '3.1.0'
 const SERVER_EPOCH = Date.now()
 const AUTH_COOKIE = 'dsh_access'
 const CLIENT_COOKIE = 'dsh_cid'
@@ -73,6 +74,7 @@ const FALLBACK_PERMISSIONS = [
 const SINGLE_USER = config.singleUser !== false
 const SHARED_OWNER = 'single-user-owner'
 const store = new ConversationStore()
+const memory = new MemoryStore()
 if (SINGLE_USER) {
   store.setOwner(SHARED_OWNER)
   void store.flush()
@@ -212,6 +214,7 @@ const CSS_BUNDLE_FILES = [
   'css/ux.css',
   'css/refine.css',
   'css/visual.css',
+  'css/memory.css',
 ]
 let cssBundleCache = { key: '', raw: null, gzip: null, etag: '' }
 
@@ -925,6 +928,11 @@ async function handleChat(req, res, owner, restId) {
   }
   if (attachments.length) userMessage.attachments = attachments
 
+  // Capture durable preferences before building this turn's prompt so a
+  // "记住…" message applies immediately, without waiting for the next turn.
+  const capturedMemories =
+    !retryOf && !editOf && !internal ? memory.capture(owner, text, conv.id) : []
+
   let promptText = text
   if (attachments.length) {
     promptText += `\n\n[用户上传的附件]\n${attachments
@@ -936,6 +944,8 @@ async function handleChat(req, res, owner, restId) {
   } else if (editOf) {
     promptText += '\n\n（这是编辑后的重新发送，请以本条消息为准，忽略此前相同问题的上下文。）'
   }
+  const memoryBlock = memory.promptBlock(owner)
+  if (memoryBlock) promptText = `${memoryBlock}\n\n${promptText}`
 
   // The text is rendered with textContent on the client; store it as-is.
   const assistant = {
@@ -975,6 +985,8 @@ async function handleChat(req, res, owner, restId) {
         try {
           sink.write(JSON.stringify({ t: 'reset', messageId: this.messageId, title: this.conv.title }) + '\n')
           for (const event of this.events) {
+            // 只为当前订阅者的一次性提示（例如刚捕获的记忆）不回放。
+            if (event.transient) continue
             // 已经回答/处理过的问题与授权不再回放，避免刷新或重开网页时重复弹卡。
             if (
               event.requestId &&
@@ -1068,6 +1080,15 @@ async function handleChat(req, res, owner, restId) {
   }
 
   hub.send({ t: 'ready', userMessageId: userMessage.id, messageId: assistant.id, title: conv.title })
+  if (capturedMemories.length) {
+    hub.send({
+      t: 'memory',
+      saved: capturedMemories,
+      count: memory.count(owner),
+      enabled: memory.settings.enabled,
+      transient: true,
+    })
+  }
 
   let mode = conv.engine === 'codex' ? 'codex' : conv.mode
   if (conv.engine === 'codex') {
@@ -1525,10 +1546,83 @@ async function handleApi(req, res, url) {
       codexReady: codexBridge.ready,
       codexModels: codexBridge.currentModels().models.length,
       permission: DEFAULT_PERMISSION,
+      memory: {
+        enabled: memory.settings.enabled,
+        autoCapture: memory.settings.autoCapture,
+        count: memory.count(owner),
+      },
     })
   }
 
   if (!isAuthed(req)) return sendJson(res, 401, { error: '需要访问码' })
+
+  if (rest[0] === 'memory') {
+    try {
+      if (rest.length === 1) {
+        if (req.method === 'GET') {
+          return sendJson(res, 200, {
+            enabled: memory.settings.enabled,
+            autoCapture: memory.settings.autoCapture,
+            count: memory.count(owner),
+            items: memory.list(owner),
+          })
+        }
+        if (req.method === 'POST') {
+          const body = await readJsonBody(req)
+          const result = memory.add(owner, body.text, { source: 'manual' })
+          return sendJson(res, result.created ? 201 : 200, {
+            item: result.item,
+            created: result.created,
+            count: memory.count(owner),
+          })
+        }
+        if (req.method === 'DELETE') {
+          const removed = memory.clear(owner)
+          return sendJson(res, 200, { ok: true, removed, count: 0 })
+        }
+        return sendJson(res, 405, { error: '不支持的方法' })
+      }
+      if (rest.length === 2 && rest[1] === 'settings' && req.method === 'PATCH') {
+        const body = await readJsonBody(req)
+        if (typeof body.enabled !== 'boolean' && typeof body.autoCapture !== 'boolean') {
+          return sendJson(res, 400, { error: '缺少记忆设置' })
+        }
+        const settings = memory.setSettings(body)
+        return sendJson(res, 200, { ...settings, count: memory.count(owner) })
+      }
+      if (rest.length === 2 && rest[1] === 'extract' && req.method === 'POST') {
+        const body = await readJsonBody(req)
+        const conversationId = typeof body.conversationId === 'string' ? body.conversationId : ''
+        if (!conversationId) return sendJson(res, 400, { error: '请先打开一段对话' })
+        const conv = store.get(conversationId)
+        if (!conv || conv.owner !== owner || conv.deletedAt) {
+          return sendJson(res, 404, { error: '会话不存在' })
+        }
+        const candidates = memory.candidatesFor(owner, conv)
+        return sendJson(res, 200, { candidates, count: memory.count(owner) })
+      }
+      if (rest.length === 2 && req.method === 'PATCH') {
+        const body = await readJsonBody(req)
+        if (
+          typeof body.text !== 'string' &&
+          typeof body.pinned !== 'boolean' &&
+          typeof body.disabled !== 'boolean'
+        ) {
+          return sendJson(res, 400, { error: '没有可更新的内容' })
+        }
+        const item = memory.update(owner, rest[1], body)
+        return sendJson(res, 200, { item, count: memory.count(owner) })
+      }
+      if (rest.length === 2 && req.method === 'DELETE') {
+        const removed = memory.remove(owner, rest[1])
+        if (!removed) return sendJson(res, 404, { error: '记忆不存在' })
+        return sendJson(res, 200, { ok: true, count: memory.count(owner) })
+      }
+      return sendJson(res, 404, { error: '未知接口' })
+    } catch (error) {
+      return sendJson(res, error.status || 400, { error: error.message || '记忆操作失败' })
+    }
+  }
 
   if (rest[0] === 'permissions' && req.method === 'GET') {
     return sendJson(res, 200, await permissionCatalog())
@@ -1557,14 +1651,15 @@ async function handleApi(req, res, url) {
   }
 
   if (rest[0] === 'backup' && req.method === 'GET') {
-    return sendJson(res, 200, store.backup(owner))
+    return sendJson(res, 200, { ...store.backup(owner), memory: memory.export(owner) })
   }
   if (rest[0] === 'backup' && rest[1] === 'import' && req.method === 'POST') {
     if (activeRuns.size > 0) return sendJson(res, 409, { error: '有任务正在生成，请稍后再导入' })
     const body = await readJsonBody(req, 24 * 1024 * 1024)
     if (!Array.isArray(body.conversations)) return sendJson(res, 400, { error: '备份格式不正确' })
     const result = store.import(owner, body)
-    return sendJson(res, 200, { ok: true, ...result })
+    const memories = body.memory ? memory.import(owner, body.memory) : { imported: 0, skipped: 0 }
+    return sendJson(res, 200, { ok: true, ...result, memories })
   }
 
   if (rest[0] === 'conversations') {
@@ -1914,6 +2009,7 @@ server.listen(Number(config.port), config.host, () => {
   lines.push(`  模型       ${MODEL}`)
   if (AUTH_ENABLED) lines.push('  访问码     见 config.json（已设置，不在日志中打印）')
   lines.push(`  会话数据   ${store.data.conversations.length} 个会话`)
+  lines.push(`  长期记忆   ${memory.data.items.length} 条（${memory.settings.enabled ? '已启用' : '已停用'}）`)
   if (!patchInfo.mirrored) {
     lines.push('  注意       未从桌面配置读取到模型，将使用 headless 默认模型')
   }
@@ -1952,7 +2048,7 @@ async function shutdown(signal) {
     } catch {}
   }
   codexBridge.shutdown()
-  await store.flush().catch(() => {})
+  await Promise.all([store.flush().catch(() => {}), memory.flush().catch(() => {})])
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }

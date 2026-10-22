@@ -73,10 +73,26 @@ python3 -c "import json;print(json.load(open('config.json'))['accessCode'])"
 - **访问码保护**：所有 API 需要登录；登录失败有频率限制。
 - **会话独立工作区**：每个会话在 `data/workspaces/<会话ID>` 下运行 Agent，互不覆盖。
 - **会话深链与消息链接**：`/c/<id>` 可直接打开对话，`#m-<id>` 定位到具体消息。
+- **长期记忆**：跨对话记住你的偏好与背景，说「记住…」即保存；侧栏「记忆」可添加、置顶、编辑、暂停、删除，也可从当前对话一键整理。
 - **收藏 / 提示词 / 总结**：消息星标、提示词库、结构化总结（见 v3 章节）。
 - **归档 / 批量 / 快速切换**：归档箱、批量管理、⌘P 快速切换。
 - **文件抽屉操作**：上传、预览、插入路径、删除。
 - **离线可开**：Service Worker 缓存 shell，断网仍能查看已缓存会话。
+
+## 长期记忆（2026-10）
+
+跨对话记住用户的偏好、背景与长期约定，不必每次重复。
+
+- **随手记**：消息里说「记住…」会立即保存；普通消息中的稳定偏好（如「我更喜欢简洁的回答」「我在杭州工作」）也会被保守识别——临时任务、疑问句、故障描述以及密码/密钥/证件号自动排除。
+- **自动生效**：每条提问前把启用的记忆以 `[长期记忆]` 块注入 prompt，并声明「与本轮消息冲突时以本轮消息为准、不要逐条复述」，不改变原有对话结构。
+- **可控**：侧栏「记忆」或 设置 →「长期记忆 → 管理」打开面板，可添加、置顶、编辑、暂停/启用、删除、清空；两个开关分别控制「注入」与「自动记录」；也能从当前对话一键整理候选后确认。
+- **不重复**：同一事实的长短写法会合并，更长、更具体的版本覆盖旧的；置顶优先、最近更新次之。上限 200 条 / 单条 500 字，注入上限 24 条 / 3600 字。
+- **本地存储**：`data/memory.json`（`0600`、原子写）；导出备份时一并带上，导入时恢复到当前用户；不保存任何凭据。
+- **消息级入口**：每条提问右侧的「加入长期记忆」按钮可直接保存该条内容。
+
+接口：`GET/POST/DELETE /api/memory`、`PATCH/DELETE /api/memory/:id`、`PATCH /api/memory/settings`、`POST /api/memory/extract`。
+
+测试：`node tools/qa/memory.mjs`（提取规则 + 存储 + 去重，无需启动服务）。
 
 ## v3 体验增强（2026-10）
 
@@ -102,6 +118,7 @@ node tools/qa/e2e5.mjs     # 6 项：文件增删/导入/全部已读
 node tools/qa/api.mjs      # 23 项接口合同
 node tools/qa/offline.mjs  # 5 项断网恢复
 node tools/qa/a11y.mjs     # 对比度 + 焦点陷阱
+node tools/qa/memory.mjs    # 长期记忆：提取/存储/去重
 ```
 
 > 需要本机 headless Chrome 开启 `--remote-debugging-port=9222`；Node 可用 Desktop 内置运行时。
@@ -112,6 +129,7 @@ node tools/qa/a11y.mjs     # 对比度 + 焦点陷阱
 - 收藏、提示词、阅读偏好是设备级（localStorage），不跨设备同步。
 - 文件删除不可撤销（有二次确认）。
 - 长对话窗口化后，会话内查找只覆盖最近已渲染的 60 条。
+- 记忆捕获是本地规则匹配，不做语义总结；复杂表述可能漏记，可在记忆面板手动补充或从对话整理。
 - `app.js` 仍为单文件（约 230KB，gzip ~55KB），暂无构建链。
 - 打印样式未在 Safari 实机验证；VoiceOver 全流程未脚本化；通知需浏览器授权，iOS 需先安装 PWA。
 
@@ -509,6 +527,8 @@ dsh-chat/
 │   ├── dsh.mjs        # 启动 headless DSH 进程并解析事件
 │   ├── profile.mjs    # 从桌面 profile 生成 headless 补丁
 │   ├── store.mjs      # 会话持久化（原子写入）
+│   ├── memory.mjs     # 记忆提取、敏感信息过滤、prompt 渲染
+│   ├── memory-store.mjs # 记忆持久化与去重
 │   └── config.mjs     # 配置、路径、访问码
 ├── public/
 │   ├── index.html
@@ -516,7 +536,7 @@ dsh-chat/
 │   └── js/{app.js,markdown.js}
 ├── deploy/            # launchd 安装/卸载脚本
 ├── docs/              # 截图
-├── data/              # 运行时数据（会话、工作区、日志、补丁）
+├── data/              # 运行时数据（会话、记忆、工作区、日志、补丁）
 ├── config.json
 └── start.sh
 ```
@@ -524,7 +544,7 @@ dsh-chat/
 ## 技术约束
 
 - 无需 npm 依赖；使用 macOS 自带的 Node，或 DeepSeek Harness 内置的 Node 运行时（`start.sh` 会自动查找）。
-- 样式入口为 `/css/bundle.css`（服务端按固定顺序拼接 7 个 CSS，带 gzip/ETag）；新增样式请追加到 `public/css/visual.css`（最后加载）并更新 bundle 版本号。
+- 样式入口为 `/css/bundle.css`（服务端按固定顺序拼接 8 个 CSS，带 gzip/ETag）；新增样式请追加到 `public/css/visual.css`（最后加载）并更新 bundle 版本号。
 - KaTeX 不再首屏加载：出现 `\(...\)`、`\[...\]`、`$$...$$` 时动态注入。
 - 静态资源使用 `?v=` 做 immutable 缓存，改完前端务必 bump 版本号（HTML/CSS/JS）。
 - Service Worker（`public/sw.js`）缓存 shell；API 请求永不缓存。

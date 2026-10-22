@@ -149,6 +149,26 @@
     settingsSheet: $('#settingsSheet'),
     settingsBtn: $('#settingsBtn'),
     notifyToggle: $('#notifyToggle'),
+    memoryBtn: $('#memoryBtn'),
+    memorySheet: $('#memorySheet'),
+    memoryCountBadge: $('#memoryCountBadge'),
+    memoryCount: $('#memoryCount'),
+    memoryList: $('#memoryList'),
+    memoryEmpty: $('#memoryEmpty'),
+    memoryForm: $('#memoryForm'),
+    memoryInput: $('#memoryInput'),
+    memoryAdd: $('#memoryAdd'),
+    memoryError: $('#memoryError'),
+    memoryEnabledToggle: $('#memoryEnabledToggle'),
+    memoryEnabledState: $('#memoryEnabledState'),
+    memoryEnabledDesc: $('#memoryEnabledDesc'),
+    memoryAutoToggle: $('#memoryAutoToggle'),
+    memoryAutoState: $('#memoryAutoState'),
+    memoryExtract: $('#memoryExtract'),
+    memoryClear: $('#memoryClear'),
+    memoryToggle: $('#memoryToggle'),
+    memoryState: $('#memoryState'),
+    memoryManageBtn: $('#memoryManageBtn'),
     backupBtn: $('#backupBtn'),
     archiveSheet: $('#archiveSheet'),
     archiveList: $('#archiveList'),
@@ -239,11 +259,13 @@
     lastQuickFocus: null,
     lastStatsFocus: null,
     lastSettingsFocus: null,
+    lastMemoryFocus: null,
     lastArchiveFocus: null,
     lastBookmarksFocus: null,
     lastPromptsFocus: null,
     bookmarks: loadBookmarks(),
     prompts: loadPrompts(),
+    memory: { enabled: true, autoCapture: true, count: 0, items: [], loaded: false, loading: false },
     threadWindow: 60,
     threadEnd: null,
     commandIndex: 0,
@@ -2727,6 +2749,7 @@
     state.nativeEnabled = me.nativeEnabled !== false
     state.codexAvailable = Boolean(me.codex)
     state.shared = Boolean(me.shared)
+    applyMemorySummary(me.memory)
     if (!me.authenticated) {
       showLogin()
       return
@@ -4005,6 +4028,15 @@
     edit.addEventListener('click', () => startEditingUserMessage(wrap))
     actions.appendChild(edit)
 
+    const remember = document.createElement('button')
+    remember.type = 'button'
+    remember.className = 'icon-btn'
+    remember.title = '加入长期记忆'
+    remember.setAttribute('aria-label', '把这条提问加入长期记忆')
+    remember.innerHTML = icon('i-memory')
+    remember.addEventListener('click', () => void rememberMessage(text))
+    actions.appendChild(remember)
+
     const star = document.createElement('button')
     star.type = 'button'
     star.className = 'icon-btn'
@@ -5262,6 +5294,7 @@
     if (els.archiveSheet && !els.archiveSheet.hidden) return closeArchive()
     if (els.bookmarksSheet && !els.bookmarksSheet.hidden) return closeBookmarks()
     if (els.promptSheet && !els.promptSheet.hidden) return closePrompts()
+    if (els.memorySheet && !els.memorySheet.hidden) return closeMemory()
     if (els.palette && !els.palette.hidden) return closePalette()
     if (els.commandMenu && !els.commandMenu.hidden) return closeCommandMenu()
     if (els.filePreview && !els.filePreview.hidden) return closeFilePreview()
@@ -5643,6 +5676,410 @@
     }
   }
 
+  /* ── long-term memory ─────────────────────────────────────────────── */
+
+  const MEMORY_SOURCE_LABEL = { manual: '手动', auto: '自动', import: '导入' }
+
+  function setSwitch(button, stateEl, on) {
+    if (!button) return
+    button.setAttribute('aria-checked', String(Boolean(on)))
+    if (stateEl) stateEl.textContent = on ? '已开启' : '已关闭'
+  }
+
+  function updateMemoryUI() {
+    const memory = state.memory
+    const count = Math.max(0, Number(memory.count) || 0)
+    if (els.memoryCountBadge) {
+      els.memoryCountBadge.hidden = count === 0
+      els.memoryCountBadge.textContent = count > 99 ? '99+' : String(count)
+    }
+    if (els.memoryCount) els.memoryCount.textContent = `${count} 条`
+    setSwitch(els.memoryEnabledToggle, els.memoryEnabledState, memory.enabled)
+    setSwitch(els.memoryAutoToggle, els.memoryAutoState, memory.autoCapture)
+    setSwitch(els.memoryToggle, els.memoryState, memory.enabled)
+    if (els.memoryEnabledDesc) {
+      els.memoryEnabledDesc.textContent = memory.enabled
+        ? '相关记忆会随消息提供给模型。'
+        : '记忆已停用，不会注入或自动记录。'
+    }
+    els.memorySheet?.classList.toggle('memory-off', !memory.enabled)
+    if (els.memoryExtract) els.memoryExtract.disabled = !state.currentId
+    if (els.memoryClear) els.memoryClear.disabled = count === 0
+  }
+
+  function applyMemorySummary(summary) {
+    if (!summary || typeof summary !== 'object') return
+    if (typeof summary.enabled === 'boolean') state.memory.enabled = summary.enabled
+    if (typeof summary.autoCapture === 'boolean') state.memory.autoCapture = summary.autoCapture
+    if (Number.isFinite(Number(summary.count))) state.memory.count = Number(summary.count)
+    updateMemoryUI()
+  }
+
+  async function loadMemory({ silent = false } = {}) {
+    if (state.memory.loading) return
+    state.memory.loading = true
+    try {
+      const data = await api('/api/memory')
+      state.memory.enabled = data.enabled !== false
+      state.memory.autoCapture = data.autoCapture !== false
+      state.memory.count = Number(data.count) || 0
+      state.memory.items = Array.isArray(data.items) ? data.items : []
+      state.memory.loaded = true
+      renderMemory()
+      updateMemoryUI()
+    } catch (error) {
+      if (!silent) showToast(error.message || '读取记忆失败', { tone: 'error' })
+    } finally {
+      state.memory.loading = false
+    }
+  }
+
+  function memorySourceLabel(source) {
+    return MEMORY_SOURCE_LABEL[source] || '手动'
+  }
+
+  function renderMemory() {
+    if (!els.memoryList) return
+    const items = [...state.memory.items].sort(
+      (a, b) => Number(b.pinned) - Number(a.pinned) || b.updatedAt - a.updatedAt,
+    )
+    els.memoryList.replaceChildren()
+    if (els.memoryEmpty) els.memoryEmpty.hidden = items.length > 0
+    for (const item of items) {
+      const card = document.createElement('article')
+      card.className = 'memory-card'
+      card.setAttribute('role', 'listitem')
+      card.dataset.memoryId = item.id
+
+      const main = document.createElement('div')
+      main.className = 'memory-card-main'
+      const text = document.createElement('p')
+      text.className = 'memory-card-text'
+      text.textContent = item.text
+      const meta = document.createElement('div')
+      meta.className = 'memory-card-meta'
+      const source = document.createElement('span')
+      source.className = `memory-source ${item.source === 'auto' ? 'auto' : ''}`.trim()
+      source.textContent = memorySourceLabel(item.source)
+      const time = document.createElement('span')
+      time.textContent = relativeTime(item.updatedAt || item.createdAt)
+      time.title = new Date(item.updatedAt || item.createdAt).toLocaleString('zh-CN', { hour12: false })
+      meta.append(source, time)
+      if (item.disabled) {
+        const paused = document.createElement('span')
+        paused.className = 'memory-source'
+        paused.textContent = '已暂停'
+        meta.appendChild(paused)
+      }
+      main.append(text, meta)
+
+      const actions = document.createElement('div')
+      actions.className = 'memory-card-actions'
+      const pin = document.createElement('button')
+      pin.type = 'button'
+      pin.className = 'icon-btn' + (item.pinned ? ' active' : '')
+      pin.title = item.pinned ? '取消置顶' : '置顶这条记忆'
+      pin.setAttribute('aria-label', pin.title)
+      pin.setAttribute('aria-pressed', String(Boolean(item.pinned)))
+      pin.innerHTML = icon('i-pin')
+      pin.addEventListener('click', () => void toggleMemoryPin(item))
+      actions.appendChild(pin)
+
+      const edit = document.createElement('button')
+      edit.type = 'button'
+      edit.className = 'icon-btn'
+      edit.title = '编辑这条记忆'
+      edit.setAttribute('aria-label', '编辑这条记忆')
+      edit.innerHTML = icon('i-edit')
+      edit.addEventListener('click', () => startMemoryEdit(card, item))
+      actions.appendChild(edit)
+
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.className = 'icon-btn'
+      remove.title = '删除这条记忆'
+      remove.setAttribute('aria-label', '删除这条记忆')
+      remove.innerHTML = icon('i-trash')
+      remove.addEventListener('click', () => void deleteMemory(item))
+      actions.appendChild(remove)
+
+      card.append(main, actions)
+      els.memoryList.appendChild(card)
+    }
+  }
+
+  async function openMemory() {
+    if (!els.memorySheet) return
+    state.lastMemoryFocus = document.activeElement
+    els.memorySheet.hidden = false
+    lockShell(true)
+    updateMemoryUI()
+    renderMemory()
+    els.memorySheet.querySelector('[data-memory-close]')?.focus()
+    await loadMemory()
+  }
+
+  function closeMemory() {
+    if (!els.memorySheet || els.memorySheet.hidden) return
+    els.memorySheet.hidden = true
+    lockShell(false)
+    if (state.lastMemoryFocus?.isConnected) {
+      state.lastMemoryFocus.focus({ preventScroll: true })
+    }
+  }
+
+  async function saveMemorySettings(patch) {
+    try {
+      const data = await api('/api/memory/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(patch),
+      })
+      state.memory.enabled = data.enabled !== false
+      state.memory.autoCapture = data.autoCapture !== false
+      if (Number.isFinite(Number(data.count))) state.memory.count = Number(data.count)
+      updateMemoryUI()
+      if (typeof patch.enabled === 'boolean') {
+        showToast(patch.enabled ? '记忆已开启' : '记忆已关闭，不会注入或自动记录', {
+          iconId: 'i-memory',
+        })
+      } else if (typeof patch.autoCapture === 'boolean') {
+        showToast(patch.autoCapture ? '已开启自动记录' : '已关闭自动记录', { iconId: 'i-memory' })
+      }
+    } catch (error) {
+      showToast(error.message || '保存记忆设置失败', { tone: 'error' })
+      updateMemoryUI()
+    }
+  }
+
+  async function submitMemory(event) {
+    event?.preventDefault()
+    const text = els.memoryInput?.value.trim() || ''
+    if (!text) {
+      if (els.memoryError) {
+        els.memoryError.textContent = '写点想让我记住的内容'
+        els.memoryError.hidden = false
+      }
+      els.memoryInput?.focus()
+      return
+    }
+    if (els.memoryAdd) {
+      els.memoryAdd.disabled = true
+      els.memoryAdd.textContent = '添加中…'
+    }
+    if (els.memoryError) els.memoryError.hidden = true
+    try {
+      const data = await api('/api/memory', {
+        method: 'POST',
+        body: JSON.stringify({ text }),
+      })
+      const item = data.item
+      state.memory.count = Number(data.count) || state.memory.count
+      if (item) {
+        state.memory.items = [item, ...state.memory.items.filter((entry) => entry.id !== item.id)]
+      }
+      if (els.memoryInput) els.memoryInput.value = ''
+      renderMemory()
+      updateMemoryUI()
+      showToast(data.created ? '已添加记忆' : '这条内容已经在记忆里了', { iconId: 'i-memory' })
+    } catch (error) {
+      if (els.memoryError) {
+        els.memoryError.textContent = error.message || '添加失败'
+        els.memoryError.hidden = false
+      }
+    } finally {
+      if (els.memoryAdd) {
+        els.memoryAdd.disabled = false
+        els.memoryAdd.textContent = '添加'
+      }
+    }
+  }
+
+  async function toggleMemoryPin(item) {
+    try {
+      const data = await api(`/api/memory/${encodeURIComponent(item.id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ pinned: !item.pinned }),
+      })
+      Object.assign(item, data.item)
+      if (Number.isFinite(Number(data.count))) state.memory.count = Number(data.count)
+      renderMemory()
+      updateMemoryUI()
+    } catch (error) {
+      showToast(error.message || '更新记忆失败', { tone: 'error' })
+    }
+  }
+
+  async function deleteMemory(item) {
+    try {
+      const data = await api(`/api/memory/${encodeURIComponent(item.id)}`, { method: 'DELETE' })
+      state.memory.items = state.memory.items.filter((entry) => entry.id !== item.id)
+      state.memory.count = Number(data.count) || Math.max(0, state.memory.count - 1)
+      renderMemory()
+      updateMemoryUI()
+      showToast('已删除这条记忆', { iconId: 'i-trash' })
+    } catch (error) {
+      showToast(error.message || '删除记忆失败', { tone: 'error' })
+    }
+  }
+
+  function startMemoryEdit(card, item) {
+    const main = card.querySelector('.memory-card-main')
+    if (!main) return
+    const form = document.createElement('form')
+    form.className = 'memory-edit'
+    const area = document.createElement('textarea')
+    area.maxLength = 500
+    area.value = item.text
+    area.setAttribute('aria-label', '编辑记忆内容')
+    const actions = document.createElement('div')
+    actions.className = 'memory-edit-actions'
+    const cancel = document.createElement('button')
+    cancel.type = 'button'
+    cancel.textContent = '取消'
+    const save = document.createElement('button')
+    save.type = 'submit'
+    save.className = 'primary'
+    save.textContent = '保存'
+    actions.append(cancel, save)
+    form.append(area, actions)
+    main.replaceChildren(form)
+    area.focus()
+    area.setSelectionRange(area.value.length, area.value.length)
+    cancel.addEventListener('click', () => renderMemory())
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      const text = area.value.trim()
+      if (!text) {
+        area.focus()
+        return
+      }
+      save.disabled = true
+      save.textContent = '保存中…'
+      try {
+        const data = await api(`/api/memory/${encodeURIComponent(item.id)}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ text }),
+        })
+        Object.assign(item, data.item)
+        if (Number.isFinite(Number(data.count))) state.memory.count = Number(data.count)
+        renderMemory()
+        updateMemoryUI()
+        showToast('已更新记忆', { iconId: 'i-memory' })
+      } catch (error) {
+        showToast(error.message || '保存记忆失败', { tone: 'error' })
+        save.disabled = false
+        save.textContent = '保存'
+      }
+    })
+  }
+
+  async function clearMemories() {
+    if (!state.memory.count) return showToast('还没有记忆')
+    askConfirm({
+      title: `清空 ${state.memory.count} 条记忆？`,
+      body: '所有长期记忆都会被删除，之后无法恢复。',
+      okLabel: '清空',
+      onOk: async () => {
+        try {
+          await api('/api/memory', { method: 'DELETE' })
+          state.memory.items = []
+          state.memory.count = 0
+          renderMemory()
+          updateMemoryUI()
+          showToast('已清空记忆', { iconId: 'i-memory' })
+        } catch (error) {
+          showToast(error.message || '清空失败', { tone: 'error' })
+        }
+      },
+    })
+  }
+
+  async function extractMemories() {
+    if (!state.currentId) return showToast('先打开一段对话，再整理记忆', { tone: 'error' })
+    const button = els.memoryExtract
+    const original = button?.textContent || '从当前对话整理'
+    if (button) {
+      button.disabled = true
+      button.textContent = '整理中…'
+    }
+    try {
+      const data = await api('/api/memory/extract', {
+        method: 'POST',
+        body: JSON.stringify({ conversationId: state.currentId }),
+      })
+      const candidates = Array.isArray(data.candidates) ? data.candidates : []
+      if (!candidates.length) {
+        showToast('这段对话里没有发现新的可记住内容')
+        return
+      }
+      const preview = candidates
+        .slice(0, 4)
+        .map((text) => `· ${text}`)
+        .join('；')
+      askConfirm({
+        title: `发现 ${candidates.length} 条可记住的内容`,
+        body: `${preview}${candidates.length > 4 ? '…' : ''}`,
+        okLabel: '全部添加',
+        danger: false,
+        onOk: async () => {
+          let added = 0
+          for (const text of candidates) {
+            try {
+              const result = await api('/api/memory', {
+                method: 'POST',
+                body: JSON.stringify({ text }),
+              })
+              if (result.created) added += 1
+            } catch {}
+          }
+          await loadMemory({ silent: true })
+          showToast(added ? `已添加 ${added} 条记忆` : '这些内容已经在记忆里了', {
+            iconId: 'i-memory',
+          })
+        },
+      })
+    } catch (error) {
+      showToast(error.message || '整理记忆失败', { tone: 'error' })
+    } finally {
+      if (button) {
+        button.disabled = !state.currentId
+        button.textContent = original
+      }
+    }
+  }
+
+  async function rememberMessage(text) {
+    const value = String(text || '').trim()
+    if (!value) return
+    if ([...value].length > 500) {
+      await openMemory()
+      if (els.memoryInput) {
+        els.memoryInput.value = [...value].slice(0, 480).join('') + '…'
+        els.memoryInput.focus()
+      }
+      showToast('内容较长，已填入记忆框，请精简后添加')
+      return
+    }
+    try {
+      const data = await api('/api/memory', {
+        method: 'POST',
+        body: JSON.stringify({ text: value }),
+      })
+      state.memory.count = Number(data.count) || state.memory.count
+      if (data.item) {
+        state.memory.items = [data.item, ...state.memory.items.filter((entry) => entry.id !== data.item.id)]
+      }
+      updateMemoryUI()
+      showToast(data.created ? '已加入记忆' : '这条内容已经在记忆里了', {
+        iconId: 'i-memory',
+        actionLabel: '查看',
+        onAction: () => void openMemory(),
+      })
+    } catch (error) {
+      showToast(error.message || '加入记忆失败', { tone: 'error' })
+    }
+  }
+
   async function toggleNotify() {
     if (!('Notification' in window)) {
       showToast('当前浏览器不支持系统通知', { tone: 'error' })
@@ -5733,6 +6170,30 @@
   })
   els.notifyToggle?.addEventListener('click', () => void toggleNotify())
   els.backupBtn?.addEventListener('click', () => void backupAll())
+
+  els.memoryBtn?.addEventListener('click', () => void openMemory())
+  els.memorySheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-memory-close]')) closeMemory()
+  })
+  els.memoryForm?.addEventListener('submit', (event) => void submitMemory(event))
+  els.memoryInput?.addEventListener('input', () => {
+    if (els.memoryError) els.memoryError.hidden = true
+  })
+  els.memoryEnabledToggle?.addEventListener('click', () =>
+    void saveMemorySettings({ enabled: !state.memory.enabled }),
+  )
+  els.memoryAutoToggle?.addEventListener('click', () =>
+    void saveMemorySettings({ autoCapture: !state.memory.autoCapture }),
+  )
+  els.memoryToggle?.addEventListener('click', () =>
+    void saveMemorySettings({ enabled: !state.memory.enabled }),
+  )
+  els.memoryManageBtn?.addEventListener('click', () => {
+    closeSettings()
+    void openMemory()
+  })
+  els.memoryExtract?.addEventListener('click', () => void extractMemories())
+  els.memoryClear?.addEventListener('click', () => void clearMemories())
 
   function readKey(id) {
     return `dsh.read.${id}`
@@ -6449,6 +6910,7 @@
       els.archiveSheet,
       els.bookmarksSheet,
       els.promptSheet,
+      els.memorySheet,
       els.confirmModal,
       els.filesSheet,
       els.scenarioSheet,
@@ -7180,6 +7642,25 @@
       case 'notice':
         view.notice(event.text)
         break
+      case 'memory': {
+        const saved = Array.isArray(event.saved) ? event.saved : []
+        if (!saved.length) break
+        if (Number.isFinite(Number(event.count))) state.memory.count = Number(event.count)
+        if (typeof event.enabled === 'boolean') state.memory.enabled = event.enabled
+        updateMemoryUI()
+        if (els.memorySheet && !els.memorySheet.hidden) void loadMemory({ silent: true })
+        const message =
+          saved.length === 1
+            ? `已记住：${saved[0].text.length > 28 ? `${saved[0].text.slice(0, 28)}…` : saved[0].text}`
+            : `已记住 ${saved.length} 条新内容`
+        showToast(message, {
+          iconId: 'i-memory',
+          actionLabel: '查看',
+          onAction: () => void openMemory(),
+          duration: 5200,
+        })
+        break
+      }
       case 'error':
         view.setError(event.message)
         break
