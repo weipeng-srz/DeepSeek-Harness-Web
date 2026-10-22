@@ -4,7 +4,8 @@ import crypto from 'node:crypto'
 import { DATA_DIR, WORKSPACE_ROOT, SHARED_WORKSPACE } from './config.mjs'
 
 const STORE_PATH = path.join(DATA_DIR, 'conversations.json')
-const MAX_CONVERSATIONS = 300
+const MAX_CONVERSATIONS = 2000
+const MAX_TOTAL_CONVERSATIONS = 5000
 const DEFAULT_PERMISSION = 'workspace-write'
 const PERMISSION_VALUES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 export const UNDO_WINDOW_MS = 8000
@@ -159,8 +160,12 @@ export class ConversationStore {
   }
 
   assertCapacity(additional = 1) {
-    if (this.data.conversations.length + additional > MAX_CONVERSATIONS) {
-      throw Object.assign(new Error(`会话已达到 ${MAX_CONVERSATIONS} 个上限，请先导出备份并删除不需要的会话，等待撤销期结束后重试。`), { status: 409 })
+    const active = this.data.conversations.filter((conv) => !conv.deletedAt && !conv.archivedAt).length
+    if (active + additional > MAX_CONVERSATIONS) {
+      throw Object.assign(new Error(`活动会话已达到 ${MAX_CONVERSATIONS} 个上限，请归档或删除不用的会话后重试（归档不占活动额度）。`), { status: 409 })
+    }
+    if (this.data.conversations.length + additional > MAX_TOTAL_CONVERSATIONS) {
+      throw Object.assign(new Error(`会话总数将达到 ${MAX_TOTAL_CONVERSATIONS} 个上限，请先导出并清理归档。`), { status: 409 })
     }
   }
 
@@ -189,6 +194,7 @@ export class ConversationStore {
       codexModel: null,
       codexEffort: null,
       workspace: path.join(WORKSPACE_ROOT, id),
+      projectId: typeof options.projectId === 'string' && options.projectId ? options.projectId : null,
       messages: [],
     }
     return conv
@@ -213,11 +219,14 @@ export class ConversationStore {
     const offset = Math.max(Number(options.offset) || 0, 0)
     const lower = query.toLowerCase()
     const wantArchived = Boolean(options.archived)
+    const projectFilter = typeof options.projectId === 'string' ? options.projectId : ''
+    const unfiled = options.unfiled === true
     const active = this.data.conversations.filter(
       (conv) =>
         conv.owner === owner &&
         !conv.deletedAt &&
-        (wantArchived ? Boolean(conv.archivedAt) : !conv.archivedAt),
+        (wantArchived ? Boolean(conv.archivedAt) : !conv.archivedAt) &&
+        (unfiled ? !conv.projectId : projectFilter ? conv.projectId === projectFilter : true),
     )
 
     let matches = active
@@ -268,6 +277,7 @@ export class ConversationStore {
         preview: previewOf(conv),
         pinned: Boolean(conv.pinned),
         archived: Boolean(conv.archivedAt),
+        projectId: conv.projectId || null,
       }
       if (query) item.snippet = conv.__snippet || ''
       return item
@@ -282,6 +292,36 @@ export class ConversationStore {
       hasMore: offset + items.length < total,
       nextOffset: offset + items.length,
     }
+  }
+
+  unfileProject(projectId) {
+    let moved = 0
+    for (const conv of this.data.conversations) {
+      if (conv.projectId !== projectId) continue
+      conv.projectId = null
+      moved += 1
+    }
+    if (moved) this.scheduleSave()
+    return moved
+  }
+
+  projectCounts(owner) {
+    const counts = new Map()
+    let unfiled = 0
+    let total = 0
+    for (const conv of this.data.conversations) {
+      if (conv.owner !== owner || conv.deletedAt || conv.archivedAt) continue
+      total += 1
+      if (!conv.projectId) {
+        unfiled += 1
+        continue
+      }
+      const entry = counts.get(conv.projectId) || { count: 0, lastActiveAt: 0 }
+      entry.count += 1
+      entry.lastActiveAt = Math.max(entry.lastActiveAt, conv.updatedAt || 0)
+      counts.set(conv.projectId, entry)
+    }
+    return { counts, unfiled, total }
   }
 
   get(id) {
@@ -328,7 +368,11 @@ export class ConversationStore {
     const source = this.get(id)
     if (!source || source.owner !== owner || source.deletedAt) return null
     this.assertCapacity()
-    const copy = this.makeConversation(owner, { engine: source.engine, permission: source.permission })
+    const copy = this.makeConversation(owner, {
+      engine: source.engine,
+      permission: source.permission,
+      projectId: source.projectId,
+    })
     copy.codexModel = source.codexModel || null
     copy.codexEffort = source.codexEffort || null
     if (source.mode) copy.mode = source.mode
@@ -365,7 +409,7 @@ export class ConversationStore {
     return copy
   }
 
-  import(owner, payload) {
+  import(owner, payload, options = {}) {
     const invalid = (message) => Object.assign(new Error(message), { status: 400 })
     const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
     if (!isObject(payload) || !Array.isArray(payload.conversations)) throw invalid('备份格式不正确')
@@ -384,6 +428,10 @@ export class ConversationStore {
         engine: raw.engine === 'codex' ? 'codex' : 'dsr',
         permission: raw.permission,
       })
+      const projectId = typeof raw.projectId === 'string' ? raw.projectId : ''
+      conv.projectId = projectId && options.projectMap?.get(projectId)
+        ? options.projectMap.get(projectId)
+        : null
       conv.title = `[导入] ${String(raw.title || '对话').slice(0, 50)}`
       conv.createdAt = Number(raw.createdAt) || Date.now()
       conv.updatedAt = Number(raw.updatedAt) || Date.now()

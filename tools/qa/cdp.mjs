@@ -6,7 +6,7 @@ import path from 'node:path'
 
 const PORT = Number(process.env.CDP_PORT || 9222)
 const BASE = `http://127.0.0.1:${PORT}`
-const APP = process.env.APP_URL || 'http://127.0.0.1:8787'
+export const APP = process.env.APP_URL || 'http://127.0.0.1:8787'
 const ACCESS_CODE = process.env.ACCESS_CODE || ''
 
 export async function newTab(url = 'about:blank') {

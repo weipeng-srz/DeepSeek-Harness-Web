@@ -1,5 +1,5 @@
 /* DSH Chat service worker — shell + static cache, API always network. */
-const VERSION = 'dsh-v20'
+const VERSION = 'dsh-v21'
 const SHELL = [
   '/',
   '/favicon.svg',
@@ -23,6 +23,19 @@ self.addEventListener('activate', (event) => {
       .keys()
       .then((keys) => Promise.all(keys.filter((key) => key !== VERSION).map((key) => caches.delete(key))))
       .then(() => self.clients.claim()),
+  )
+})
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close()
+  const target = new URL(event.notification.data?.url || '/', self.location.origin).href
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const client of clients) {
+        if (client.url === target && 'focus' in client) return client.focus()
+      }
+      return self.clients.openWindow(target)
+    }),
   )
 })
 

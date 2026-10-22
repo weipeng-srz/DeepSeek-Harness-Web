@@ -16,15 +16,19 @@ import {
   NATIVE_ENABLED,
   NATIVE_WORKSPACE_TITLE,
   SHARED_WORKSPACE,
+  DATA_DIR,
   config,
+  saveConfig,
 } from './config.mjs'
 import { writeHeadlessPatch } from './profile.mjs'
 import { ConversationStore } from './store.mjs'
+import { ProjectStore } from './project-store.mjs'
 import { MemoryStore } from './memory-store.mjs'
 import { startDshRun } from './dsh.mjs'
 import { nativeBridge } from './native.mjs'
 import { codexBridge, effortLabel } from './codex-bridge.mjs'
 import { codexAvailable, ensureCodexHttpProvider, readCodexDefaults } from './codex.mjs'
+import { Notifier } from './notify.mjs'
 
 const VERSION = '3.1.0'
 const SERVER_EPOCH = Date.now()
@@ -74,7 +78,12 @@ const FALLBACK_PERMISSIONS = [
 const SINGLE_USER = config.singleUser !== false
 const SHARED_OWNER = 'single-user-owner'
 const store = new ConversationStore()
+const projects = new ProjectStore()
 const memory = new MemoryStore()
+const notifier = new Notifier({
+  settings: config.notify,
+  log: (message) => console.error(`[notify] ${message}`),
+})
 if (SINGLE_USER) {
   store.setOwner(SHARED_OWNER)
   void store.flush()
@@ -203,6 +212,19 @@ function lanAddresses() {
   return out
 }
 
+/* Public base URL used in notification deep links. Falls back to the first
+ * LAN address so a phone on the same Wi-Fi can open the conversation. */
+function notifyBaseUrl() {
+  const configured = String(config.notify?.baseUrl || '').trim()
+  if (configured) return configured.replace(/\/+$/, '')
+  const host = lanAddresses()[0] || '127.0.0.1'
+  return `http://${host}:${config.port}`
+}
+
+function conversationUrl(id) {
+  return id ? `${notifyBaseUrl()}/c/${encodeURIComponent(id)}` : notifyBaseUrl()
+}
+
 /* ── static files ────────────────────────────────────────────────────── */
 
 const COMPRESSIBLE = new Set(['.html', '.css', '.js', '.mjs', '.svg', '.json', '.txt', '.map'])
@@ -215,6 +237,7 @@ const CSS_BUNDLE_FILES = [
   'css/refine.css',
   'css/visual.css',
   'css/memory.css',
+  'css/projects.css',
 ]
 let cssBundleCache = { key: '', raw: null, gzip: null, etag: '' }
 
@@ -427,8 +450,35 @@ function convSummary(conv) {
     permission: normalizePermission(conv.permission),
     pinned: Boolean(conv.pinned),
     archived: Boolean(conv.archivedAt),
+    projectId: conv.projectId || null,
     running: activeRuns.has(conv.id),
   }
+}
+
+function projectSummary(project, counts) {
+  return {
+    ...project,
+    conversationCount: counts?.count || 0,
+    lastActiveAt: counts?.lastActiveAt || project.updatedAt || 0,
+  }
+}
+
+function projectsPayload(owner) {
+  const { counts, unfiled, total } = store.projectCounts(owner)
+  const list = projects.list().map((project) => projectSummary(project, counts.get(project.id)))
+  return {
+    projects: list,
+    counts: { total, unfiled, filed: total - unfiled, projects: list.length },
+  }
+}
+
+function ownedProject(id, res) {
+  const project = projects.get(id)
+  if (!project) {
+    sendJson(res, 404, { error: '项目不存在' })
+    return null
+  }
+  return project
 }
 
 function ownedConversation(id, res, owner) {
@@ -804,6 +854,18 @@ function serveConversationFile(req, res, conv, url) {
 }
 
 
+function projectPromptBlock(conv) {
+  if (!conv.projectId) return ''
+  const project = projects.get(conv.projectId)
+  if (!project) return ''
+  const parts = [`[项目上下文]`, `项目：${project.name}`]
+  if (project.instructions) parts.push(`项目指令：\n${project.instructions}`)
+  if (project.notes) parts.push(`项目资料：\n${project.notes}`)
+  parts.push('以上项目上下文仅在与本轮消息不冲突时生效；不要逐条复述项目资料。')
+  const block = parts.join('\n')
+  return block.length > 12000 ? block.slice(0, 12000) + '\n…（项目上下文已截断）' : block
+}
+
 function transcriptFor(conv, excludeId) {
   const lines = []
   for (const msg of conv.messages) {
@@ -944,8 +1006,10 @@ async function handleChat(req, res, owner, restId) {
   } else if (editOf) {
     promptText += '\n\n（这是编辑后的重新发送，请以本条消息为准，忽略此前相同问题的上下文。）'
   }
+  const projectBlock = projectPromptBlock(conv)
   const memoryBlock = memory.promptBlock(owner)
   if (memoryBlock) promptText = `${memoryBlock}\n\n${promptText}`
+  if (projectBlock) promptText = `${projectBlock}\n\n${promptText}`
 
   // The text is rendered with textContent on the client; store it as-is.
   const assistant = {
@@ -1257,6 +1321,13 @@ async function handleChat(req, res, owner, restId) {
             reason: event.reason ?? null,
             displayReason: event.displayReason ?? null,
           })
+          notifier.emit('approval', {
+            conversationId: conv.id,
+            title: conv.title,
+            toolName: event.toolName,
+            reason: event.displayReason || event.reason || '',
+            url: conversationUrl(conv.id),
+          })
         }
         break
       }
@@ -1275,6 +1346,12 @@ async function handleChat(req, res, owner, restId) {
             requestId: event.requestId,
             callId: event.callId ?? null,
             questions: event.questions,
+          })
+          notifier.emit('question', {
+            conversationId: conv.id,
+            title: conv.title,
+            questions: event.questions,
+            url: conversationUrl(conv.id),
           })
         }
         break
@@ -1406,6 +1483,7 @@ async function handleChat(req, res, owner, restId) {
         prompt: promptText,
         sessionId,
         cwd: conv.workspace,
+        permission: conv.permission,
         onEvent,
       })
       hub.kill = () => run.kill()
@@ -1472,6 +1550,18 @@ async function handleChat(req, res, owner, restId) {
     engine: conv.engine === 'codex' ? 'codex' : 'dsr',
     files: assistant.files,
   })
+
+  // Outbound notification: fire-and-forget, never blocks the run.
+  const notifyPayload = {
+    conversationId: conv.id,
+    title: conv.title,
+    text: assistant.text,
+    model: assistant.model || null,
+    durationMs: assistant.durationMs,
+    url: conversationUrl(conv.id),
+  }
+  if (status === 'done') notifier.emit('done', notifyPayload)
+  else if (status === 'error') notifier.emit('error', { ...notifyPayload, error: assistant.error || '运行失败' })
   } finally {
     activeRuns.delete(conv.id)
     startingRuns.delete(conv.id)
@@ -1556,6 +1646,38 @@ async function handleApi(req, res, url) {
 
   if (!isAuthed(req)) return sendJson(res, 401, { error: '需要访问码' })
 
+  if (rest[0] === 'projects') {
+    try {
+      if (rest.length === 1) {
+        if (req.method === 'GET') return sendJson(res, 200, projectsPayload(owner))
+        if (req.method === 'POST') {
+          const body = await readJsonBody(req)
+          const project = projects.create(body)
+          return sendJson(res, 201, { project: projectSummary(project), ...projectsPayload(owner) })
+        }
+        return sendJson(res, 405, { error: '不支持的方法' })
+      }
+      if (rest.length === 2) {
+        const project = ownedProject(rest[1], res)
+        if (!project) return
+        if (req.method === 'PATCH') {
+          const body = await readJsonBody(req)
+          const updated = projects.update(project.id, body)
+          return sendJson(res, 200, { project: projectSummary(updated), ...projectsPayload(owner) })
+        }
+        if (req.method === 'DELETE') {
+          const removed = projects.remove(project.id)
+          const moved = store.unfileProject(project.id)
+          return sendJson(res, 200, { ok: true, removed: Boolean(removed), moved, ...projectsPayload(owner) })
+        }
+        return sendJson(res, 405, { error: '不支持的方法' })
+      }
+      return sendJson(res, 404, { error: '未知接口' })
+    } catch (error) {
+      return sendJson(res, error.status || 400, { error: error.message || '项目操作失败' })
+    }
+  }
+
   if (rest[0] === 'memory') {
     try {
       if (rest.length === 1) {
@@ -1624,6 +1746,37 @@ async function handleApi(req, res, url) {
     }
   }
 
+  if (rest[0] === 'notify') {
+    if (rest.length === 1 && req.method === 'GET') {
+      return sendJson(res, 200, { ...notifier.status(), baseUrl: notifyBaseUrl() })
+    }
+    if (rest.length === 1 && req.method === 'PATCH') {
+      try {
+        const body = await readJsonBody(req)
+        const current = config.notify || {}
+        const nextRaw = {
+          ...current,
+          ...body,
+          channels: Array.isArray(body.channels) ? body.channels : current.channels || [],
+        }
+        config.notify = { ...nextRaw, ...notifier.update(nextRaw) }
+        saveConfig()
+        return sendJson(res, 200, { ...notifier.status(), baseUrl: notifyBaseUrl() })
+      } catch (error) {
+        return sendJson(res, error.status || 400, { error: error.message || '通知设置保存失败' })
+      }
+    }
+    if (rest.length === 2 && rest[1] === 'test' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const result = await notifier.test({
+        to: typeof body.to === 'string' ? body.to : '',
+        text: typeof body.text === 'string' ? body.text : '',
+      })
+      return sendJson(res, result.ok ? 200 : 502, result)
+    }
+    return sendJson(res, 405, { error: '不支持的方法' })
+  }
+
   if (rest[0] === 'permissions' && req.method === 'GET') {
     return sendJson(res, 200, await permissionCatalog())
   }
@@ -1651,15 +1804,33 @@ async function handleApi(req, res, url) {
   }
 
   if (rest[0] === 'backup' && req.method === 'GET') {
-    return sendJson(res, 200, { ...store.backup(owner), memory: memory.export(owner) })
+    const projectBackup = projects.export()
+    return sendJson(res, 200, {
+      ...store.backup(owner),
+      projects: projectBackup.projects,
+      memory: memory.export(owner),
+    })
   }
   if (rest[0] === 'backup' && rest[1] === 'import' && req.method === 'POST') {
     if (activeRuns.size > 0) return sendJson(res, 409, { error: '有任务正在生成，请稍后再导入' })
-    const body = await readJsonBody(req, 24 * 1024 * 1024)
+    const body = await readJsonBody(req, 128 * 1024 * 1024)
     if (!Array.isArray(body.conversations)) return sendJson(res, 400, { error: '备份格式不正确' })
-    const result = store.import(owner, body)
+    let projectImport = { imported: 0, map: new Map() }
+    let result
+    try {
+      projectImport = body.projects ? projects.import({ projects: body.projects }) : projectImport
+      result = store.import(owner, body, { projectMap: projectImport.map })
+    } catch (error) {
+      for (const id of projectImport.map.values()) projects.remove(id)
+      throw error
+    }
     const memories = body.memory ? memory.import(owner, body.memory) : { imported: 0, skipped: 0 }
-    return sendJson(res, 200, { ok: true, ...result, memories })
+    return sendJson(res, 200, {
+      ok: true,
+      ...result,
+      projects: projectImport.imported,
+      memories,
+    })
   }
 
   if (rest[0] === 'conversations') {
@@ -1669,7 +1840,9 @@ async function handleApi(req, res, url) {
         const limit = Number(url.searchParams.get('limit')) || 60
         const offset = Number(url.searchParams.get('offset')) || 0
         const archived = url.searchParams.get('archived') === '1'
-        const result = store.list(owner, { query, limit, offset, archived })
+        const projectId = url.searchParams.get('projectId') || ''
+        const unfiled = url.searchParams.get('unfiled') === '1'
+        const result = store.list(owner, { query, limit, offset, archived, projectId, unfiled })
         return sendJson(res, 200, {
           conversations: result.items.map((conv) => ({
             ...conv,
@@ -1684,7 +1857,11 @@ async function handleApi(req, res, url) {
         const body = await readJsonBody(req)
         const engine = body.engine === 'codex' ? 'codex' : 'dsr'
         const permission = normalizePermission(body.permission)
-        const conv = store.create(owner, { engine, permission })
+        const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
+        if (projectId && !projects.get(projectId)) {
+          return sendJson(res, 400, { error: '项目不存在' })
+        }
+        const conv = store.create(owner, { engine, permission, projectId })
         if (engine === 'codex') {
           const selection = resolveCodexSelection({
             codexModel: body.codexModel,
@@ -1780,6 +1957,14 @@ async function handleApi(req, res, url) {
         conv.pinned = body.pinned
         store.touch(conv)
       }
+      if (body.projectId !== undefined) {
+        const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
+        if (projectId && !projects.get(projectId)) return sendJson(res, 400, { error: '项目不存在' })
+        if (conv.projectId !== projectId) {
+          conv.projectId = projectId
+          store.touch(conv)
+        }
+      }
       if (typeof body.archived === 'boolean') {
         store.archive(conv.id, body.archived)
       }
@@ -1793,7 +1978,13 @@ async function handleApi(req, res, url) {
             if (conv.mode !== 'codex' && conv.dshSessionId) {
               void nativeBridge.setPermission(conv.dshSessionId, permission).catch(() => {})
             }
-            run.send({ t: 'permission', permission })
+            if (conv.mode === 'headless') {
+              // A headless child's sandbox mode is fixed at spawn. Be explicit
+              // instead of letting the chip imply the running turn changed.
+              run.send({ t: 'notice', text: '权限已保存，将在下一条消息生效（当前 headless 任务继续使用启动时的权限）。' })
+            } else {
+              run.send({ t: 'permission', permission })
+            }
           }
         }
       }
@@ -1996,6 +2187,48 @@ server.on('error', (err) => {
   process.exit(1)
 })
 
+// One process per data directory. Two servers would each keep a full copy of
+// conversations.json in memory and silently overwrite each other on save.
+const LOCK_PATH = path.join(DATA_DIR, 'server.lock')
+function acquireInstanceLock() {
+  try {
+    if (fs.existsSync(LOCK_PATH)) {
+      const raw = fs.readFileSync(LOCK_PATH, 'utf8')
+      const info = JSON.parse(raw)
+      const pid = Number(info.pid) || 0
+      if (pid && pid !== process.pid) {
+        let alive = false
+        try {
+          process.kill(pid, 0)
+          alive = true
+        } catch {}
+        if (alive) {
+          console.error(`[server] 已有一个实例在运行（pid ${pid}），为避免会话数据互相覆盖，本次启动退出。`)
+          return false
+        }
+      }
+    }
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+    fs.writeFileSync(LOCK_PATH, JSON.stringify({ pid: process.pid, startedAt: Date.now(), port: config.port }), { mode: 0o600 })
+    return true
+  } catch (error) {
+    // A lock problem must not prevent a single legitimate instance from booting.
+    console.error(`[server] 单实例锁检查失败，继续启动：${error.message}`)
+    return true
+  }
+}
+
+function releaseInstanceLock() {
+  try {
+    if (!fs.existsSync(LOCK_PATH)) return
+    const info = JSON.parse(fs.readFileSync(LOCK_PATH, 'utf8'))
+    if (Number(info.pid) === process.pid) fs.rmSync(LOCK_PATH, { force: true })
+  } catch {}
+}
+
+if (!acquireInstanceLock()) process.exit(1)
+process.on('exit', releaseInstanceLock)
+
 server.keepAliveTimeout = 65_000
 server.headersTimeout = 70_000
 
@@ -2048,7 +2281,7 @@ async function shutdown(signal) {
     } catch {}
   }
   codexBridge.shutdown()
-  await Promise.all([store.flush().catch(() => {}), memory.flush().catch(() => {})])
+  await Promise.all([store.flush().catch(() => {}), memory.flush().catch(() => {}), projects.flush().catch(() => {})])
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }

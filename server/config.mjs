@@ -38,6 +38,18 @@ function defaultConfig() {
     dshHome: '~/.dsh',
     desktopProfile: 'desktop',
     appBinary: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
+    // Outbound notifications. iMessage is the only channel for now and is
+    // driven through osascript, so it only works on macOS with Messages
+    // signed in. Empty channels keep the feature off.
+    notify: {
+      enabled: false,
+      channels: [],
+      quietHours: [],
+      mergeWindowSec: 60,
+      minIntervalSec: 5,
+      maxPerHour: 20,
+      baseUrl: '',
+    },
   }
 }
 
@@ -63,6 +75,18 @@ function readConfig() {
 }
 
 export const config = readConfig()
+
+/** Persist the merged config after a runtime settings change. */
+export function saveConfig() {
+  try {
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n', { mode: 0o600 })
+    return true
+  } catch (err) {
+    console.error(`[config] 写入失败：${err.message}`)
+    return false
+  }
+}
+
 export const DSH_HOME = path.resolve(
   config.dshHome.replace(/^~(?=$|\/)/, os.homedir()),
 )

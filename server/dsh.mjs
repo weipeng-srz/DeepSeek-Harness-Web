@@ -5,6 +5,12 @@ import { config, DSH_BIN, DSH_HOME, GENERATED_PATCH } from './config.mjs'
 const MAX_STDERR = 32 * 1024
 const MAX_JSON_LINE = 4 * 1024 * 1024
 
+export function permissionMode(permission) {
+  return ['read-only', 'workspace-write', 'danger-full-access'].includes(permission)
+    ? permission
+    : 'workspace-write'
+}
+
 function stripAnsi(value) {
   return value.replace(/\u001b\[[0-9;]*m/g, '')
 }
@@ -17,6 +23,7 @@ export function startDshRun({
   prompt,
   sessionId = null,
   cwd,
+  permission = 'workspace-write',
   timeoutMs = Math.max(1, Number(config.maxRunMinutes) || 30) * 60_000,
   onEvent = () => {},
 }) {
@@ -37,6 +44,10 @@ export function startDshRun({
     DSH_HOME,
     NO_COLOR: '1',
     TERM: 'dumb',
+    // Headless reads the same permission preset the UI shows. Without this
+    // the child always inherited workspace-write, so a read-only
+    // conversation could still write files.
+    DSH_PERMISSION_MODE: permissionMode(permission),
   }
   // The child should not inherit a browser-injected Vite/Electron dev flag.
   delete env.ELECTRON_RUN_AS_NODE_WAS_SET

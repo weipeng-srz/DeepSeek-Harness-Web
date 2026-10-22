@@ -1,6 +1,22 @@
-// API contract tests for the cycle-1 server changes.
-const BASE = process.env.APP_URL || 'http://127.0.0.1:8787'
-const CODE = process.env.ACCESS_CODE || ''
+// API contract tests. Defaults to an isolated sandbox so a test run can never
+// create, rename, or delete the user's real conversations.
+import { createSandbox } from './quality-harness.mjs'
+
+const sandbox = process.env.APP_URL
+  ? null
+  : await createSandbox({
+      port: Number(process.env.QA_PORT || 8810),
+      label: 'api-contract',
+      seedConversations: ['Alpha', 'Beta', 'Gamma'].map((name) => ({
+        title: `API ${name}`,
+        messages: [
+          { role: 'user', text: `OK ${name} question` },
+          { role: 'assistant', text: `OK ${name} answer`, status: 'done' },
+        ],
+      })),
+    })
+const BASE = process.env.APP_URL || sandbox.base
+const CODE = process.env.ACCESS_CODE || sandbox?.code || ''
 const results = []
 
 function record(name, ok, detail = '') {
@@ -135,11 +151,13 @@ async function main() {
   const failed = results.filter((r) => !r.ok)
   console.log(`\n${results.length - failed.length}/${results.length} passed`)
   const fs = await import('node:fs')
-  fs.writeFileSync('/tmp/dsh-api.json', JSON.stringify({ results }, null, 2))
+  fs.writeFileSync('/tmp/dsh-api.json', JSON.stringify({ base: BASE, sandbox: Boolean(sandbox), results }, null, 2))
+  await sandbox?.stop().catch(() => {})
   process.exit(failed.length ? 2 : 0)
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(error)
+  await sandbox?.stop().catch(() => {})
   process.exit(1)
 })

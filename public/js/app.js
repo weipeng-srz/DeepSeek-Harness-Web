@@ -60,6 +60,7 @@
     scenarioSheet: $('#scenarioSheet'),
     scenarioList: $('#scenarioList'),
     thread: $('#thread'),
+    srStatus: $('#srStatus'),
     composer: $('#composer'),
     input: $('#input'),
     sendBtn: $('#sendBtn'),
@@ -130,6 +131,7 @@
     archiveBtn: $('#archiveBtn'),
     batchBar: $('#batchBar'),
     batchCount: $('#batchCount'),
+    batchMove: $('#batchMove'),
     batchArchive: $('#batchArchive'),
     batchDelete: $('#batchDelete'),
     batchCancel: $('#batchCancel'),
@@ -149,6 +151,35 @@
     settingsSheet: $('#settingsSheet'),
     settingsBtn: $('#settingsBtn'),
     notifyToggle: $('#notifyToggle'),
+    projectsBtn: $('#projectsBtn'),
+    projectBar: $('#projectBar'),
+    projectChips: $('#projectChips'),
+    projectCountBadge: $('#projectCountBadge'),
+    projectsSheet: $('#projectsSheet'),
+    projectsList: $('#projectsList'),
+    projectsHint: $('#projectsHint'),
+    projectNewBtn: $('#projectNewBtn'),
+    projectEditor: $('#projectEditor'),
+    projectBackBtn: $('#projectBackBtn'),
+    projectForm: $('#projectForm'),
+    projectEmoji: $('#projectEmoji'),
+    projectName: $('#projectName'),
+    projectInstructions: $('#projectInstructions'),
+    projectNotes: $('#projectNotes'),
+    projectInstructionsCount: $('#projectInstructionsCount'),
+    projectNotesCount: $('#projectNotesCount'),
+    projectBudget: $('#projectBudget'),
+    projectColors: $('#projectColors'),
+    projectError: $('#projectError'),
+    projectSaveBtn: $('#projectSaveBtn'),
+    projectDeleteBtn: $('#projectDeleteBtn'),
+    moveSheet: $('#moveSheet'),
+    moveList: $('#moveList'),
+    emptyProject: $('#emptyProject'),
+    emptyProjectEmoji: $('#emptyProjectEmoji'),
+    emptyProjectName: $('#emptyProjectName'),
+    emptyProjectHint: $('#emptyProjectHint'),
+    emptyProjectEdit: $('#emptyProjectEdit'),
     memoryBtn: $('#memoryBtn'),
     memorySheet: $('#memorySheet'),
     memoryCountBadge: $('#memoryCountBadge'),
@@ -195,6 +226,14 @@
     native: false,
     nativeEnabled: true,
     conversations: [],
+    projects: [],
+    projectCounts: { total: 0, unfiled: 0, filed: 0, projects: 0 },
+    activeProjectId: localStorage.getItem('dsh.project') || '',
+    projectsLoaded: false,
+    projectsFocus: null,
+    editingProjectId: null,
+    moveTargets: [],
+    moveFocus: null,
     search: '',
     currentId: null,
     navigationRequest: 0,
@@ -242,6 +281,7 @@
     pendingSend: null,
     unread: false,
     lastSync: Date.now(),
+    lastDeleted: null,
     appHeight: 0,
     baseTitle: 'DSH Chat',
     prefs: loadPrefs(),
@@ -288,7 +328,7 @@
     const layers = [els.filesSheet, els.scenarioSheet, els.filePreview,
       els.statsModal, els.confirmModal, els.palette, els.shortcutsSheet,
       els.renameModal, els.settingsSheet, els.bookmarksSheet, els.promptSheet,
-      els.archiveSheet, els.quickSwitcher]
+      els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet]
     const codexModal = document.querySelector('.codex-pop[aria-modal="true"]')
     if (els.shell) els.shell.inert = layers.some((layer) => layer && !layer.hidden) || Boolean(codexModal)
   }
@@ -377,7 +417,7 @@
     {
       id: 'computer',
       title: '操作电脑',
-      desc: '让 Agent 执行桌面任务',
+      desc: '让 Agent 执行本地任务',
       need: '想完成的任务',
       icon: 'i-monitor',
       template:
@@ -404,6 +444,15 @@
   ]
 
   /* ── basic helpers ─────────────────────────────────────────────────── */
+
+  function announce(message) {
+    if (!els.srStatus || !message) return
+    els.srStatus.textContent = ''
+    // Re-setting the same text must produce a fresh announcement.
+    requestAnimationFrame(() => {
+      if (els.srStatus) els.srStatus.textContent = message
+    })
+  }
 
   function showToast(message, options = {}) {
     const opts = typeof options === 'string' ? {} : options
@@ -446,6 +495,81 @@
     setTimeout(() => {
       if (!els.toast.classList.contains('show')) els.toast.hidden = true
     }, 220)
+  }
+
+  function markdownToPlain(text) {
+    const holder = document.createElement('div')
+    holder.innerHTML = window.Markdown.render(String(text || ''))
+    const lines = []
+    for (const node of holder.querySelectorAll('h1,h2,h3,h4,h5,h6,p,li,blockquote,pre,tr')) {
+      if (node.closest('pre') && node.tagName !== 'PRE') continue
+      if (node.tagName === 'TR') {
+        const cells = [...node.children].map((cell) => cell.textContent.replace(/\s+/g, ' ').trim())
+        if (cells.length) lines.push(cells.join('\t'))
+        continue
+      }
+      const value = node.textContent.replace(/\n{3,}/g, '\n\n').trim()
+      if (value) lines.push(node.tagName === 'LI' ? `• ${value}` : value)
+    }
+    if (!lines.length) {
+      holder.innerHTML = ''
+      return String(text || '').replace(/\*\*|__|`/g, '').trim()
+    }
+    return lines.join('\n')
+  }
+
+  async function copyRich(text) {
+    const html = window.Markdown.render(String(text || ''))
+    const plain = markdownToPlain(text)
+    try {
+      if (navigator.clipboard?.write && window.ClipboardItem) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/plain': new Blob([plain], { type: 'text/plain' }),
+            'text/html': new Blob([html], { type: 'text/html' }),
+          }),
+        ])
+        return true
+      }
+    } catch {}
+    return copyText(plain)
+  }
+
+  function tableToTSV(table) {
+    return [...table.querySelectorAll('tr')]
+      .map((row) =>
+        [...row.children]
+          .map((cell) => cell.textContent.replace(/\s+/g, ' ').trim().replace(/\t/g, ' '))
+          .join('\t'),
+      )
+      .join('\n')
+  }
+
+  function decorateTables(root = document) {
+    for (const wrap of root.querySelectorAll('.table-wrap:not([data-copy-ready])')) {
+      const table = wrap.querySelector('table')
+      if (!table) continue
+      wrap.dataset.copyReady = 'true'
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'table-copy'
+      button.title = '复制表格（TSV，可直接粘贴到 Excel / Numbers）'
+      button.setAttribute('aria-label', '复制表格为 TSV')
+      button.innerHTML = icon('i-copy')
+      button.addEventListener('click', async (event) => {
+        event.stopPropagation()
+        const ok = await copyText(tableToTSV(table))
+        if (!ok) return showToast('复制表格失败', { tone: 'error' })
+        button.classList.add('copied')
+        button.innerHTML = icon('i-check')
+        showToast('表格已复制，可粘贴到 Excel')
+        setTimeout(() => {
+          button.classList.remove('copied')
+          button.innerHTML = icon('i-copy')
+        }, 1500)
+      })
+      wrap.appendChild(button)
+    }
   }
 
   async function copyText(text) {
@@ -737,6 +861,20 @@
 
   async function choosePermission(value) {
     if (!value) return
+    if (value === 'danger-full-access' && state.permission !== 'danger-full-access') {
+      closePermissionMenu()
+      askConfirm({
+        title: '切换到完全权限？',
+        body: 'Agent 将不再对删除、覆盖文件或执行外部命令请求授权，任何操作都会直接执行。只在你完全信任当前任务时使用；也可以随时切回标准权限。',
+        okLabel: '仍要切换',
+        onOk: () => applyPermission(value),
+      })
+      return
+    }
+    await applyPermission(value)
+  }
+
+  async function applyPermission(value) {
     const entry = permissionEntry(value)
     const previous = state.permission
     state.permission = value
@@ -1239,6 +1377,85 @@
     return 'binary'
   }
 
+  function parseDelimited(text, delimiter) {
+    const rows = []
+    let row = []
+    let field = ''
+    let quoted = false
+    for (let i = 0; i < text.length; i += 1) {
+      const char = text[i]
+      if (quoted) {
+        if (char === '"') {
+          if (text[i + 1] === '"') {
+            field += '"'
+            i += 1
+          } else {
+            quoted = false
+          }
+        } else {
+          field += char
+        }
+        continue
+      }
+      if (char === '"') {
+        quoted = true
+      } else if (char === delimiter) {
+        row.push(field)
+        field = ''
+      } else if (char === '\n' || char === '\r') {
+        if (char === '\r' && text[i + 1] === '\n') i += 1
+        row.push(field)
+        rows.push(row)
+        row = []
+        field = ''
+      } else {
+        field += char
+      }
+    }
+    if (field !== '' || row.length) {
+      row.push(field)
+      rows.push(row)
+    }
+    return rows.filter((cells) => cells.some((cell) => cell !== ''))
+  }
+
+  function renderDelimitedPreview(text, delimiter, label) {
+    const rows = parseDelimited(text, delimiter)
+    if (!rows.length) return null
+    const maxRows = 300
+    const maxCols = 60
+    const wrap = document.createElement('div')
+    wrap.className = 'table-wrap csv-preview'
+    const table = document.createElement('table')
+    const thead = document.createElement('thead')
+    const headRow = document.createElement('tr')
+    for (const cell of rows[0].slice(0, maxCols)) {
+      const th = document.createElement('th')
+      th.textContent = cell
+      headRow.appendChild(th)
+    }
+    thead.appendChild(headRow)
+    const tbody = document.createElement('tbody')
+    for (const row of rows.slice(1, maxRows)) {
+      const tr = document.createElement('tr')
+      for (const cell of row.slice(0, maxCols)) {
+        const td = document.createElement('td')
+        td.textContent = cell
+        tr.appendChild(td)
+      }
+      tbody.appendChild(tr)
+    }
+    table.append(thead, tbody)
+    wrap.appendChild(table)
+    const note = document.createElement('p')
+    note.className = 'csv-note'
+    note.textContent = `${label} · ${rows.length} 行${rows.length > maxRows ? `（仅显示前 ${maxRows} 行）` : ''}${rows.some((row) => row.length > maxCols) ? ` · 仅显示前 ${maxCols} 列` : ''}`
+    const holder = document.createElement('div')
+    holder.className = 'csv-preview-wrap'
+    holder.append(wrap, note)
+    return holder
+  }
+
   let previewVersion = 0
   let previewController = null
 
@@ -1309,7 +1526,10 @@
     }
     if (kind === 'binary') {
       loading.className = 'file-preview-error'
-      loading.textContent = '这种文件类型不支持在线预览。请下载后用本地应用打开。'
+      const ext = String(file.name || '').split('.').pop().toLowerCase()
+      loading.textContent = ['xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt'].includes(ext)
+        ? 'Excel / Word / PPT 暂不支持站内预览。可以下载后用本地应用打开，或让 Agent 转成 CSV / Markdown 再预览。'
+        : '这种文件类型不支持在线预览。请下载后用本地应用打开。'
       return
     }
     const controller = new AbortController()
@@ -1320,6 +1540,15 @@
       const text = await response.text()
       if (!current()) return
       loading.remove()
+      const ext = String(file.name || '').split('.').pop().toLowerCase()
+      if ((ext === 'csv' || ext === 'tsv') && text.length <= 400_000) {
+        const table = renderDelimitedPreview(text, ext === 'tsv' ? '\t' : ',', ext === 'tsv' ? 'TSV' : 'CSV')
+        if (table) {
+          els.filePreviewBody.appendChild(table)
+          decorateTables(els.filePreviewBody)
+          return
+        }
+      }
       const pre = document.createElement('pre')
       pre.textContent = text.length > 400_000 ? `${text.slice(0, 400_000)}\n\n…（内容过长，已截断）` : text
       els.filePreviewBody.appendChild(pre)
@@ -2239,6 +2468,7 @@
     if (desktopQuery.matches) els.input.focus({ preventScroll: true })
 
     try {
+      await loadProjects({ silent: true })
       await refreshConversations()
       setConnection('online')
     } catch (error) {
@@ -2764,6 +2994,7 @@
     clearTimeout(state.initRetryTimer)
     state.initRetryTimer = null
     setConnection('online')
+    if (!state.projectsLoaded) await loadProjects({ silent: true })
     if (!els.shell.hidden) {
       setConnection('online')
       await resumeConnection()
@@ -2955,7 +3186,7 @@
   async function refreshConversations() {
     const version = ++conversationRefreshVersion
     invalidateConversationPage()
-    const data = await api('/api/conversations?limit=60')
+    const data = await api(`/api/conversations?limit=60${projectQuerySuffix()}`)
     if (version !== conversationRefreshVersion) return
     const incoming = data.conversations || []
     state.conversations = incoming
@@ -2982,6 +3213,7 @@
     if (state.search.trim()) await runSearch({ silent: true })
     else renderConversations()
     state.lastSync = Date.now()
+    if (state.projectsLoaded) void loadProjects({ silent: true })
     scheduleCacheSave()
   }
 
@@ -2996,8 +3228,8 @@
     els.convLoadMore.disabled = true
     try {
       const path = query
-        ? `/api/conversations?q=${encodeURIComponent(query)}&limit=60&offset=${offset}`
-        : `/api/conversations?limit=60&offset=${offset}`
+        ? `/api/conversations?q=${encodeURIComponent(query)}&limit=60&offset=${offset}${projectQuerySuffix()}`
+        : `/api/conversations?limit=60&offset=${offset}${projectQuerySuffix()}`
       const data = await api(path, { signal: request.controller.signal })
       if (!current()) return
       const incoming = data.conversations || []
@@ -3037,7 +3269,7 @@
     conversationSearchPending = true
     els.convLoadMore.disabled = true
     try {
-      const data = await api(`/api/conversations?q=${encodeURIComponent(query)}&limit=60`)
+      const data = await api(`/api/conversations?q=${encodeURIComponent(query)}&limit=60${projectQuerySuffix()}`)
       if (state.search.trim() !== query || version !== conversationSearchVersion) return
       state.searchResults = data.conversations || []
       state.searchTotal = Number(data.total) || state.searchResults.length
@@ -3132,6 +3364,20 @@
       ? `${engineLabel}正在生成…`
       : `${engineLabel}${relativeTime(conv.updatedAt)}`
     if (count) meta.title = `${count} 条消息`
+    const project = !state.activeProjectId && conv.projectId ? projectById(conv.projectId) : null
+    if (project) {
+      const badge = document.createElement('span')
+      badge.className = 'project-badge'
+      badge.title = `项目：${project.name}`
+      const emoji = document.createElement('span')
+      emoji.className = 'project-badge-emoji'
+      emoji.textContent = project.emoji || '📁'
+      const name = document.createElement('span')
+      name.className = 'project-badge-text'
+      name.textContent = project.name
+      badge.append(emoji, name)
+      meta.prepend(badge, document.createTextNode(' · '))
+    }
     main.append(meta)
 
     main.addEventListener('dblclick', (event) => {
@@ -3273,6 +3519,483 @@
       const active = els.convList.querySelector('.conv-item.active')
       if (active && !query) active.scrollIntoView({ block: 'nearest' })
     })
+  }
+
+
+  /* ── projects / spaces ─────────────────────────────────────────────── */
+
+  const PROJECT_COLORS = [
+    ['blue', '#0a84ff'],
+    ['violet', '#8b5cf6'],
+    ['green', '#16a34a'],
+    ['orange', '#f59e0b'],
+    ['pink', '#ec4899'],
+    ['graphite', '#6b7280'],
+  ]
+
+  function projectById(id) {
+    return state.projects.find((project) => project.id === id) || null
+  }
+
+  function activeProject() {
+    return state.activeProjectId && state.activeProjectId !== '__unfiled__'
+      ? projectById(state.activeProjectId)
+      : null
+  }
+
+  function projectQuerySuffix() {
+    if (!state.activeProjectId) return ''
+    if (state.activeProjectId === '__unfiled__') return '&unfiled=1'
+    return `&projectId=${encodeURIComponent(state.activeProjectId)}`
+  }
+
+  function projectColor(project) {
+    return PROJECT_COLORS.find(([name]) => name === project?.color)?.[1] || '#0a84ff'
+  }
+
+  function applyProjectsPayload(data) {
+    if (Array.isArray(data.projects)) state.projects = data.projects
+    if (data.counts) state.projectCounts = data.counts
+    if (state.activeProjectId && state.activeProjectId !== '__unfiled__' && !projectById(state.activeProjectId)) {
+      state.activeProjectId = ''
+      localStorage.removeItem('dsh.project')
+    }
+    state.projectsLoaded = true
+    renderProjectUI()
+  }
+
+  async function loadProjects({ silent = false } = {}) {
+    try {
+      const data = await api('/api/projects')
+      applyProjectsPayload(data)
+      return data
+    } catch (error) {
+      if (!silent) showToast(error.message || '项目加载失败', { tone: 'error' })
+      return null
+    }
+  }
+
+  function renderProjectUI() {
+    if (els.projectCountBadge) {
+      const count = state.projects.length
+      els.projectCountBadge.hidden = !count
+      els.projectCountBadge.textContent = String(count)
+    }
+    if (els.projectBar) {
+      els.projectBar.hidden = state.projects.length === 0
+      els.projectChips.replaceChildren()
+      if (state.projects.length) {
+        const all = document.createElement('button')
+        all.type = 'button'
+        all.className = 'project-chip' + (!state.activeProjectId ? ' active' : '')
+        all.dataset.projectId = ''
+        all.setAttribute('aria-pressed', String(!state.activeProjectId))
+        all.textContent = '全部'
+        els.projectChips.appendChild(all)
+        for (const project of state.projects) {
+          const chip = document.createElement('button')
+          chip.type = 'button'
+          chip.className = 'project-chip' + (state.activeProjectId === project.id ? ' active' : '')
+          chip.dataset.projectId = project.id
+          chip.setAttribute('aria-pressed', String(state.activeProjectId === project.id))
+          chip.title = project.instructions ? `${project.name} · ${project.conversationCount} 个对话` : `${project.name} · ${project.conversationCount} 个对话`
+          const emoji = document.createElement('span')
+          emoji.className = 'project-chip-emoji'
+          emoji.textContent = project.emoji || '📁'
+          const name = document.createElement('span')
+          name.textContent = project.name
+          const count = document.createElement('span')
+          count.className = 'project-chip-count'
+          count.textContent = String(project.conversationCount || 0)
+          chip.append(emoji, name, count)
+          els.projectChips.appendChild(chip)
+        }
+        if (state.projectCounts.unfiled > 0) {
+          const unfiled = document.createElement('button')
+          unfiled.type = 'button'
+          unfiled.className = 'project-chip' + (state.activeProjectId === '__unfiled__' ? ' active' : '')
+          unfiled.dataset.projectId = '__unfiled__'
+          unfiled.setAttribute('aria-pressed', String(state.activeProjectId === '__unfiled__'))
+          unfiled.title = `${state.projectCounts.unfiled} 个未归类对话`
+          const name = document.createElement('span')
+          name.textContent = '未归类'
+          const count = document.createElement('span')
+          count.className = 'project-chip-count'
+          count.textContent = String(state.projectCounts.unfiled)
+          unfiled.append(name, count)
+          els.projectChips.appendChild(unfiled)
+        }
+        const add = document.createElement('button')
+        add.type = 'button'
+        add.className = 'project-chip project-add-chip'
+        add.dataset.action = 'new-project'
+        add.setAttribute('aria-label', '新建项目')
+        add.textContent = '+ 项目'
+        els.projectChips.appendChild(add)
+      }
+    }
+    updateEmptyProject()
+    if (els.convList) {
+      // Project badges are rendered per row; refresh only when a project name
+      // or color changed, not on every keystroke in the search box.
+      if (!canUseProjectLiteRefresh()) renderConversations()
+    }
+  }
+
+  function canUseProjectLiteRefresh() {
+    return document.activeElement === els.convSearch && state.search.trim() !== ''
+  }
+
+  function updateEmptyProject() {
+    if (!els.emptyProject) return
+    const project = activeProject()
+    els.emptyProject.hidden = !project
+    if (!project) return
+    els.emptyProject.hidden = false
+    els.emptyProjectEmoji.textContent = project.emoji || '📁'
+    els.emptyProjectName.textContent = project.name
+    els.emptyProjectHint.textContent = project.instructions
+      ? '提问会自动带上项目指令与资料'
+      : '还没有项目指令，点「编辑」补充'
+    els.emptyProject.style.setProperty('--project-color', projectColor(project))
+  }
+
+  async function setProjectFilter(id, { close = true } = {}) {
+    state.activeProjectId = id === '__unfiled__' || (id && projectById(id)) ? id : ''
+    if (state.activeProjectId) localStorage.setItem('dsh.project', state.activeProjectId)
+    else localStorage.removeItem('dsh.project')
+    renderProjectUI()
+    if (close) closeProjects()
+    await refreshConversations()
+    if (!state.currentId) showEmptyChat()
+  }
+
+  function openProjects() {
+    state.projectsFocus = document.activeElement
+    els.projectsSheet.hidden = false
+    els.projectEditor.hidden = true
+    els.projectsList.hidden = false
+    renderProjects()
+    void loadProjects({ silent: true }).then(() => {
+      if (!els.projectsSheet.hidden && els.projectEditor.hidden) renderProjects()
+    })
+    requestAnimationFrame(() => {
+      els.projectsList.querySelector('.project-row-main')?.focus({ preventScroll: true })
+    })
+    document.body.classList.add('sheet-open')
+    lockShell()
+  }
+
+  function closeProjects({ restoreFocus = true } = {}) {
+    if (!els.projectsSheet || els.projectsSheet.hidden) return
+    els.projectsSheet.hidden = true
+    document.body.classList.remove('sheet-open')
+    lockShell()
+    if (restoreFocus) {
+      const target = state.projectsFocus
+      state.projectsFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+      else els.projectsBtn?.focus({ preventScroll: true })
+    }
+  }
+
+  function renderProjects() {
+    els.projectsList.replaceChildren()
+    if (!state.projects.length) {
+      const empty = document.createElement('div')
+      empty.className = 'projects-empty'
+      empty.textContent = '还没有项目。把「美股研究」「装修」「论文」这类长期主题建成项目，对话和指令就不会散在最近列表里。'
+      els.projectsList.appendChild(empty)
+      return
+    }
+    for (const project of state.projects) {
+      const row = document.createElement('div')
+      row.className = 'project-row' + (state.activeProjectId === project.id ? ' active' : '')
+      row.dataset.projectId = project.id
+      const main = document.createElement('button')
+      main.type = 'button'
+      main.className = 'project-row-main'
+      main.setAttribute('aria-label', `筛选项目：${project.name}`)
+      const avatar = document.createElement('span')
+      avatar.className = 'project-avatar'
+      avatar.style.setProperty('--project-color', projectColor(project))
+      avatar.textContent = project.emoji || '📁'
+      const textWrap = document.createElement('span')
+      textWrap.className = 'project-row-text'
+      const name = document.createElement('span')
+      name.className = 'project-row-name'
+      name.textContent = project.name
+      if (project.pinned) {
+        const pin = document.createElement('span')
+        pin.className = 'conv-pin-dot'
+        pin.innerHTML = icon('i-pin')
+        name.appendChild(pin)
+      }
+      const meta = document.createElement('span')
+      meta.className = 'project-row-meta'
+      const updated = project.lastActiveAt ? relativeTime(project.lastActiveAt) : '刚刚创建'
+      meta.textContent = `${project.conversationCount || 0} 个对话 · ${updated}${project.instructions ? ' · 有指令' : ''}`
+      textWrap.append(name, meta)
+      main.append(avatar, textWrap)
+      main.addEventListener('click', () => {
+        void setProjectFilter(project.id)
+      })
+      const edit = document.createElement('button')
+      edit.type = 'button'
+      edit.className = 'project-row-edit'
+      edit.setAttribute('aria-label', `编辑项目：${project.name}`)
+      edit.innerHTML = icon('i-edit')
+      edit.addEventListener('click', (event) => {
+        event.stopPropagation()
+        openProjectEditor(project.id)
+      })
+      row.append(main, edit)
+      els.projectsList.appendChild(row)
+    }
+  }
+
+  function syncProjectColorSelection(color) {
+    for (const button of els.projectColors.querySelectorAll('.project-color')) {
+      button.setAttribute('aria-checked', String(button.dataset.color === color))
+    }
+  }
+
+  function openProjectEditor(id = '') {
+    const project = id ? projectById(id) : null
+    state.editingProjectId = project?.id || ''
+    els.projectsList.hidden = true
+    els.projectEditor.hidden = false
+    els.projectsHint.hidden = true
+    els.projectError.hidden = true
+    els.projectEmoji.value = project?.emoji || '📁'
+    els.projectName.value = project?.name || ''
+    els.projectInstructions.value = project?.instructions || ''
+    els.projectNotes.value = project?.notes || ''
+    els.projectDeleteBtn.hidden = !project
+    els.projectSaveBtn.textContent = project ? '保存项目' : '创建项目'
+    els.projectColors.replaceChildren()
+    for (const [name, value] of PROJECT_COLORS) {
+      const swatch = document.createElement('button')
+      swatch.type = 'button'
+      swatch.className = 'project-color'
+      swatch.dataset.color = name
+      swatch.style.setProperty('--swatch', value)
+      swatch.setAttribute('role', 'radio')
+      swatch.setAttribute('aria-label', `颜色：${name}`)
+      swatch.addEventListener('click', () => syncProjectColorSelection(name))
+      els.projectColors.appendChild(swatch)
+    }
+    syncProjectColorSelection(project?.color || 'blue')
+    updateProjectBudget()
+    requestAnimationFrame(() => els.projectName.focus({ preventScroll: true }))
+    els.projectEditor.scrollTop = 0
+  }
+
+  function updateProjectBudget() {
+    const instructions = [...(els.projectInstructions?.value || '')].length
+    const notes = [...(els.projectNotes?.value || '')].length
+    if (els.projectInstructionsCount) {
+      els.projectInstructionsCount.textContent = `${instructions}/4000`
+      els.projectInstructionsCount.classList.toggle('over', instructions > 4000)
+    }
+    if (els.projectNotesCount) {
+      els.projectNotesCount.textContent = `${notes}/8000`
+      els.projectNotesCount.classList.toggle('over', notes > 8000)
+    }
+    const total = Math.min(instructions, 4000) + Math.min(notes, 8000)
+    if (els.projectBudget) {
+      els.projectBudget.textContent = `实际注入预算：${total.toLocaleString('zh-CN')} / 12,000 字${total > 12000 ? ' · 超出部分不会注入' : ''}`
+      els.projectBudget.classList.toggle('over', total > 12000)
+    }
+  }
+
+  function projectEditorValues() {
+    const color = els.projectColors.querySelector('.project-color[aria-checked="true"]')?.dataset.color || 'blue'
+    return {
+      name: els.projectName.value.trim(),
+      emoji: els.projectEmoji.value.trim() || '📁',
+      color,
+      instructions: els.projectInstructions.value.trim(),
+      notes: els.projectNotes.value.trim(),
+    }
+  }
+
+  async function submitProject(event) {
+    event.preventDefault()
+    const values = projectEditorValues()
+    if (!values.name) {
+      els.projectError.textContent = '项目名称不能为空'
+      els.projectError.hidden = false
+      els.projectName.focus()
+      return
+    }
+    els.projectSaveBtn.disabled = true
+    els.projectError.hidden = true
+    try {
+      const path = state.editingProjectId ? `/api/projects/${state.editingProjectId}` : '/api/projects'
+      const data = await api(path, {
+        method: state.editingProjectId ? 'PATCH' : 'POST',
+        body: JSON.stringify(values),
+      })
+      if (data.projects) applyProjectsPayload(data)
+      else await loadProjects({ silent: true })
+      showToast(state.editingProjectId ? '项目已保存' : '项目已创建')
+      state.editingProjectId = null
+      els.projectEditor.hidden = true
+      els.projectsList.hidden = false
+      els.projectsHint.hidden = false
+      renderProjects()
+    } catch (error) {
+      els.projectError.textContent = error.message || '保存失败'
+      els.projectError.hidden = false
+    } finally {
+      els.projectSaveBtn.disabled = false
+    }
+  }
+
+  async function deleteEditingProject() {
+    const id = state.editingProjectId
+    const project = id ? projectById(id) : null
+    if (!project) return
+    askConfirm({
+      title: `删除项目「${project.name}」？`,
+      body: `项目里的 ${project.conversationCount || 0} 个对话不会被删除，只会回到「未归档」的最近列表。项目指令和资料会一并删除。`,
+      okLabel: '删除项目',
+      onOk: async () => {
+        try {
+          const data = await api(`/api/projects/${id}`, { method: 'DELETE' })
+          applyProjectsPayload(data)
+          if (state.activeProjectId === id) {
+            state.activeProjectId = ''
+            localStorage.removeItem('dsh.project')
+          }
+          state.editingProjectId = null
+          els.projectEditor.hidden = true
+          els.projectsList.hidden = false
+          els.projectsHint.hidden = false
+          renderProjects()
+          renderProjectUI()
+          await refreshConversations()
+          showToast(`项目已删除，${data.moved || 0} 个对话已移出`)
+        } catch (error) {
+          showToast(error.message || '删除失败', { tone: 'error' })
+        }
+      },
+    })
+  }
+
+  function openMoveSheet(ids) {
+    const targets = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean))]
+    if (!targets.length) return
+    state.moveTargets = targets
+    state.moveFocus = document.activeElement
+    els.moveSheet.hidden = false
+    document.body.classList.add('sheet-open')
+    renderMoveList()
+    requestAnimationFrame(() => els.moveList.querySelector('.move-item')?.focus({ preventScroll: true }))
+  }
+
+  function closeMoveSheet({ restoreFocus = true } = {}) {
+    if (!els.moveSheet || els.moveSheet.hidden) return
+    els.moveSheet.hidden = true
+    document.body.classList.remove('sheet-open')
+    lockShell()
+    if (restoreFocus) {
+      const target = state.moveFocus
+      state.moveFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  function renderMoveList() {
+    els.moveList.replaceChildren()
+    const currentProjectId = state.moveTargets.length === 1
+      ? (state.conversations.find((conv) => conv.id === state.moveTargets[0]) ||
+        state.searchResults.find((conv) => conv.id === state.moveTargets[0]))?.projectId || ''
+      : ''
+    const unfiled = document.createElement('button')
+    unfiled.type = 'button'
+    unfiled.className = 'move-item' + (!currentProjectId ? ' current' : '')
+    unfiled.dataset.projectId = ''
+    const unfiledAvatar = document.createElement('span')
+    unfiledAvatar.className = 'project-avatar'
+    unfiledAvatar.style.setProperty('--project-color', '#8e8e93')
+    unfiledAvatar.textContent = '—'
+    const unfiledText = document.createElement('span')
+    unfiledText.className = 'move-item-text'
+    const unfiledName = document.createElement('span')
+    unfiledName.className = 'move-item-name'
+    unfiledName.textContent = '移出项目'
+    const unfiledMeta = document.createElement('span')
+    unfiledMeta.className = 'move-item-meta'
+    unfiledMeta.textContent = '回到最近列表，不删除对话'
+    unfiledText.append(unfiledName, unfiledMeta)
+    unfiled.append(unfiledAvatar, unfiledText)
+    if (!currentProjectId) unfiled.appendChild(moveCheck())
+    els.moveList.appendChild(unfiled)
+    for (const project of state.projects) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'move-item' + (currentProjectId === project.id ? ' current' : '')
+      button.dataset.projectId = project.id
+      const avatar = document.createElement('span')
+      avatar.className = 'project-avatar'
+      avatar.style.setProperty('--project-color', projectColor(project))
+      avatar.textContent = project.emoji || '📁'
+      const wrap = document.createElement('span')
+      wrap.className = 'move-item-text'
+      const name = document.createElement('span')
+      name.className = 'move-item-name'
+      name.textContent = project.name
+      const meta = document.createElement('span')
+      meta.className = 'move-item-meta'
+      meta.textContent = `${project.conversationCount || 0} 个对话`
+      wrap.append(name, meta)
+      button.append(avatar, wrap)
+      if (currentProjectId === project.id) button.appendChild(moveCheck())
+      els.moveList.appendChild(button)
+    }
+    if (!state.projects.length) {
+      const empty = document.createElement('p')
+      empty.className = 'projects-empty'
+      empty.textContent = '还没有项目，先在侧栏「项目」里新建一个。'
+      els.moveList.appendChild(empty)
+    }
+    for (const item of els.moveList.querySelectorAll('.move-item')) {
+      item.addEventListener('click', () => void moveTargetsToProject(item.dataset.projectId || ''))
+    }
+  }
+
+  function moveCheck() {
+    const mark = document.createElement('span')
+    mark.className = 'move-item-check'
+    mark.innerHTML = icon('i-check')
+    return mark
+  }
+
+  async function moveTargetsToProject(projectId) {
+    const ids = [...state.moveTargets]
+    const buttons = [...els.moveList.querySelectorAll('.move-item')]
+    for (const button of buttons) button.disabled = true
+    try {
+      for (const id of ids) {
+        await api(`/api/conversations/${id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ projectId: projectId || null }),
+        })
+      }
+      closeMoveSheet()
+      await Promise.all([refreshConversations(), loadProjects({ silent: true })])
+      const project = projectId ? projectById(projectId) : null
+      showToast(project ? `已移动到「${project.name}」` : `已移出项目（${ids.length} 个对话）`)
+      if (state.currentId && ids.includes(state.currentId)) {
+        const conv = state.conversations.find((item) => item.id === state.currentId)
+        if (conv) renderProjectUI()
+      }
+    } catch (error) {
+      showToast(error.message || '移动失败', { tone: 'error' })
+      for (const button of buttons) button.disabled = false
+    }
   }
 
   async function patchConversation(id, patch) {
@@ -3472,6 +4195,7 @@
     const entries = [
       ['rename', 'i-edit', '重命名', () => openRename(id)],
       ['pin', 'i-pin', conv.pinned ? '取消置顶' : '置顶对话', () => void patchConversation(id, { pinned: !conv.pinned })],
+      ['move', 'i-folder', conv.projectId ? '移动到其他项目' : '移动到项目', () => openMoveSheet([id])],
       ['export', 'i-share', '导出 Markdown', () => void exportConversation(id)],
       ['link', 'i-external', '复制对话链接', () => void copyConversationLink(id)],
       ['duplicate', 'i-copy', '创建副本', () => void duplicateConversation(id)],
@@ -3589,6 +4313,26 @@
     openConversation(item.dataset.id)
   })
 
+  async function undoLastDelete() {
+    const pending = state.lastDeleted
+    if (!pending) return
+    if (Date.now() - pending.at > 7900) {
+      state.lastDeleted = null
+      showToast('撤销已过期，对话无法恢复', { tone: 'error' })
+      return
+    }
+    state.lastDeleted = null
+    try {
+      await api(`/api/conversations/${pending.id}/restore`, { method: 'POST' })
+      await refreshConversations()
+      if (pending.fromArchive) await openArchive()
+      showToast('已恢复对话')
+      announce('对话已恢复')
+    } catch (error) {
+      showToast(error.message || '撤销失败', { tone: 'error' })
+    }
+  }
+
   function askDelete(id) {
     const conv = state.conversations.find((c) => c.id === id) ||
       state.searchResults.find((c) => c.id === id)
@@ -3605,19 +4349,12 @@
           showEmptyChat()
         }
         renderConversations()
-        showToast('对话已删除', {
+        state.lastDeleted = { id, at: Date.now() }
+        showToast('对话已删除，8 秒内可撤销（⌘Z）', {
           icon: 'i-trash',
           actionLabel: '撤销',
-          duration: 6500,
-          onAction: async () => {
-            try {
-              await api(`/api/conversations/${id}/restore`, { method: 'POST' })
-              await refreshConversations()
-              showToast('已恢复对话')
-            } catch (error) {
-              showToast(error.message || '撤销失败', { tone: 'error' })
-            }
-          },
+          duration: 7800,
+          onAction: () => void undoLastDelete(),
         })
       } catch (err) {
         showToast(err.message, { tone: 'error' })
@@ -4299,13 +5036,16 @@
           block.body.textContent = block.raw
         } else {
           block.body.innerHTML = window.Markdown.render(block.raw)
+          decorateTables(block.body)
           const cursor = document.createElement('span')
           cursor.className = 'stream-cursor'
           block.body.appendChild(cursor)
           decorateFileRefs(block.body)
         }
         if (state.stick) scrollToBottom()
-      }, 50)
+        // Adaptive cadence: a 20k-character answer would otherwise re-parse
+        // the whole Markdown tree every 50 ms (O(n²) work for one turn).
+      }, Math.min(300, 50 + Math.floor(block.raw.length / 2000) * 25))
     }
 
     view.destroy = () => {
@@ -4381,6 +5121,7 @@
           }
         }
         block.el.innerHTML = window.Markdown.render(block.raw)
+        decorateTables(block.el)
         if (mathResourcesReady && window.katex) {
           for (const node of block.el.querySelectorAll('.math-display')) {
             try {
@@ -4522,6 +5263,7 @@
     function renderToolBody(entry, call) {
       entry.body.replaceChildren()
       entry.paramsText = ''
+      renderToolDiff(entry, call)
       if (call.input && typeof call.input === 'object' && Object.keys(call.input).length) {
         try {
           entry.paramsText = clip(JSON.stringify(call.input, null, 2), 6000)
@@ -4555,6 +5297,62 @@
         })
         entry.body.appendChild(copy)
       }
+    }
+
+    function renderToolDiff(entry, call) {
+      if (!call.input || typeof call.input !== 'object') return
+      const tool = String(call.tool || '')
+      const input = call.input
+      const path = input.file_path || input.path || input.filePath || ''
+      let before = ''
+      let after = ''
+      let mode = ''
+      if (['edit', 'str_replace_editor'].includes(tool)) {
+        before = String(input.old_string ?? input.old_str ?? input.oldText ?? '')
+        after = String(input.new_string ?? input.new_str ?? input.newText ?? '')
+        mode = before ? 'change' : 'add'
+      } else if (tool === 'write') {
+        after = String(input.content ?? input.text ?? input.file_text ?? '')
+        mode = 'add'
+      } else if (tool === 'apply_patch' && typeof input.patch === 'string') {
+        after = input.patch
+        mode = 'patch'
+      }
+      if (!after && !before) return
+      if (after.length > 24000) after = after.slice(0, 24000) + '\n…（已截断）'
+      if (before.length > 24000) before = before.slice(0, 24000) + '\n…（已截断）'
+      const section = document.createElement('div')
+      section.className = 'tool-section tool-diff-section'
+      const label = document.createElement('div')
+      label.className = 'tool-label'
+      label.textContent = path ? `改动 · ${path}` : '改动'
+      const diff = document.createElement('div')
+      diff.className = 'tool-diff'
+      diff.setAttribute('role', 'group')
+      diff.setAttribute('aria-label', path ? `${path} 的改动` : '文件改动')
+      const addLine = (kind, text, sign) => {
+        const line = document.createElement('div')
+        line.className = `diff-line diff-${kind}`
+        const marker = document.createElement('span')
+        marker.className = 'diff-marker'
+        marker.textContent = sign
+        const code = document.createElement('span')
+        code.className = 'diff-code'
+        code.textContent = text || ' '
+        line.append(marker, code)
+        diff.appendChild(line)
+      }
+      if (mode === 'patch') {
+        for (const line of after.split('\n')) {
+          const kind = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'ctx'
+          addLine(kind, line.slice(1), line[0] || ' ')
+        }
+      } else {
+        for (const line of before.split('\n')) addLine('del', line, '−')
+        for (const line of after.split('\n')) addLine('add', line, '+')
+      }
+      section.append(label, diff)
+      entry.body.appendChild(section)
     }
 
     function appendSection(parent, labelText, text, kind) {
@@ -4691,10 +5489,10 @@
         copy.setAttribute('aria-label', '复制回答')
         copy.innerHTML = icon('i-copy')
         copy.addEventListener('click', async () => {
-          const ok = await copyText(text)
+          const ok = await copyRich(text)
           if (!ok) return showToast('复制失败', { tone: 'error' })
           copy.innerHTML = icon('i-check')
-          showToast('已复制回答')
+          showToast('已复制回答（保留格式，粘贴为纯文本也干净）')
           setTimeout(() => (copy.innerHTML = icon('i-copy')), 1500)
         })
         actions.appendChild(copy)
@@ -4891,8 +5689,10 @@
     els.thread.replaceChildren()
     els.thread.hidden = true
     els.emptyState.hidden = false
-    els.topbarName.textContent = 'DSH Chat'
-    setDocumentTitle('DSH Chat')
+    updateEmptyProject()
+    const emptyProject = activeProject()
+    els.topbarName.textContent = emptyProject ? emptyProject.name : 'DSH Chat'
+    setDocumentTitle(emptyProject ? emptyProject.name : 'DSH Chat')
     localStorage.removeItem('dsh.current')
     if (updateRoute) pushRoute(null)
     state.files = []
@@ -5228,6 +6028,38 @@
 
   els.newChat.addEventListener('click', newChat)
   els.newChatTop.addEventListener('click', newChat)
+
+  els.projectsBtn?.addEventListener('click', openProjects)
+  els.projectNewBtn?.addEventListener('click', () => openProjectEditor(''))
+  els.projectBackBtn?.addEventListener('click', () => {
+    state.editingProjectId = null
+    els.projectEditor.hidden = true
+    els.projectsList.hidden = false
+    els.projectsHint.hidden = false
+    renderProjects()
+    requestAnimationFrame(() => els.projectsList.querySelector('.project-row-main')?.focus({ preventScroll: true }))
+  })
+  els.projectForm?.addEventListener('submit', submitProject)
+  els.projectInstructions?.addEventListener('input', updateProjectBudget)
+  els.projectNotes?.addEventListener('input', updateProjectBudget)
+  els.projectDeleteBtn?.addEventListener('click', () => void deleteEditingProject())
+  els.projectBar?.addEventListener('click', (event) => {
+    const chip = event.target.closest('.project-chip')
+    if (!chip) return
+    if (chip.dataset.action === 'new-project') return openProjects()
+    void setProjectFilter(chip.dataset.projectId || '', { close: false })
+  })
+  els.projectsSheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-projects-close]')) closeProjects()
+  })
+  els.moveSheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-move-close]')) closeMoveSheet()
+  })
+  els.emptyProjectEdit?.addEventListener('click', () => {
+    if (!state.activeProjectId) return
+    openProjects()
+    openProjectEditor(state.activeProjectId)
+  })
   els.chatInfoBtn?.addEventListener('click', () => {
     if (els.chatInfo?.hidden) openChatInfo()
     else closeChatInfo({ restoreFocus: true })
@@ -5277,10 +6109,33 @@
   })
 
   document.addEventListener('keydown', (event) => {
+    const typingTarget = /^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '') || event.target?.isContentEditable
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'z' && state.lastDeleted && !typingTarget) {
+      event.preventDefault()
+      void undoLastDelete()
+      return
+    }
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
       event.preventDefault()
       if (event.shiftKey) newChat()
       else openPalette()
+      return
+    }
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'l') {
+      event.preventDefault()
+      cycleTheme()
+      return
+    }
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'e') {
+      event.preventDefault()
+      if (state.currentId) void exportConversation(state.currentId)
+      else showToast('先打开一段对话再导出', { tone: 'error' })
+      return
+    }
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+      event.preventDefault()
+      if (state.currentId) openFilesSheet()
+      else showToast('先打开一段对话查看文件', { tone: 'error' })
       return
     }
     if (event.key !== 'Escape') return
@@ -5295,6 +6150,8 @@
     if (els.bookmarksSheet && !els.bookmarksSheet.hidden) return closeBookmarks()
     if (els.promptSheet && !els.promptSheet.hidden) return closePrompts()
     if (els.memorySheet && !els.memorySheet.hidden) return closeMemory()
+    if (els.projectsSheet && !els.projectsSheet.hidden) return closeProjects()
+    if (els.moveSheet && !els.moveSheet.hidden) return closeMoveSheet()
     if (els.palette && !els.palette.hidden) return closePalette()
     if (els.commandMenu && !els.commandMenu.hidden) return closeCommandMenu()
     if (els.filePreview && !els.filePreview.hidden) return closeFilePreview()
@@ -5304,6 +6161,11 @@
     if (!els.confirmModal.hidden) return closeConfirm()
     if (!els.filesSheet.hidden) return closeFilesSheet()
     if (!els.scenarioSheet.hidden) return closeScenarioSheet()
+    if (state.streaming) {
+      event.preventDefault()
+      stopStreaming()
+      return
+    }
     if (!desktopQuery.matches && document.body.classList.contains('sidebar-open')) closeSidebar()
   })
 
@@ -5543,6 +6405,10 @@
 
   const COMMANDS = [
     { id: 'new', label: '新对话', desc: '开始一段新对话', icon: 'i-edit', run: () => newChat() },
+    { id: 'projects', label: '项目', desc: '按主题组织对话、指令与资料', icon: 'i-folder', run: () => openProjects() },
+    { id: 'new-project', label: '新建项目', desc: '建立长期主题空间', icon: 'i-plus', run: () => { openProjects(); openProjectEditor('') } },
+    { id: 'all-projects', label: '查看全部对话', desc: '清除项目筛选', icon: 'i-menu', run: () => void setProjectFilter('', { close: false }) },
+    { id: 'move-project', label: '移动到项目', desc: '把当前对话归入项目', icon: 'i-folder', run: () => { if (state.currentId) openMoveSheet([state.currentId]); else showToast('先打开一段对话', { tone: 'error' }) } },
     { id: 'scenario', label: '浏览场景', desc: '网页总结 / 股票 / 日报', icon: 'i-spark', run: () => openScenarioSheet() },
     { id: 'files', label: '对话文件', desc: '查看本轮与历史文件', icon: 'i-paperclip', run: () => openFilesSheet() },
     { id: 'permission', label: '切换权限', desc: '只读 / 标准 / 完全权限', icon: 'i-shield', run: () => openPermissionMenu() },
@@ -5554,6 +6420,10 @@
   async function enableNotifications() {
     if (!('Notification' in window)) {
       showToast('当前浏览器不支持系统通知', { tone: 'error' })
+      return
+    }
+    if (!window.isSecureContext) {
+      showToast('当前是 HTTP 内网地址，浏览器不会授予通知/安装能力。用 localhost 或 HTTPS 打开后可启用。', { tone: 'error', duration: 6000 })
       return
     }
     if (Notification.permission === 'granted') {
@@ -6106,18 +6976,28 @@
     showToast('任务完成时会通知你')
   }
 
-  function notifyCompletion() {
+  async function notifyCompletion() {
     if (!state.prefs.notify || !document.hidden) return
     if (!('Notification' in window) || Notification.permission !== 'granted') return
     const text =
       [...els.thread.querySelectorAll('.msg.assistant .md')].at(-1)?.innerText?.trim() ||
       '助手已完成回答'
+    const options = {
+      body: text.slice(0, 120),
+      tag: `dsh-${state.currentId || 'chat'}`,
+      silent: false,
+      data: { url: state.currentId ? `/c/${state.currentId}` : '/' },
+    }
     try {
-      const notification = new Notification('DSH Chat · 回答已完成', {
-        body: text.slice(0, 120),
-        tag: `dsh-${state.currentId || 'chat'}`,
-        silent: false,
-      })
+      // Installed PWAs (especially iOS 16.4+) can only show notifications
+      // through the service worker registration; `new Notification()` throws
+      // or is ignored there.
+      const registration = await navigator.serviceWorker?.getRegistration?.()
+      if (registration?.showNotification) {
+        await registration.showNotification('DSH Chat · 回答已完成', options)
+        return
+      }
+      const notification = new Notification('DSH Chat · 回答已完成', options)
       notification.onclick = () => {
         window.focus()
         if (state.currentId) void openConversation(state.currentId)
@@ -6437,7 +7317,7 @@
 
   async function importBackup(file) {
     if (!file) return
-    if (file.size > 24 * 1024 * 1024) return showToast('备份超过 24MB，无法导入', { tone: 'error' })
+    if (file.size > 128 * 1024 * 1024) return showToast('备份超过 128MB，请拆分后再导入', { tone: 'error' })
     els.importBtn.disabled = true
     els.importBtn.textContent = '导入中…'
     try {
@@ -6452,8 +7332,8 @@
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `导入失败（${response.status}）`)
-      await refreshConversations()
-      showToast(`已导入 ${data.imported || 0} 段对话`)
+      await Promise.all([loadProjects({ silent: true }), refreshConversations()])
+      showToast(`已导入 ${data.imported || 0} 段对话${data.projects ? `、${data.projects} 个项目` : ''}`)
     } catch (error) {
       showToast(error.message || '导入失败', { tone: 'error' })
     } finally {
@@ -6561,15 +7441,12 @@
               await api(`/api/conversations/${conv.id}`, { method: 'DELETE' })
               state.archived = state.archived.filter((item) => item.id !== conv.id)
               renderArchiveList()
-              showToast('已删除', {
+              state.lastDeleted = { id: conv.id, at: Date.now(), fromArchive: true }
+              showToast('已删除，8 秒内可撤销（⌘Z）', {
                 icon: 'i-trash',
                 actionLabel: '撤销',
-                duration: 6500,
-                onAction: async () => {
-                  await api(`/api/conversations/${conv.id}/restore`, { method: 'POST' })
-                  await refreshConversations()
-                  await openArchive()
-                },
+                duration: 7800,
+                onAction: () => void undoLastDelete(),
               })
             } catch (error) {
               showToast(error.message || '删除失败', { tone: 'error' })
@@ -6601,6 +7478,7 @@
   function updateBatchBar() {
     els.batchCount.textContent = `已选 ${state.selected.size} 条`
     els.batchArchive.disabled = state.selected.size === 0
+    els.batchMove.disabled = state.selected.size === 0
     els.batchDelete.disabled = state.selected.size === 0
   }
 
@@ -6617,7 +7495,7 @@
   async function runConversationBatch(ids, mutate, { removeFromList = false, deleting = false } = {}) {
     if (!ids.length || state.batchBusy) return null
     state.batchBusy = true
-    const controls = [els.manageBtn, els.batchCancel, els.batchArchive, els.batchDelete]
+    const controls = [els.manageBtn, els.batchCancel, els.batchMove, els.batchArchive, els.batchDelete]
     controls.forEach((button) => { if (button) button.disabled = true })
     els.batchBar?.setAttribute('aria-busy', 'true')
     // Keep the selection stable while requests and the following list refresh run.
@@ -6715,6 +7593,12 @@
 
   els.manageBtn?.addEventListener('click', () => setSelectMode(!state.selectMode))
   els.batchCancel?.addEventListener('click', () => setSelectMode(false))
+  els.batchMove?.addEventListener('click', () => {
+    if (!state.selected.size) return
+    const ids = [...state.selected]
+    openMoveSheet(ids)
+    setSelectMode(false)
+  })
   els.batchArchive?.addEventListener('click', () => void batchArchive())
   els.batchDelete?.addEventListener('click', () => void batchDelete())
 
@@ -6915,6 +7799,8 @@
       els.filesSheet,
       els.scenarioSheet,
       els.shortcutsSheet,
+      els.projectsSheet,
+      els.moveSheet,
     ]) {
       if (overlay && !overlay.hidden) return overlay
     }
@@ -7007,6 +7893,9 @@
 
   function setComposerStreaming(streaming) {
     const wasStreaming = els.sendBtn.classList.contains('stop')
+    els.thread?.setAttribute('aria-busy', String(Boolean(streaming)))
+    if (streaming && !wasStreaming) announce('正在生成回答')
+    if (wasStreaming && !streaming) announce('回答已生成')
     els.sendBtn.classList.toggle('stop', streaming)
     els.sendBtn.setAttribute('aria-label', streaming ? '停止生成' : '发送')
     els.sendBtn.disabled = streaming ? false : !els.input.value.trim() && !state.stagedFiles.length
@@ -7276,7 +8165,7 @@
     if (state.currentId) return state.currentId
     const data = await api('/api/conversations', {
       method: 'POST',
-      body: JSON.stringify({ engine: state.engine, permission: state.permission }),
+      body: JSON.stringify({ engine: state.engine, permission: state.permission, projectId: state.activeProjectId || undefined }),
     })
     const conv = data.conversation
     state.currentId = conv.id
@@ -7289,6 +8178,7 @@
     localStorage.setItem('dsh.engine', state.currentEngine)
     state.conversations.unshift(conv)
     els.topbarName.textContent = conv.title
+    if (state.activeProjectId) void loadProjects({ silent: true })
     pushRoute(conv.id)
     setModelLabels()
     updatePermissionUI()
