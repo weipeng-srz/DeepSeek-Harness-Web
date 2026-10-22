@@ -43,7 +43,7 @@ try {
   // Per-answer share should only include the selected turn.
   const shareRes = await api(`/api/conversations/${conv.id}/share`, {
     method: 'POST',
-    body: JSON.stringify({ expiresInDays: 7, messageIds: [firstAnswer.id] }),
+    body: JSON.stringify({ expiresInDays: 7, messageIds: [detail.messages[0].id, firstAnswer.id] }),
   })
   record('per-answer share is created', shareRes.status === 201 && shareRes.body.share.messageCount === 2, JSON.stringify(shareRes.body.share?.messageCount))
   const publicData = await (await fetch(`${sandbox.base}/api/share/${shareRes.body.token}`)).json()

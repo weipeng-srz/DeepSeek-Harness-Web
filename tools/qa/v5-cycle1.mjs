@@ -27,7 +27,7 @@ const sandbox = await createSandbox({
           status: 'done',
           blocks: [
             { type: 'text', text: '| 城市 | 温度 |\n| --- | --- |\n| 杭州 | 32 |\n| 上海 | 30 |\n\n文件已更新。' },
-            { type: 'tool', id: 'tool_fixture_1', tool: 'edit', input: { file_path: 'notes.md', old_string: '旧内容', new_string: '新内容' }, status: 'completed', result: 'ok' },
+            { type: 'tool', id: 'tool_fixture_1', tool: 'edit', input: { file_path: 'notes.md', old_string: '旧内容', new_string: '新内容' }, status: 'completed', result: 'ok https://example.com/report' },
           ],
         },
       ],
@@ -82,10 +82,13 @@ try {
   const clipboard = await page.evaluate(() => navigator.clipboard.readText())
   record('table copies as TSV', clipboard.includes('城市\t温度') && clipboard.includes('杭州\t32'), JSON.stringify(clipboard.slice(0, 80)))
 
+  await page.locator('.tool-head').first().click()
+  await page.waitForTimeout(200)
   const diffDel = await page.locator('.tool-diff .diff-del .diff-code').allTextContents()
   const diffAdd = await page.locator('.tool-diff .diff-add .diff-code').allTextContents()
   record('tool card shows removed lines', diffDel.includes('旧内容'), JSON.stringify(diffDel))
   record('tool card shows added lines', diffAdd.includes('新内容'), JSON.stringify(diffAdd))
+  record('tool URLs become source chips', await page.locator('.msg-sources a').count() === 1 && (await page.locator('.msg-sources a').first().getAttribute('href')) === 'https://example.com/report')
 
   // Permission confirmation: cancel must not change the stored mode.
   await page.locator('#permissionBtn').click()

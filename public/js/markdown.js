@@ -35,6 +35,9 @@
     s = s.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
     s = s.replace(/(^|[^_])_([^_\n]+)_/g, '$1<em>$2</em>')
     s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    s = s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, function (_, alt, src) {
+      return '<img src="' + src + '" alt="' + alt + '" loading="lazy" decoding="async" referrerpolicy="no-referrer">'
+    })
     s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, function (_, label, href) {
       return '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a>'
     })

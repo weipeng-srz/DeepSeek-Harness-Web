@@ -14,6 +14,13 @@ const sandbox = await createSandbox({
   label: 'v5-share',
   seedConversations: [
     {
+      title: '敏感分享测试',
+      messages: [
+        { role: 'user', text: '客户邮箱 test@example.com，电话 13800138000' },
+        { role: 'assistant', text: '收到。', status: 'done' },
+      ],
+    },
+    {
       title: '分享测试对话',
       messages: [
         { role: 'user', text: '这是可以给同事看的结论。' },
@@ -34,7 +41,8 @@ const sandbox = await createSandbox({
 console.log(`SANDBOX ${sandbox.base}`)
 const api = sandbox.api
 const list = await api('/api/conversations?limit=10')
-const conv = list.body.conversations[0]
+const conv = list.body.conversations.find((item) => item.title === '分享测试对话')
+const sensitiveConv = list.body.conversations.find((item) => item.title === '敏感分享测试')
 const project = (await api('/api/projects', {
   method: 'POST',
   body: JSON.stringify({ name: '分享项目', emoji: '🔗', instructions: '对外结论要克制。' }),
@@ -45,6 +53,17 @@ let browser
 try {
   let res = await api('/api/shares')
   record('share list starts empty', res.status === 200 && res.body.shares.length === 0)
+
+  res = await api(`/api/conversations/${sensitiveConv.id}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ expiresInDays: 7 }),
+  })
+  record('server blocks unconfirmed sensitive share', res.status === 409 && res.body.sensitive >= 2, JSON.stringify({ status: res.status, sensitive: res.body.sensitive }))
+  const allowedSensitive = await api(`/api/conversations/${sensitiveConv.id}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ expiresInDays: 7, allowSensitive: true }),
+  })
+  record('explicit confirmation allows sensitive share', allowedSensitive.status === 201, String(allowedSensitive.status))
 
   res = await api(`/api/conversations/${conv.id}/share`, {
     method: 'POST',
@@ -64,10 +83,37 @@ try {
   record('public snapshot excludes tools by default', !serialized.includes('SECRET-TOKEN') && !serialized.includes('内部推理'), serialized.slice(0, 80))
   record('public snapshot excludes owner/conversation ids', !('owner' in publicData) && !('conversationId' in publicData) && !('token' in publicData))
 
+  const protectedShare = await api(`/api/conversations/${conv.id}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ expiresInDays: 7, password: 'ab12cd', messageIds: [] }),
+  })
+  const lockedGet = await fetch(`${sandbox.base}/api/share/${protectedShare.body.token}`)
+  const lockedBody = await lockedGet.json()
+  record('password-protected share locks the snapshot', lockedGet.status === 401 && lockedBody.passwordRequired === true, String(lockedGet.status))
+  const wrongPassword = await fetch(`${sandbox.base}/api/share/${protectedShare.body.token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'wrong' }),
+  })
+  record('wrong password is rejected', wrongPassword.status === 401, String(wrongPassword.status))
+  const rightPassword = await fetch(`${sandbox.base}/api/share/${protectedShare.body.token}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: 'ab12cd' }),
+  })
+  record('correct password unlocks the snapshot', rightPassword.status === 200 && (await rightPassword.json()).title === '分享测试对话', String(rightPassword.status))
+
   const pageRes = await fetch(`${sandbox.base}/s/${res.body.token}`)
   const pageHtml = await pageRes.text()
   record('share page is served without login', pageRes.status === 200 && pageHtml.includes('只读分享'), String(pageRes.status))
   record('share page is noindex', (pageRes.headers.get('x-robots-tag') || '').includes('noindex'))
+
+  await api(`/api/conversations/${conv.id}`, { method: 'PATCH', body: JSON.stringify({ title: '更新后的标题' }) })
+  const refreshed = await api(`/api/shares/${share.id}/refresh`, { method: 'POST' })
+  record('share snapshot can be refreshed in place', refreshed.status === 200, String(refreshed.status))
+  const refreshedPublic = await (await fetch(`${sandbox.base}/api/share/${originalToken}`)).json()
+  record('refresh keeps the URL and updates content', refreshedPublic.title === '更新后的标题', refreshedPublic.title)
+  await api(`/api/conversations/${conv.id}`, { method: 'PATCH', body: JSON.stringify({ title: '分享测试对话' }) })
 
   const withTools = await api(`/api/conversations/${conv.id}/share`, {
     method: 'POST',
@@ -78,7 +124,7 @@ try {
   record('opt-in share includes tools and thinking', toolsSerialized.includes('SECRET-TOKEN') && toolsSerialized.includes('内部推理'))
 
   res = await api('/api/shares')
-  record('owner share list has tokens', res.body.shares.length === 2 && res.body.shares.every((item) => typeof item.token === 'string'))
+  record('owner share list has tokens', res.body.shares.length >= 3 && res.body.shares.every((item) => typeof item.token === 'string'), String(res.body.shares.length))
   record('share list exposes view counts', res.body.counts.views >= 2, JSON.stringify(res.body.counts))
 
   const revokedRes = await api(`/api/shares/${share.id}`, { method: 'DELETE' })
@@ -111,11 +157,7 @@ try {
 
   // Deleting a conversation keeps links during the 8s undo window and
   // revokes them after the purge. Use a disposable conversation.
-  const doomedConv = (await api('/api/conversations', {
-    method: 'POST',
-    body: JSON.stringify({ engine: 'dsr' }),
-  })).body.conversation
-  await api(`/api/conversations/${doomedConv.id}/chat`, { method: 'POST', body: JSON.stringify({ text: 'x' }) }).catch(() => {})
+  const doomedConv = (await api(`/api/conversations/${conv.id}/duplicate`, { method: 'POST' })).body.conversation
   const doomed = await api(`/api/conversations/${doomedConv.id}/share`, {
     method: 'POST',
     body: JSON.stringify({ expiresInDays: 7 }),
@@ -145,8 +187,12 @@ try {
   await page.getByRole('menuitem', { name: '分享只读链接' }).click()
   await page.waitForTimeout(400)
   record('share sheet opens', await page.locator('#shareSheet').isVisible())
+  await page.waitForTimeout(500)
+  record('share picker lists messages', await page.locator('#sharePickList input').count() === 2, String(await page.locator('#sharePickList input').count()))
+  record('share preview is not stuck loading', !(await page.locator('#sharePreview').innerText()).includes('正在统计'), await page.locator('#sharePreview').innerText())
   await page.locator('[data-share-expiry="30"]').click()
   await page.locator('#shareIncludeTools').check()
+  await page.locator('#sharePickAll').click()
   await page.locator('#shareCreate').click()
   await page.waitForTimeout(800)
   const createdUrl = await page.locator('#shareUrl').inputValue()

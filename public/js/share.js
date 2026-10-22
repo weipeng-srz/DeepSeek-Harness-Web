@@ -120,6 +120,7 @@
     head.appendChild(title)
     const meta = el('p', 'share-meta')
     if (data.sharedAt) meta.appendChild(el('span', '', `分享于 ${formatDate(data.sharedAt)}`))
+    if (data.updatedAt && data.sharedAt && data.updatedAt > data.sharedAt + 1000) meta.appendChild(el('span', '', `更新于 ${formatDate(data.updatedAt)}`))
     if (data.messages?.length) meta.appendChild(el('span', '', `${data.messages.length} 条消息`))
     head.appendChild(meta)
 
@@ -166,6 +167,58 @@
     }
   }
 
+  function renderPasswordForm(message = '') {
+    main.replaceChildren()
+    const box = el('div', 'share-password-card')
+    box.appendChild(el('p', 'share-eyebrow', '受保护的分享'))
+    const title = el('h1', 'share-title', '请输入分享口令')
+    box.appendChild(title)
+    box.appendChild(el('p', 'share-meta', '分享者给这个链接设置了口令，输入后才能查看。'))
+    const form = document.createElement('form')
+    form.className = 'share-password-form'
+    const input = document.createElement('input')
+    input.type = 'password'
+    input.maxLength = 64
+    input.autocomplete = 'off'
+    input.placeholder = '分享口令'
+    input.setAttribute('aria-label', '分享口令')
+    const submit = el('button', 'share-btn primary', '查看')
+    submit.type = 'submit'
+    const error = el('p', 'share-error-inline', message)
+    form.append(input, submit, error)
+    form.addEventListener('submit', async (event) => {
+      event.preventDefault()
+      submit.disabled = true
+      try {
+        const response = await fetch(`/api/share/${encodeURIComponent(token)}`, {
+          method: 'POST',
+          credentials: 'omit',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ password: input.value }),
+        })
+        const data = await response.json().catch(() => ({}))
+        if (response.status === 401) {
+          error.textContent = '口令不正确，请重试'
+          submit.disabled = false
+          input.select()
+          return
+        }
+        if (!response.ok) {
+          renderError('暂时无法打开', data.error || `服务返回 ${response.status}`)
+          return
+        }
+        renderShare(data)
+      } catch {
+        error.textContent = '网络不可用，请稍后重试'
+        submit.disabled = false
+      }
+    })
+    box.appendChild(form)
+    main.appendChild(box)
+    document.title = '受保护的分享 · DSH Chat'
+    input.focus()
+  }
+
   async function load() {
     if (!token) return renderError('链接不完整', '请向分享者索取完整链接。')
     try {
@@ -176,6 +229,7 @@
       const data = await response.json().catch(() => ({}))
       if (response.status === 404) return renderError('分享不存在', '链接可能已被撤销，或从未创建成功。')
       if (response.status === 410) return renderError('分享已失效', data.error || '这个链接已过期或被撤销。')
+      if (response.status === 401 && data.passwordRequired) return renderPasswordForm()
       if (!response.ok) return renderError('暂时无法打开', data.error || `服务返回 ${response.status}`)
       renderShare(data)
     } catch {

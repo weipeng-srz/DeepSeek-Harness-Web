@@ -72,6 +72,16 @@
     templateFields: $('#templateFields'),
     templateError: $('#templateError'),
     templateCancel: $('#templateCancel'),
+    regenerateModal: $('#regenerateModal'),
+    regenerateInstruction: $('#regenerateInstruction'),
+    regenerateCancel: $('#regenerateCancel'),
+    regenerateDirect: $('#regenerateDirect'),
+    regenerateRun: $('#regenerateRun'),
+    editAnswerModal: $('#editAnswerModal'),
+    editAnswerText: $('#editAnswerText'),
+    editAnswerError: $('#editAnswerError'),
+    editAnswerCancel: $('#editAnswerCancel'),
+    editAnswerSave: $('#editAnswerSave'),
     toast: $('#toast'),
     confirmModal: $('#confirmModal'),
     confirmCancel: $('#confirmCancel'),
@@ -167,6 +177,7 @@
     projectsList: $('#projectsList'),
     projectsHint: $('#projectsHint'),
     projectNewBtn: $('#projectNewBtn'),
+    projectSaveTop: $('#projectSaveTop'),
     projectEditor: $('#projectEditor'),
     projectBackBtn: $('#projectBackBtn'),
     projectForm: $('#projectForm'),
@@ -175,6 +186,8 @@
     projectInstructions: $('#projectInstructions'),
     projectNotes: $('#projectNotes'),
     projectMemoryOff: $('#projectMemoryOff'),
+    projectDefaultEngine: $('#projectDefaultEngine'),
+    projectDefaultPermission: $('#projectDefaultPermission'),
     projectFileUploadBtn: $('#projectFileUploadBtn'),
     projectFileInput: $('#projectFileInput'),
     projectFileList: $('#projectFileList'),
@@ -194,7 +207,12 @@
     shareUrl: $('#shareUrl'),
     shareCopy: $('#shareCopy'),
     shareSystem: $('#shareSystem'),
+    sharePassword: $('#sharePassword'),
     sharePreview: $('#sharePreview'),
+    sharePickWrap: $('#sharePickWrap'),
+    sharePickList: $('#sharePickList'),
+    sharePickAll: $('#sharePickAll'),
+    sharePickNone: $('#sharePickNone'),
     shareResultHint: $('#shareResultHint'),
     shareList: $('#shareList'),
     versionsSheet: $('#versionsSheet'),
@@ -259,6 +277,9 @@
     shareBaseState: $('#shareBaseState'),
     auditWrap: $('#auditWrap'),
     auditList: $('#auditList'),
+    trashBtn: $('#trashBtn'),
+    trashSheet: $('#trashSheet'),
+    trashList: $('#trashList'),
     shareManageWrap: $('#shareManageWrap'),
     shareManageList: $('#shareManageList'),
   }
@@ -280,6 +301,8 @@
     shareFocus: null,
     shareExpiry: 7,
     shareItems: [],
+    shareMessages: [],
+    shareSelected: new Set(),
     projectFiles: [],
     versionTarget: null,
     versionsFocus: null,
@@ -291,6 +314,10 @@
     libraryTimer: null,
     templateValues: loadTemplateValues(),
     templateOnFill: null,
+    regenTarget: null,
+    regenFocus: null,
+    editAnswerTarget: null,
+    editAnswerFocus: null,
     templateFocus: null,
     voice: null,
     voiceBase: '',
@@ -390,7 +417,7 @@
     const layers = [els.filesSheet, els.scenarioSheet, els.filePreview,
       els.statsModal, els.confirmModal, els.palette, els.shortcutsSheet,
       els.renameModal, els.settingsSheet, els.bookmarksSheet, els.promptSheet,
-      els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet, els.shareSheet, els.versionsSheet, els.templateModal, els.exportSheet]
+      els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet, els.shareSheet, els.versionsSheet, els.templateModal, els.exportSheet, els.regenerateModal, els.editAnswerModal, els.trashSheet]
     const codexModal = document.querySelector('.codex-pop[aria-modal="true"]')
     if (els.shell) els.shell.inert = layers.some((layer) => layer && !layer.hidden) || Boolean(codexModal)
   }
@@ -580,8 +607,36 @@
     return lines.join('\n')
   }
 
+  function inlineHtmlForClipboard(html) {
+    const holder = document.createElement('div')
+    holder.innerHTML = html
+    const styles = {
+      h1: 'font-size:1.5em;font-weight:700;margin:14px 0 8px;',
+      h2: 'font-size:1.3em;font-weight:700;margin:13px 0 7px;',
+      h3: 'font-size:1.12em;font-weight:700;margin:12px 0 6px;',
+      p: 'margin:0 0 10px;',
+      ul: 'margin:0 0 10px;padding-left:22px;',
+      ol: 'margin:0 0 10px;padding-left:22px;',
+      li: 'margin:3px 0;',
+      blockquote: 'margin:0 0 10px;padding:2px 0 2px 12px;border-left:3px solid #ddd;color:#555;',
+      pre: 'margin:0 0 10px;padding:10px 12px;background:#f4f4f6;border-radius:8px;white-space:pre-wrap;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;',
+      code: 'background:#f4f4f6;padding:1px 4px;border-radius:4px;font-family:ui-monospace,Menlo,monospace;font-size:0.9em;',
+      table: 'border-collapse:collapse;width:100%;margin:0 0 10px;font-size:13px;',
+      th: 'border:1px solid #ddd;padding:6px 8px;background:#f6f6f7;text-align:left;',
+      td: 'border:1px solid #ddd;padding:6px 8px;text-align:left;',
+      a: 'color:#0b6bcb;',
+      img: 'max-width:100%;height:auto;',
+    }
+    for (const [selector, style] of Object.entries(styles)) {
+      for (const node of holder.querySelectorAll(selector)) {
+        node.setAttribute('style', `${node.getAttribute('style') || ''}${style}`)
+      }
+    }
+    return holder.innerHTML
+  }
+
   async function copyRich(text) {
-    const html = window.Markdown.render(String(text || ''))
+    const html = inlineHtmlForClipboard(window.Markdown.render(String(text || '')))
     const plain = markdownToPlain(text)
     try {
       if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -1932,7 +1987,6 @@
     container.append(main, foot)
     container.hidden = false
     container.setAttribute('role', 'alert')
-    container.setAttribute('aria-label', '工具授权请求')
 
     let busy = false
     const setBusy = (value, decision = '') => {
@@ -1998,6 +2052,7 @@
       callId: event.callId || null,
     })
     if (state.stick) scrollToBottom()
+    requestAnimationFrame(() => allow.focus({ preventScroll: true }))
   }
 
   function showQuestion(event) {
@@ -3988,12 +4043,16 @@
     els.projectsList.hidden = true
     els.projectEditor.hidden = false
     els.projectsHint.hidden = true
+    els.projectNewBtn.hidden = true
+    els.projectSaveTop.hidden = false
     els.projectError.hidden = true
     els.projectEmoji.value = project?.emoji || '📁'
     els.projectName.value = project?.name || ''
     els.projectInstructions.value = project?.instructions || ''
     els.projectNotes.value = project?.notes || ''
     els.projectMemoryOff.checked = Boolean(project?.memoryOff)
+    els.projectDefaultEngine.value = project?.defaultEngine === 'codex' ? 'codex' : 'dsr'
+    els.projectDefaultPermission.value = project?.defaultPermission || 'workspace-write'
     state.projectFiles = []
     renderProjectFiles()
     els.projectFileUploadBtn.disabled = !project
@@ -4127,6 +4186,8 @@
       instructions: els.projectInstructions.value.trim(),
       notes: els.projectNotes.value.trim(),
       memoryOff: els.projectMemoryOff.checked,
+      defaultEngine: els.projectDefaultEngine.value === 'codex' ? 'codex' : 'dsr',
+      defaultPermission: els.projectDefaultPermission.value,
     }
   }
 
@@ -4154,6 +4215,8 @@
       els.projectEditor.hidden = true
       els.projectsList.hidden = false
       els.projectsHint.hidden = false
+      els.projectNewBtn.hidden = false
+      els.projectSaveTop.hidden = true
       renderProjects()
     } catch (error) {
       els.projectError.textContent = error.message || '保存失败'
@@ -4383,6 +4446,8 @@
     state.shareFocus = document.activeElement
     state.shareConversationId = conversationId
     state.shareMessageId = messageId
+    state.shareMessages = []
+    state.shareSelected = new Set()
     const localOnly = /^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(state.baseUrl)
     els.shareSheet.querySelector('.share-lead').textContent =
       (messageId
@@ -4398,56 +4463,93 @@
     els.shareUrl.value = ''
     els.shareIncludeTools.checked = false
     els.shareIncludeThinking.checked = false
+    if (els.sharePassword) els.sharePassword.value = ''
     setShareExpiry(7)
+    void updateSharePreview(conversationId, messageId)
     void loadShareItems()
     requestAnimationFrame(() => els.shareCreate.focus({ preventScroll: true }))
+  }
+
+  function shareVisibleMessages(messages) {
+    return (messages || []).filter((msg) => (msg.role === 'user' || msg.role === 'assistant') && !msg.internal)
+  }
+
+  function renderSharePicker(messages, messageId) {
+    if (!els.sharePickList) return
+    els.sharePickList.replaceChildren()
+    const visible = shareVisibleMessages(messages)
+    const selected = new Set()
+    if (messageId) {
+      const index = visible.findIndex((msg) => msg.id === messageId)
+      if (index >= 0) {
+        if (visible[index - 1]?.role === 'user') selected.add(visible[index - 1].id)
+        selected.add(visible[index].id)
+      }
+    }
+    state.shareSelected = selected
+    for (const msg of visible) {
+      const label = document.createElement('label')
+      label.className = 'share-pick-row'
+      const input = document.createElement('input')
+      input.type = 'checkbox'
+      input.value = msg.id
+      input.checked = selected.has(msg.id)
+      input.addEventListener('change', () => {
+        if (input.checked) state.shareSelected.add(msg.id)
+        else state.shareSelected.delete(msg.id)
+        updateSharePreviewText()
+      })
+      const text = document.createElement('span')
+      const role = document.createElement('strong')
+      role.textContent = msg.role === 'user' ? '提问' : '回答'
+      const preview = document.createElement('span')
+      preview.textContent = String(
+        msg.text || (msg.blocks || []).filter((block) => block.type === 'text').map((block) => block.text).join(' '),
+      ).replace(/\s+/g, ' ').slice(0, 70)
+      text.append(role, preview)
+      label.append(input, text)
+      els.sharePickList.appendChild(label)
+    }
   }
 
   async function updateSharePreview(conversationId, messageId) {
     if (!els.sharePreview) return
     els.sharePreview.textContent = '正在统计将分享的内容…'
     try {
-      let messages = conversationId === state.currentId && Array.isArray(state.messages) && state.messages.length
-        ? state.messages
-        : null
-      if (!messages) {
-        const data = await api(`/api/conversations/${conversationId}`)
-        messages = data.conversation.messages || []
-      }
-      const visible = messages.filter((msg) => (msg.role === 'user' || msg.role === 'assistant') && !msg.internal)
-      let count = visible.length
-      let attachments = visible.reduce((sum, msg) => sum + (Array.isArray(msg.attachments) ? msg.attachments.length : 0), 0)
-      if (messageId) {
-        count = 0
-        attachments = 0
-        const index = messages.findIndex((msg) => msg.id === messageId)
-        if (index >= 0) {
-          const user = messages[index - 1]?.role === 'user' ? messages[index - 1] : null
-          count = user ? 2 : 1
-          attachments = (user?.attachments?.length || 0) + (messages[index].attachments?.length || 0)
-        }
-      }
-      const hidden = []
-      if (!els.shareIncludeTools.checked) hidden.push('工具')
-      if (!els.shareIncludeThinking.checked) hidden.push('思考')
-      const text = visible
-        .map((msg) => [msg.text || '', ...(msg.blocks || []).filter((block) => block.type === 'text').map((block) => block.text || '')].join('\n'))
-        .join('\n')
-      const sensitiveHits =
-        (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) || []).length +
-        (text.match(/\b1[3-9]\d{9}\b/g) || []).length +
-        (text.match(/\b\d{17}[\dXx]\b/g) || []).length +
-        (text.match(/\b(sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g) || []).length
-      els.sharePreview.textContent = `将分享 ${count} 条消息${attachments ? `、${attachments} 个附件文件名` : ''}；${hidden.length ? `默认不含${hidden.join('与')}，` : ''}不包含文件内容、记忆与其他对话。${sensitiveHits ? ` 检测到 ${sensitiveHits} 处可能的手机号/邮箱/证件/密钥，请确认后再分享。` : ''}`
-      els.sharePreview.classList.toggle('warn', sensitiveHits > 0)
+      const data = await api(`/api/conversations/${conversationId}`)
+      const messages = data.conversation.messages || []
+      state.shareMessages = messages
+      renderSharePicker(messages, messageId)
+      updateSharePreviewText()
     } catch (error) {
       els.sharePreview.textContent = '无法读取这段对话的消息数量'
     }
   }
 
+  function updateSharePreviewText() {
+    if (!els.sharePreview) return
+    const visible = shareVisibleMessages(state.shareMessages || [])
+    const selected = visible.filter((msg) => state.shareSelected?.has(msg.id))
+    const count = selected.length
+    const attachments = selected.reduce((sum, msg) => sum + (Array.isArray(msg.attachments) ? msg.attachments.length : 0), 0)
+    const hidden = []
+    if (!els.shareIncludeTools.checked) hidden.push('工具')
+    if (!els.shareIncludeThinking.checked) hidden.push('思考')
+    const text = selected
+      .map((msg) => [msg.text || '', ...(msg.blocks || []).filter((block) => block.type === 'text').map((block) => block.text || '')].join('\n'))
+      .join('\n')
+    const sensitiveHits =
+      (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) || []).length +
+      (text.match(/\b1[3-9]\d{9}\b/g) || []).length +
+      (text.match(/\b\d{17}[\dXx]\b/g) || []).length +
+      (text.match(/\b(sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g) || []).length
+    els.sharePreview.textContent = `${count ? `将分享 ${count}/${visible.length} 条消息` : '还没有选择消息，请点「全选」或逐条勾选'}${attachments ? `、${attachments} 个附件文件名` : ''}；${hidden.length ? `默认不含${hidden.join('与')}，` : ''}不包含文件内容、记忆与其他对话。${sensitiveHits ? ` 检测到 ${sensitiveHits} 处可能的手机号/邮箱/证件/密钥，请确认后再分享。` : ''}`
+    els.sharePreview.classList.toggle('warn', sensitiveHits > 0)
+  }
+
   function updateSharePreviewOptions() {
     if (!els.sharePreview || els.shareSheet.hidden) return
-    void updateSharePreview(state.shareConversationId, state.shareMessageId)
+    updateSharePreviewText()
   }
 
   function closeShareSheet({ restoreFocus = true } = {}) {
@@ -4502,6 +4604,12 @@
       main.append(title, meta)
       row.appendChild(main)
       if (share.token && !share.expired && !share.revokedAt) {
+        const refresh = document.createElement('button')
+        refresh.type = 'button'
+        refresh.textContent = '更新'
+        refresh.title = '用当前对话内容更新这个链接，URL 不变'
+        refresh.addEventListener('click', () => void refreshShare(share))
+        row.appendChild(refresh)
         const copy = document.createElement('button')
         copy.type = 'button'
         copy.textContent = '复制'
@@ -4523,9 +4631,11 @@
     }
   }
 
-  async function createShare() {
+  async function createShare(allowSensitive = false) {
     const id = state.shareConversationId || state.currentId
     if (!id) return showToast('先打开一段对话', { tone: 'error' })
+    if (!state.shareMessages?.length) await updateSharePreview(id, state.shareMessageId)
+    if (!state.shareSelected?.size) return showToast('至少选择一条要分享的消息', { tone: 'error' })
     els.shareCreate.disabled = true
     els.shareCreate.textContent = '正在生成…'
     try {
@@ -4535,27 +4645,72 @@
           expiresInDays: state.shareExpiry,
           includeTools: els.shareIncludeTools.checked,
           includeThinking: els.shareIncludeThinking.checked,
-          messageIds: state.shareMessageId ? [state.shareMessageId] : [],
+          messageIds: (() => {
+            const visible = shareVisibleMessages(state.shareMessages)
+            const selected = visible.filter((msg) => state.shareSelected.has(msg.id)).map((msg) => msg.id)
+            return selected.length && selected.length < visible.length ? selected : []
+          })(),
+          allowSensitive,
+          password: els.sharePassword?.value.trim() || '',
         }),
       })
       const url = data.url || shareLinkFor(data.share)
       els.shareResult.hidden = false
       els.shareUrl.value = url
       if (els.shareSystem) els.shareSystem.hidden = !navigator.share
-      els.shareResultHint.textContent = data.share?.expiresAt
+      const passwordNote = data.share?.hasPassword ? ' 已设置口令，请通过另一条消息告诉对方。' : ''
+      els.shareResultHint.textContent = (data.share?.expiresAt
         ? `有效期至 ${formatShareDate(data.share.expiresAt)}。撤销后链接立即失效。`
-        : '长期有效。撤销后链接立即失效。'
+        : '长期有效。撤销后链接立即失效。') + passwordNote
       showToast('只读链接已生成')
       const listed = await api('/api/shares').catch(() => null)
       if (listed) state.shareItems = (listed.shares || []).filter((share) => share.conversationId === id)
       renderShareItems()
       requestAnimationFrame(() => els.shareUrl.select())
     } catch (error) {
-      showToast(error.message || '生成分享失败', { tone: 'error' })
+      if (error.status === 409 && /敏感|手机号|邮箱|证件|密钥/.test(error.message || '')) {
+        askConfirm({
+          title: '确认分享可能敏感的内容？',
+          body: `${error.message} 链接一旦发出，任何拿到的人都可能保存或转发；撤销只能阻止后续访问。`,
+          okLabel: '仍要生成',
+          onOk: () => void createShare(true),
+        })
+      } else {
+        showToast(error.message || '生成分享失败', { tone: 'error' })
+      }
     } finally {
       els.shareCreate.disabled = false
       els.shareCreate.textContent = '生成只读链接'
     }
+  }
+
+  async function refreshShare(share, allowSensitive = false) {
+    askConfirm({
+      title: '用当前对话更新这个链接？',
+      body: '已经拿到链接的人会立即看到新内容；旧快照正文会被替换，无法从链接里找回。',
+      okLabel: '更新内容',
+      onOk: async () => {
+        try {
+          await api(`/api/shares/${share.id}/refresh`, {
+            method: 'POST',
+            body: JSON.stringify({ allowSensitive }),
+          })
+          await loadShareItems()
+          showToast('分享内容已更新，链接不变')
+        } catch (error) {
+          if (error.status === 409 && /敏感|手机号|邮箱|证件|密钥/.test(error.message || '')) {
+            askConfirm({
+              title: '更新后包含可能的敏感信息？',
+              body: error.message,
+              okLabel: '仍要更新',
+              onOk: () => void refreshShare(share, true),
+            })
+          } else {
+            showToast(error.message || '更新快照失败', { tone: 'error' })
+          }
+        }
+      },
+    })
   }
 
   async function revokeShare(share) {
@@ -4698,7 +4853,8 @@
       meta.className = 'version-meta'
       const when = entry.version.createdAt ? new Date(entry.version.createdAt).toLocaleString('zh-CN', { hour12: false }) : ''
       const text = versionText(entry.version)
-      meta.textContent = `${when}${entry.version.model ? ` · ${entry.version.model}` : ''} · ${text.length} 字`
+      const ctx = entry.version.context || {}
+      meta.textContent = `${when}${ctx.projectName ? ` · ${ctx.projectName}` : ''}${entry.version.model ? ` · ${entry.version.model}` : ''} · ${text.length} 字${ctx.memoryChars ? ` · 记忆 ${ctx.memoryChars} 字` : ''}`
       const actions = document.createElement('div')
       actions.className = 'version-actions'
       const preview = document.createElement('button')
@@ -4744,6 +4900,100 @@
       showToast('已采用这个版本')
     } catch (error) {
       showToast(error.message || '切换版本失败', { tone: 'error' })
+    }
+  }
+
+  function openRegenerate(messageId) {
+    const message = state.messages.find((msg) => msg.id === messageId)
+    if (!message) return showToast('找不到这条回答', { tone: 'error' })
+    state.regenTarget = { messageId }
+    state.regenFocus = document.activeElement
+    els.regenerateInstruction.value = ''
+    els.regenerateModal.hidden = false
+    lockShell()
+    requestAnimationFrame(() => els.regenerateInstruction.focus({ preventScroll: true }))
+  }
+
+  function closeRegenerate({ restoreFocus = true } = {}) {
+    if (!els.regenerateModal || els.regenerateModal.hidden) return
+    els.regenerateModal.hidden = true
+    state.regenTarget = null
+    lockShell()
+    if (restoreFocus) {
+      const target = state.regenFocus
+      state.regenFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  function runRegenerate(instruction = '') {
+    const target = state.regenTarget
+    if (!target) return
+    const messageId = target.messageId
+    closeRegenerate({ restoreFocus: false })
+    const view = [...els.thread.querySelectorAll('[data-message-id]')].find((node) => node.dataset.messageId === messageId)
+    view?.remove()
+    state.messages = state.messages.filter((msg) => msg.id !== messageId)
+    const lastUser = [...state.messages].reverse().find((msg) => msg.role === 'user')
+    if (!lastUser) return showToast('找不到对应的提问', { tone: 'error' })
+    void sendMessage(lastUser.text, {
+      retryOf: messageId,
+      instruction: instruction.trim(),
+      skipUserBubble: true,
+      conversationId: state.currentId,
+    })
+  }
+
+  function openEditAnswer(messageId) {
+    const message = state.messages.find((msg) => msg.id === messageId)
+    if (!message) return showToast('找不到这条回答', { tone: 'error' })
+    state.editAnswerTarget = { messageId }
+    state.editAnswerFocus = document.activeElement
+    els.editAnswerText.value = message.text || (message.blocks || []).filter((block) => block.type === 'text').map((block) => block.text).join('\n\n')
+    els.editAnswerError.hidden = true
+    els.editAnswerModal.hidden = false
+    lockShell()
+    resizeInput()
+    requestAnimationFrame(() => els.editAnswerText.focus({ preventScroll: true }))
+  }
+
+  function closeEditAnswer({ restoreFocus = true } = {}) {
+    if (!els.editAnswerModal || els.editAnswerModal.hidden) return
+    els.editAnswerModal.hidden = true
+    state.editAnswerTarget = null
+    lockShell()
+    if (restoreFocus) {
+      const target = state.editAnswerFocus
+      state.editAnswerFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  async function saveEditAnswer() {
+    const target = state.editAnswerTarget
+    if (!target) return
+    const text = els.editAnswerText.value.trim()
+    if (!text) {
+      els.editAnswerError.textContent = '回答不能为空'
+      els.editAnswerError.hidden = false
+      return
+    }
+    els.editAnswerSave.disabled = true
+    try {
+      await api(`/api/conversations/${state.currentId}/messages/${target.messageId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ text }),
+      })
+      closeEditAnswer({ restoreFocus: false })
+      const data = await api(`/api/conversations/${state.currentId}`)
+      state.messages = data.conversation.messages || []
+      renderMessages(state.messages, { restoreScroll: false })
+      showToast('回答已更新，旧版本保留在版本历史')
+    } catch (error) {
+      els.editAnswerError.textContent = error.message || '保存失败'
+      els.editAnswerError.hidden = false
+    } finally {
+      els.editAnswerSave.disabled = false
     }
   }
 
@@ -5151,7 +5401,7 @@
         }
         renderConversations()
         state.lastDeleted = { id, at: Date.now() }
-        showToast('对话已删除，8 秒内可撤销（⌘Z）', {
+        showToast('已移到最近删除，8 秒内可撤销（⌘Z），30 天内可在设置里恢复', {
           icon: 'i-trash',
           actionLabel: '撤销',
           duration: 7800,
@@ -5671,18 +5921,23 @@
       const next = area.value.trim()
       if (!next) return showToast('内容不能为空', { tone: 'error' })
       if (next === text) return stop()
+      const messageIndex = state.messages.findIndex((msg) => msg.id === id)
+      const removed = messageIndex >= 0 ? state.messages.length - messageIndex - 1 : 0
+      const attachments = messageIndex >= 0 && Array.isArray(state.messages[messageIndex].attachments)
+        ? state.messages[messageIndex].attachments
+        : []
       askConfirm({
         title: '编辑并重新生成？',
-        body: '这条提问之后的消息会被移除，然后重新生成回答。',
+        body: `这条提问之后的 ${removed} 条消息会被移除，然后重新生成回答。${attachments.length ? `原附件（${attachments.length} 个）会一起保留。` : ''}`,
         okLabel: '保存并重跑',
-        onOk: () => void applyUserEdit(id, next, text),
+        onOk: () => void applyUserEdit(id, next, text, attachments),
       })
     })
     area.focus()
     area.setSelectionRange(area.value.length, area.value.length)
   }
 
-  async function applyUserEdit(id, text, previousText) {
+  async function applyUserEdit(id, text, previousText, attachments = []) {
     const wrap = [...els.thread.querySelectorAll('.msg.user')].find(
       (node) => node.dataset.messageId === id,
     )
@@ -5713,6 +5968,7 @@
     }
     await sendMessage(text, {
       editOf: id,
+      attachments,
       skipUserBubble: true,
       conversationId: state.currentId,
     })
@@ -5977,6 +6233,7 @@
     view.addTool = (call) => {
       view.clearAllLive()
       view.sealText()
+      const lazy = call.lazy === true
       const meta = toolMeta(call.tool)
       const card = document.createElement('div')
       card.className = 'tool-card'
@@ -6012,14 +6269,6 @@
       const body = document.createElement('div')
       body.className = 'tool-body'
 
-      head.addEventListener('click', () => {
-        const open = card.classList.toggle('open')
-        head.setAttribute('aria-expanded', String(open))
-      })
-
-      card.append(head, body)
-      view.blocksEl.appendChild(card)
-
       const entry = {
         card,
         body,
@@ -6030,9 +6279,32 @@
         resultEl: null,
         renderedResult: false,
         resultRaw: '',
+        renderedBody: false,
+        pendingCall: call,
       }
+      const paintBody = () => {
+        if (entry.renderedBody) return
+        entry.renderedBody = true
+        renderToolBody(entry, entry.pendingCall)
+      }
+      head.addEventListener('click', () => {
+        const open = card.classList.toggle('open')
+        head.setAttribute('aria-expanded', String(open))
+        if (open) paintBody()
+      })
+
+      card.append(head, body)
+      view.blocksEl.appendChild(card)
+
       if (call.id) view.toolCards.set(call.id, entry)
-      renderToolBody(entry, call)
+      if (lazy) {
+        entry.renderedBody = false
+        entry.pendingCall = call
+        entry.resultRaw = call.result === undefined || call.result === null || call.result === '' ? '' : String(call.result)
+      } else {
+        entry.renderedBody = true
+        renderToolBody(entry, call)
+      }
       renderToolStatus(entry, call.status || 'running')
       if (state.stick) scrollToBottom()
       return entry
@@ -6055,6 +6327,10 @@
       if (failed) {
         entry.card.classList.add('open')
         entry.head.setAttribute('aria-expanded', 'true')
+        if (!entry.renderedBody && entry.pendingCall) {
+          entry.renderedBody = true
+          renderToolBody(entry, entry.pendingCall)
+        }
       }
       if (!entry.resultRaw) {
         entry.resultText = status === 'running' ? '运行中…'
@@ -6354,6 +6630,39 @@
       if (error) view.setError(error)
 
       const text = view.textBlocks.map((b) => b.raw).join('\n\n')
+      const sourceUrls = new Set()
+      for (const entry of view.toolCards.values()) {
+        const haystack = `${JSON.stringify(entry.pendingCall?.input || {})}\n${entry.resultRaw || ''}`
+        for (const match of haystack.matchAll(/https?:\/\/[^\s"'<>)\]}]+/g)) {
+          const url = match[0].replace(/[.,;:]+$/, '')
+          if (url.length < 12 || url.length > 400) continue
+          sourceUrls.add(url)
+          if (sourceUrls.size >= 8) break
+        }
+        if (sourceUrls.size >= 8) break
+      }
+      if (sourceUrls.size) {
+        const sources = document.createElement('div')
+        sources.className = 'msg-sources'
+        const label = document.createElement('span')
+        label.className = 'msg-sources-label'
+        label.textContent = '来源'
+        sources.appendChild(label)
+        for (const url of sourceUrls) {
+          const link = document.createElement('a')
+          link.href = url
+          link.target = '_blank'
+          link.rel = 'noopener noreferrer'
+          try {
+            link.textContent = new URL(url).hostname.replace(/^www\./, '')
+          } catch {
+            link.textContent = url.slice(0, 40)
+          }
+          link.title = url
+          sources.appendChild(link)
+        }
+        view.el.appendChild(sources)
+      }
       const actions = document.createElement('div')
       actions.className = 'msg-actions'
 
@@ -6385,6 +6694,19 @@
           openShareSheet(state.currentId, id)
         })
         actions.appendChild(shareAnswer)
+
+        const editAnswer = document.createElement('button')
+        editAnswer.type = 'button'
+        editAnswer.className = 'icon-btn'
+        editAnswer.title = '编辑回答文字（不重新调用模型）'
+        editAnswer.setAttribute('aria-label', '编辑回答文字')
+        editAnswer.innerHTML = icon('i-edit')
+        editAnswer.addEventListener('click', () => {
+          const id = messageId || view.el.dataset.messageId
+          if (!id) return showToast('暂时无法编辑这条回答', { tone: 'error' })
+          openEditAnswer(id)
+        })
+        actions.appendChild(editAnswer)
 
         const share = document.createElement('button')
         share.type = 'button'
@@ -6455,15 +6777,7 @@
           if (state.streaming) return
           const id = messageId || view.el.dataset.messageId
           if (!id || !state.currentId) return showToast('暂时无法重新生成', { tone: 'error' })
-          view.el.remove()
-          state.messages = state.messages.filter((msg) => msg.id !== id)
-          const lastUser = [...state.messages].reverse().find((msg) => msg.role === 'user')
-          if (!lastUser) return showToast('找不到对应的提问', { tone: 'error' })
-          void sendMessage(lastUser.text, {
-            retryOf: id,
-            skipUserBubble: true,
-            conversationId: state.currentId,
-          })
+          openRegenerate(id)
         })
         actions.appendChild(again)
       }
@@ -6782,6 +7096,7 @@
             status: block.status,
             result: block.result,
             summary: summarizeInput(block.input),
+            lazy: true,
           })
         }
       }
@@ -6805,6 +7120,12 @@
         messageId: msg.id,
         canRegenerate: Boolean(options.isLast) && msg.status !== 'running',
       })
+    }
+    if (msg.editedAt) {
+      const badge = document.createElement('span')
+      badge.className = 'msg-edited-badge'
+      badge.textContent = '已人工编辑'
+      view.el.querySelector('.msg-actions')?.appendChild(badge)
     }
     if (Array.isArray(msg.versions) && msg.versions.length) addVersionBar(view.el, msg)
     return view.el
@@ -6938,6 +7259,8 @@
     els.projectEditor.hidden = true
     els.projectsList.hidden = false
     els.projectsHint.hidden = false
+    els.projectNewBtn.hidden = false
+    els.projectSaveTop.hidden = true
     renderProjects()
     requestAnimationFrame(() => els.projectsList.querySelector('.project-row-main')?.focus({ preventScroll: true }))
   })
@@ -6965,6 +7288,16 @@
     if (expiry) setShareExpiry(expiry.dataset.shareExpiry)
   })
   els.shareCreate?.addEventListener('click', () => void createShare())
+  els.sharePickAll?.addEventListener('click', () => {
+    state.shareSelected = new Set(shareVisibleMessages(state.shareMessages).map((msg) => msg.id))
+    for (const input of els.sharePickList.querySelectorAll('input')) input.checked = true
+    updateSharePreviewText()
+  })
+  els.sharePickNone?.addEventListener('click', () => {
+    state.shareSelected = new Set()
+    for (const input of els.sharePickList.querySelectorAll('input')) input.checked = false
+    updateSharePreviewText()
+  })
   els.shareIncludeTools?.addEventListener('change', updateSharePreviewOptions)
   els.shareIncludeThinking?.addEventListener('change', updateSharePreviewOptions)
   els.versionsSheet?.addEventListener('click', (event) => {
@@ -7103,6 +7436,9 @@
     if (els.shareSheet && !els.shareSheet.hidden) return closeShareSheet()
     if (els.versionsSheet && !els.versionsSheet.hidden) return closeVersions()
     if (els.templateModal && !els.templateModal.hidden) return closeTemplateModal()
+    if (els.regenerateModal && !els.regenerateModal.hidden) return closeRegenerate()
+    if (els.editAnswerModal && !els.editAnswerModal.hidden) return closeEditAnswer()
+    if (els.trashSheet && !els.trashSheet.hidden) return closeTrash()
     if (els.exportSheet && !els.exportSheet.hidden) return closeExportSheet()
     if (els.palette && !els.palette.hidden) return closePalette()
     if (els.commandMenu && !els.commandMenu.hidden) return closeCommandMenu()
@@ -7589,7 +7925,15 @@
       const time = document.createElement('span')
       time.textContent = relativeTime(item.updatedAt || item.createdAt)
       time.title = new Date(item.updatedAt || item.createdAt).toLocaleString('zh-CN', { hour12: false })
-      meta.append(source, time)
+      if (item.projectId) {
+        const scope = document.createElement('span')
+        scope.className = 'memory-source'
+        const project = projectById(item.projectId)
+        scope.textContent = project ? `项目 · ${project.name}` : '项目记忆'
+        meta.append(source, scope, time)
+      } else {
+        meta.append(source, time)
+      }
       if (item.disabled) {
         const paused = document.createElement('span')
         paused.className = 'memory-source'
@@ -7693,9 +8037,11 @@
     }
     if (els.memoryError) els.memoryError.hidden = true
     try {
+      const conv = state.currentId ? state.conversations.find((entry) => entry.id === state.currentId) : null
+      const projectId = conv?.projectId || state.activeProjectId || undefined
       const data = await api('/api/memory', {
         method: 'POST',
-        body: JSON.stringify({ text }),
+        body: JSON.stringify({ text, projectId }),
       })
       const item = data.item
       state.memory.count = Number(data.count) || state.memory.count
@@ -7985,6 +8331,20 @@
         info.append(title, meta)
         row.appendChild(info)
         if (share.token && !share.expired && !share.revokedAt) {
+          const refresh = document.createElement('button')
+          refresh.type = 'button'
+          refresh.className = 'sidebar-tool'
+          refresh.textContent = '更新'
+          refresh.addEventListener('click', async () => {
+            try {
+              await api(`/api/shares/${share.id}/refresh`, { method: 'POST' })
+              showToast('分享内容已更新')
+              await loadAllShares()
+            } catch (error) {
+              showToast(error.message || '更新失败', { tone: 'error' })
+            }
+          })
+          row.appendChild(refresh)
           const copy = document.createElement('button')
           copy.type = 'button'
           copy.className = 'sidebar-tool'
@@ -8441,6 +8801,19 @@
   }
 
   els.templateForm?.addEventListener('submit', submitTemplateForm)
+  els.regenerateCancel?.addEventListener('click', () => closeRegenerate())
+  els.regenerateDirect?.addEventListener('click', () => runRegenerate(''))
+  els.regenerateRun?.addEventListener('click', () => runRegenerate(els.regenerateInstruction.value))
+  els.regenerateModal?.addEventListener('click', (event) => {
+    if (event.target === els.regenerateModal) closeRegenerate()
+    const preset = event.target.closest('[data-regen-preset]')
+    if (preset) els.regenerateInstruction.value = preset.dataset.regenPreset
+  })
+  els.editAnswerCancel?.addEventListener('click', () => closeEditAnswer())
+  els.editAnswerSave?.addEventListener('click', () => void saveEditAnswer())
+  els.editAnswerModal?.addEventListener('click', (event) => {
+    if (event.target === els.editAnswerModal) closeEditAnswer()
+  })
   els.templateCancel?.addEventListener('click', () => closeTemplateModal())
   els.templateModal?.addEventListener('click', (event) => {
     if (event.target === els.templateModal) closeTemplateModal()
@@ -8546,6 +8919,87 @@
     }
     renderConversations()
     showToast('已全部标记为已读')
+  })
+
+  async function openTrash() {
+    els.trashSheet.hidden = false
+    lockShell()
+    els.trashList.replaceChildren()
+    els.trashList.innerHTML = '<p class="archive-empty">正在加载…</p>'
+    try {
+      const data = await api('/api/conversations?trash=1')
+      const items = data.conversations || []
+      if (!items.length) {
+        els.trashList.innerHTML = '<p class="archive-empty">最近删除是空的。</p>'
+        return
+      }
+      els.trashList.replaceChildren()
+      for (const item of items) {
+        const row = document.createElement('div')
+        row.className = 'archive-row'
+        const main = document.createElement('div')
+        main.className = 'archive-main'
+        const title = document.createElement('div')
+        title.className = 'archive-title'
+        title.textContent = item.title || '未命名对话'
+        const meta = document.createElement('div')
+        meta.className = 'archive-meta'
+        meta.textContent = `${item.messageCount} 条消息 · 删除于 ${new Date(item.deletedAt).toLocaleDateString('zh-CN')} · ${new Date(item.purgeAt).toLocaleDateString('zh-CN')} 前可恢复`
+        main.append(title, meta)
+        const actions = document.createElement('div')
+        actions.className = 'archive-actions'
+        const restore = document.createElement('button')
+        restore.type = 'button'
+        restore.className = 'ghost-btn'
+        restore.textContent = '恢复'
+        restore.addEventListener('click', async () => {
+          try {
+            await api(`/api/conversations/${item.id}/restore`, { method: 'POST' })
+            await refreshConversations()
+            showToast('对话已恢复')
+            await openTrash()
+          } catch (error) {
+            showToast(error.message || '恢复失败', { tone: 'error' })
+          }
+        })
+        const purge = document.createElement('button')
+        purge.type = 'button'
+        purge.className = 'ghost-btn danger'
+        purge.textContent = '永久删除'
+        purge.addEventListener('click', () => {
+          askConfirm({
+            title: `永久删除「${item.title || '这个对话'}」？`,
+            body: '消息、工作区文件与分享链接都会立即删除，无法恢复。',
+            okLabel: '永久删除',
+            onOk: async () => {
+              try {
+                await api(`/api/conversations/${item.id}/purge`, { method: 'POST' })
+                showToast('已永久删除')
+                await openTrash()
+              } catch (error) {
+                showToast(error.message || '删除失败', { tone: 'error' })
+              }
+            },
+          })
+        })
+        actions.append(restore, purge)
+        row.append(main, actions)
+        els.trashList.appendChild(row)
+      }
+    } catch (error) {
+      els.trashList.innerHTML = `<p class="archive-empty">${error.message || '加载失败'}</p>`
+    }
+  }
+
+  function closeTrash() {
+    if (!els.trashSheet || els.trashSheet.hidden) return
+    els.trashSheet.hidden = true
+    lockShell()
+  }
+
+  els.trashBtn?.addEventListener('click', () => void openTrash())
+  els.trashSheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-trash-close]')) closeTrash()
   })
 
   async function openArchive() {
@@ -8977,6 +9431,8 @@
     for (const overlay of [
       els.permissionMenu,
       els.confirmModal,
+      els.regenerateModal,
+      els.editAnswerModal,
       els.templateModal,
       els.exportSheet,
       els.versionsSheet,
@@ -10076,8 +10532,9 @@
   let printState = null
   window.addEventListener('beforeprint', () => {
     if (!state.currentId || !state.messages.length) return
-    printState = { end: state.threadEnd, stick: state.stick }
+    printState = { end: state.threadEnd, stick: state.stick, window: state.threadWindow }
     state.threadEnd = null
+    state.threadWindow = Math.max(state.messages.length, state.threadWindow)
     state.stick = false
     renderMessages(state.messages, { restoreScroll: false })
     const project = activeProject()
@@ -10091,6 +10548,7 @@
   window.addEventListener('afterprint', () => {
     if (!printState) return
     state.threadEnd = printState.end
+    state.threadWindow = printState.window
     state.stick = printState.stick
     printState = null
     if (state.currentId) renderMessages(state.messages, { restoreScroll: false })

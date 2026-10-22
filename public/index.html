@@ -586,6 +586,7 @@
         <header class="sheet-head">
           <h2 id="projectsTitle">项目</h2>
           <div class="project-head-actions">
+            <button id="projectSaveTop" class="project-save" type="submit" form="projectForm" hidden>保存</button>
             <button id="projectNewBtn" class="project-new-btn" type="button">
               <svg aria-hidden="true"><use href="#i-plus" /></svg><span>新建</span>
             </button>
@@ -630,6 +631,23 @@
               </div>
               <div id="projectFileList" class="project-file-list"></div>
             </div>
+            <div class="project-defaults">
+              <label class="project-select-field">
+                <span>默认引擎</span>
+                <select id="projectDefaultEngine">
+                  <option value="dsr">DSH（与桌面版共享）</option>
+                  <option value="codex">Codex（独立工作区）</option>
+                </select>
+              </label>
+              <label class="project-select-field">
+                <span>默认权限</span>
+                <select id="projectDefaultPermission">
+                  <option value="read-only">只读</option>
+                  <option value="workspace-write">标准</option>
+                  <option value="danger-full-access">完全权限</option>
+                </select>
+              </label>
+            </div>
             <label class="project-text-field">
               <span>项目指令 <em>会注入每次提问</em><b id="projectInstructionsCount" class="project-count">0/4000</b></span>
               <textarea id="projectInstructions" name="instructions" rows="4" maxlength="4000" placeholder="例如：回答先给结论；涉及数据必须标注来源；默认用中文。"></textarea>
@@ -662,6 +680,14 @@
         <div class="share-sheet-body">
           <p class="share-lead">生成一段只读快照。对方无需访问码，也不会看到你的侧栏、记忆或其他对话。</p>
           <p id="sharePreview" class="share-preview" role="status">正在统计将分享的内容…</p>
+          <details id="sharePickWrap" class="share-pick" open>
+            <summary>选择要分享的消息</summary>
+            <div class="share-pick-actions">
+              <button id="sharePickAll" type="button">全选</button>
+              <button id="sharePickNone" type="button">全不选</button>
+            </div>
+            <div id="sharePickList" class="share-pick-list"></div>
+          </details>
           <div class="share-option-group" role="radiogroup" aria-label="链接有效期">
             <span class="share-option-label">有效期</span>
             <div class="share-expiry-options">
@@ -683,6 +709,10 @@
               <strong>包含思考过程</strong>
               <em>默认关闭。思考过程可能包含中间假设与未采用的信息。</em>
             </span>
+          </label>
+          <label class="share-password-field">
+            <span>分享口令（可选）</span>
+            <input id="sharePassword" type="password" maxlength="64" autocomplete="new-password" placeholder="4–64 个字符；对方打开链接后需输入" />
           </label>
           <p class="share-warning">拿到链接的任何人都能查看这段快照，请勿分享密钥、客户资料等敏感内容。</p>
           <button id="shareCreate" class="share-primary" type="button">生成只读链接</button>
@@ -909,7 +939,7 @@
           <div class="settings-group settings-row">
             <div>
               <div class="settings-label">备份全部对话</div>
-              <p class="settings-desc">导出/导入 JSON（含消息、项目与记忆，不含工作区文件；上限 128MB）。</p>
+              <p class="settings-desc">导出/导入 JSON（含消息、项目、记忆、收藏与提示词；不含对话里的文件内容，文件请单独拷贝；上限 128MB）。</p>
             </div>
             <div class="settings-actions">
               <button id="backupBtn" class="ghost-btn" type="button">导出</button>
@@ -931,6 +961,13 @@
               <p class="settings-desc">登录同一服务器的设备共用一份收藏与提示词；离线修改会先留在本机。</p>
             </div>
             <span id="libraryState" class="settings-sync-state">检查中…</span>
+          </div>
+          <div class="settings-group settings-row">
+            <div>
+              <div class="settings-label">最近删除</div>
+              <p class="settings-desc">删除的对话保留 30 天，文件也保留；可随时恢复或永久删除。</p>
+            </div>
+            <button id="trashBtn" class="ghost-btn" type="button">查看</button>
           </div>
           <div class="settings-group settings-row">
             <div>
@@ -959,6 +996,21 @@
             <p id="storageInfo" class="settings-storage-info">正在读取存储占用…</p>
           </details>
         </footer>
+      </section>
+    </div>
+
+    <div id="trashSheet" class="sheet" hidden>
+      <div class="sheet-backdrop" data-trash-close></div>
+      <section class="sheet-panel archive-panel" role="dialog" aria-modal="true" aria-labelledby="trashTitle">
+        <div class="sheet-grip" aria-hidden="true"></div>
+        <header class="sheet-head">
+          <h2 id="trashTitle">最近删除</h2>
+          <button class="icon-btn" type="button" data-trash-close aria-label="关闭最近删除">
+            <svg><use href="#i-close" /></svg>
+          </button>
+        </header>
+        <p class="sheet-sub">保留 30 天。恢复后工作区文件与消息一并回来；永久删除不可撤销。</p>
+        <div id="trashList" class="archive-list"></div>
       </section>
     </div>
 
@@ -1062,6 +1114,44 @@
     </div>
 
     <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+    <div id="regenerateModal" class="modal" hidden>
+      <div class="modal-card regenerate-card" role="dialog" aria-modal="true" aria-labelledby="regenerateTitle">
+        <h2 id="regenerateTitle">重新生成</h2>
+        <p class="template-hint">旧回答会保留在「版本历史」里，可随时切回。</p>
+        <div class="regen-presets" role="group" aria-label="重写方向">
+          <button type="button" data-regen-preset="更简洁：先结论，删掉重复解释。">更简洁</button>
+          <button type="button" data-regen-preset="更详细：补充关键步骤、边界条件与例子。">更详细</button>
+          <button type="button" data-regen-preset="换成表格或分点结构，方便快速扫读。">表格化</button>
+          <button type="button" data-regen-preset="换一个角度：先列反对意见，再给结论。">换个角度</button>
+        </div>
+        <label class="template-field">
+          <span>重写要求（可选）</span>
+          <textarea id="regenerateInstruction" rows="3" maxlength="500" placeholder="例如：保留结论，把语气改得更克制，控制在 300 字内。"></textarea>
+        </label>
+        <div class="modal-actions regen-actions">
+          <button id="regenerateCancel" class="ghost-btn" type="button">取消</button>
+          <button id="regenerateDirect" class="ghost-btn" type="button">直接重试</button>
+          <button id="regenerateRun" class="primary-btn" type="button">按指令重写</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="editAnswerModal" class="modal" hidden>
+      <div class="modal-card edit-answer-card" role="dialog" aria-modal="true" aria-labelledby="editAnswerTitle">
+        <h2 id="editAnswerTitle">编辑回答</h2>
+        <p class="template-hint">只改文字，不重新调用模型；修改前的版本会保留在版本历史里。</p>
+        <label class="template-field">
+          <span>回答正文</span>
+          <textarea id="editAnswerText" rows="10"></textarea>
+        </label>
+        <p id="editAnswerError" class="template-error" role="alert" hidden></p>
+        <div class="modal-actions">
+          <button id="editAnswerCancel" class="ghost-btn" type="button">取消</button>
+          <button id="editAnswerSave" class="primary-btn" type="button">保存</button>
+        </div>
+      </div>
+    </div>
 
     <div id="templateModal" class="modal" hidden>
       <div class="modal-card template-card" role="dialog" aria-modal="true" aria-labelledby="templateTitle">

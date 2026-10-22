@@ -9,6 +9,7 @@ const MAX_TOTAL_CONVERSATIONS = 5000
 const DEFAULT_PERMISSION = 'workspace-write'
 const PERMISSION_VALUES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 export const UNDO_WINDOW_MS = 8000
+export const TRASH_RETENTION_MS = 30 * 86_400_000
 
 const now = () => Date.now()
 const messageId = () => 'm_' + crypto.randomBytes(8).toString('hex')
@@ -79,7 +80,7 @@ export class ConversationStore {
         changed = true
       }
       if (conv.archivedAt) conv.archivedAt = Number(conv.archivedAt) || Date.now()
-      if (conv.deletedAt && Date.now() - conv.deletedAt > UNDO_WINDOW_MS) {
+      if (conv.deletedAt && Date.now() - conv.deletedAt > TRASH_RETENTION_MS) {
         conv.__purge = true
       }
       for (const msg of conv.messages || []) {
@@ -188,7 +189,7 @@ export class ConversationStore {
 
   purgeExpired() {
     const expired = this.data.conversations.filter(
-      (conv) => conv.deletedAt && Date.now() - conv.deletedAt > UNDO_WINDOW_MS,
+      (conv) => conv.deletedAt && Date.now() - conv.deletedAt > TRASH_RETENTION_MS,
     )
     if (!expired.length) return false
     this.data.conversations = this.data.conversations.filter((conv) => !expired.includes(conv))
@@ -285,10 +286,21 @@ export class ConversationStore {
           // repeat it as the snippet. Only a body hit earns a context line.
         }
         for (const msg of conv.messages || []) {
-          if (!msg.text) continue
-          if (String(msg.text).toLowerCase().includes(lower)) {
+          if (msg.text && String(msg.text).toLowerCase().includes(lower)) {
             score += msg.role === 'user' ? 2 : 1
             if (!snippet) snippet = snippetAround(msg.text, query)
+          }
+          for (const block of msg.blocks || []) {
+            if (block.type === 'text' && block.text && String(block.text).toLowerCase().includes(lower)) {
+              score += 1
+              if (!snippet) snippet = snippetAround(block.text, query)
+            } else if (block.type === 'tool' && block.result) {
+              const result = typeof block.result === 'string' ? block.result : JSON.stringify(block.result)
+              if (result.length < 200_000 && result.toLowerCase().includes(lower)) {
+                score += 1
+                if (!snippet) snippet = snippetAround(result, query)
+              }
+            }
           }
         }
         if (score > 0) {
@@ -368,6 +380,52 @@ export class ConversationStore {
     return { counts, unfiled, total }
   }
 
+  listTrash(owner) {
+    return this.data.conversations
+      .filter((conv) => conv.owner === owner && conv.deletedAt)
+      .sort((left, right) => right.deletedAt - left.deletedAt)
+      .map((conv) => ({
+        id: conv.id,
+        title: conv.title,
+        deletedAt: conv.deletedAt,
+        purgeAt: Number(conv.deletedAt) + TRASH_RETENTION_MS,
+        messageCount: (conv.messages || []).length,
+        projectId: conv.projectId || null,
+      }))
+  }
+
+  purgeFromBackups(id) {
+    try {
+      const backupDir = path.join(DATA_DIR, 'backups')
+      if (!fs.existsSync(backupDir)) return
+      for (const name of fs.readdirSync(backupDir)) {
+        if (!/^conversations-\d{4}-\d{2}-\d{2}\.json$/.test(name)) continue
+        const file = path.join(backupDir, name)
+        try {
+          const payload = JSON.parse(fs.readFileSync(file, 'utf8'))
+          if (!Array.isArray(payload.conversations)) continue
+          const filtered = payload.conversations.filter((conv) => conv.id !== id)
+          if (filtered.length === payload.conversations.length) continue
+          payload.conversations = filtered
+          fs.writeFileSync(file, JSON.stringify(payload), { mode: 0o600 })
+        } catch {}
+      }
+    } catch {}
+  }
+
+  purge(id) {
+    const index = this.data.conversations.findIndex((conv) => conv.id === id)
+    if (index < 0) return false
+    const [conv] = this.data.conversations.splice(index, 1)
+    this.removeWorkspace(conv)
+    this.purgeFromBackups(id)
+    try {
+      this.onPurge?.(conv)
+    } catch {}
+    this.scheduleSave()
+    return true
+  }
+
   get(id) {
     return this.data.conversations.find((conv) => conv.id === id) || null
   }
@@ -392,7 +450,7 @@ export class ConversationStore {
   restore(id) {
     const conv = this.get(id)
     if (!conv || !conv.deletedAt) return null
-    if (Date.now() - conv.deletedAt > UNDO_WINDOW_MS) return null
+    if (Date.now() - conv.deletedAt > TRASH_RETENTION_MS) return null
     delete conv.deletedAt
     conv.updatedAt = now()
     this.scheduleSave()

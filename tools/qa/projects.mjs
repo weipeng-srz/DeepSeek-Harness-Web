@@ -33,12 +33,15 @@ try {
   })
   record('instructions capped at 4000', long.status === 200 && long.body.project.instructions.length === 4000, String(long.body.project?.instructions?.length))
 
+  await api(`/api/projects/${project.id}`, { method: 'PATCH', body: JSON.stringify({ defaultPermission: 'read-only', defaultEngine: 'dsr' }) })
   res = await api('/api/conversations', {
     method: 'POST',
-    body: JSON.stringify({ engine: 'dsr', projectId: project.id }),
+    body: JSON.stringify({ engine: 'codex', permission: 'danger-full-access', projectId: project.id }),
   })
   const conv = res.body.conversation
   record('create conversation in project', res.status === 201 && conv.projectId === project.id, conv.projectId)
+  record('project defaults override explicit request', conv.permission === 'read-only' && conv.engine === 'dsr', JSON.stringify({ permission: conv.permission, engine: conv.engine }))
+  await api(`/api/projects/${project.id}`, { method: 'PATCH', body: JSON.stringify({ defaultPermission: 'workspace-write' }) })
 
   res = await api(`/api/conversations?projectId=${project.id}`)
   record('filter conversations by project', res.body.total === 1 && res.body.conversations[0].id === conv.id, JSON.stringify({ total: res.body.total }))
@@ -110,7 +113,7 @@ try {
   await page.locator('#projectName').fill('面试准备')
   await page.locator('#projectEmoji').fill('🎯')
   await page.locator('#projectInstructions').fill('每次回答给出追问清单。')
-  await page.locator('#projectSaveBtn').click()
+  await page.locator('#projectSaveTop').click()
   await page.waitForTimeout(600)
   record('create project through UI', await page.locator('.project-row').count() >= 2)
   await page.locator('button[data-projects-close]').click()

@@ -360,6 +360,10 @@
 }
 
 .project-form-foot {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  background: var(--bg-elevated);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -775,6 +779,7 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  max-height: calc(100dvh - 128px);
   overflow-y: auto;
   padding: 2px 2px 8px;
 }
@@ -872,6 +877,9 @@
 }
 
 .share-primary {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   height: 42px;
   border: 0;
   border-radius: 999px;
@@ -1582,4 +1590,219 @@ body.text-large .msg-meta { font-size: 12px; }
     color: #555;
     font-size: 10px;
   }
+}
+
+.regenerate-card,
+.edit-answer-card {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.regen-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.regen-presets button {
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.regen-presets button:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+
+.regen-actions {
+  flex-wrap: wrap;
+}
+
+.edit-answer-card textarea {
+  min-height: 200px;
+  resize: vertical;
+  line-height: 1.6;
+}
+
+.share-pick {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  padding: 8px 10px;
+}
+
+.share-pick summary {
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.share-pick-actions {
+  display: flex;
+  gap: 6px;
+  margin: 7px 0 5px;
+}
+
+.share-pick-actions button {
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 10.5px;
+  cursor: pointer;
+}
+
+.share-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 170px;
+  overflow-y: auto;
+}
+
+.share-pick-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 4px 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.share-pick-row input {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  accent-color: var(--text);
+}
+
+.share-pick-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.share-pick-row strong {
+  margin-right: 5px;
+  color: var(--text);
+  font-weight: 650;
+}
+
+.project-defaults {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.project-select-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.project-select-field select {
+  height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+@media (max-width: 480px) {
+  .project-defaults {
+    grid-template-columns: 1fr;
+  }
+}
+
+.msg-sources {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0 2px;
+  padding-left: 2px;
+}
+
+.msg-sources-label {
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.msg-sources a {
+  max-width: 180px;
+  overflow: hidden;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 10.5px;
+  text-decoration: none;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.msg-sources a:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+
+.msg-edited-badge {
+  color: var(--text-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.share-password-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.share-password-field input {
+  height: 38px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  outline: none;
+}
+
+.md img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
 }

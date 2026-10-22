@@ -71,6 +71,10 @@ export class ProjectStore {
       notes: text(input.notes, NOTES_MAX),
       pinned: input.pinned === true,
       memoryOff: input.memoryOff === true,
+      defaultEngine: input.defaultEngine === 'codex' ? 'codex' : 'dsr',
+      defaultPermission: ['read-only', 'workspace-write', 'danger-full-access'].includes(input.defaultPermission)
+        ? input.defaultPermission
+        : 'workspace-write',
     }
     return base
   }
@@ -156,6 +160,10 @@ export class ProjectStore {
     if (patch.notes !== undefined) project.notes = text(patch.notes, NOTES_MAX)
     if (patch.pinned !== undefined) project.pinned = patch.pinned === true
     if (patch.memoryOff !== undefined) project.memoryOff = patch.memoryOff === true
+    if (patch.defaultEngine !== undefined) project.defaultEngine = patch.defaultEngine === 'codex' ? 'codex' : 'dsr'
+    if (patch.defaultPermission !== undefined && ['read-only', 'workspace-write', 'danger-full-access'].includes(patch.defaultPermission)) {
+      project.defaultPermission = patch.defaultPermission
+    }
     project.updatedAt = now()
     this.scheduleSave()
     return project

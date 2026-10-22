@@ -38,6 +38,18 @@ function decryptToken(payload) {
   }
 }
 
+function countSensitive(messages) {
+  const text = (messages || [])
+    .map((msg) => [msg.text || '', ...(msg.blocks || []).filter((block) => block.type === 'text').map((block) => block.text || '')].join('\n'))
+    .join('\n')
+  return (
+    (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) || []).length +
+    (text.match(/\b1[3-9]\d{9}\b/g) || []).length +
+    (text.match(/\b\d{17}[\dXx]\b/g) || []).length +
+    (text.match(/\b(sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g) || []).length
+  )
+}
+
 function cleanText(value, max = 200_000) {
   return String(value ?? '').replace(/\u0000/g, '').slice(0, max)
 }
@@ -138,22 +150,16 @@ export class ShareStore {
     if (this.data.shares.length !== before) this.scheduleSave()
   }
 
-  create({ conversation, owner, expiresInDays = 7, includeTools = false, includeThinking = false, messageIds = [] }) {
-    this.prune()
-    if (this.data.shares.length >= MAX_SHARES) {
-      throw Object.assign(new Error(`分享链接最多 ${MAX_SHARES} 个，请先在设置里撤销不用的链接`), { status: 409 })
-    }
+  buildSnapshot(conversation, { includeTools = false, includeThinking = false, messageIds = [] } = {}) {
     const selected = new Set(Array.isArray(messageIds) ? messageIds.filter((id) => typeof id === 'string') : [])
     const onlySelected = selected.size > 0
     const source = []
     if (onlySelected) {
-      // Keep the question that produced the selected answer for context.
-      for (let i = 0; i < (conversation.messages || []).length; i += 1) {
-        const msg = conversation.messages[i]
-        if (!selected.has(msg.id)) continue
-        const prev = conversation.messages[i - 1]
-        if (prev?.role === 'user' && !source.includes(prev)) source.push(prev)
-        if (!source.includes(msg)) source.push(msg)
+      // Share exactly what the user selected, in conversation order. The
+      // client preselects the question for a per-answer share; the server
+      // must not silently add an unchecked question back.
+      for (const msg of conversation.messages || []) {
+        if (selected.has(msg.id) && !source.includes(msg)) source.push(msg)
       }
     } else {
       source.push(...(conversation.messages || []))
@@ -216,7 +222,26 @@ export class ShareStore {
     if (bytes > MAX_SNAPSHOT_BYTES) {
       throw Object.assign(new Error(`这段对话快照约 ${(bytes / 1024 / 1024).toFixed(1)}MB，超过 2MB 分享上限；请导出文件后发送`), { status: 413 })
     }
+    return snapshot
+  }
+
+  create({ conversation, owner, expiresInDays = 7, includeTools = false, includeThinking = false, messageIds = [], allowSensitive = false, password = '' }) {
+    this.prune()
+    if (this.data.shares.length >= MAX_SHARES) {
+      throw Object.assign(new Error(`分享链接最多 ${MAX_SHARES} 个，请先在设置里撤销不用的链接`), { status: 409 })
+    }
+    const snapshot = this.buildSnapshot(conversation, { includeTools, includeThinking, messageIds })
+    const sensitive = countSensitive(snapshot.messages)
+    if (sensitive && !allowSensitive) {
+      throw Object.assign(new Error(`快照里有 ${sensitive} 处可能的手机号/邮箱/证件/密钥。确认要分享请再次确认。`), { status: 409, sensitive })
+    }
     const raw = token()
+    const pass = String(password || '')
+    if (pass && (pass.length < 4 || pass.length > 64)) {
+      throw Object.assign(new Error('分享口令需要 4–64 个字符'), { status: 400 })
+    }
+    const passwordSalt = pass ? crypto.randomBytes(16).toString('base64url') : ''
+    const passwordHash = pass ? crypto.scryptSync(pass, passwordSalt, 32).toString('base64url') : ''
     const days = Math.min(Math.max(Number(expiresInDays) || 0, 0), MAX_SHARE_DAYS)
     const share = {
       id: shareId(),
@@ -229,21 +254,45 @@ export class ShareStore {
       revokedAt: null,
       includeTools: Boolean(includeTools),
       includeThinking: Boolean(includeThinking),
+      passwordSalt,
+      passwordHash,
+      messageIds: Array.isArray(messageIds) ? messageIds.filter((id) => typeof id === 'string').slice(0, 500) : [],
       viewCount: 0,
       lastViewedAt: null,
       snapshot,
     }
     this.data.shares.unshift(share)
     this.scheduleSave()
-    const { tokenHash, tokenEnc: _tokenEnc, snapshot: _snapshot, ...meta } = share
-    return { share: { ...meta, messageCount: snapshot.messages.length }, token: raw, snapshot }
+    const { tokenHash, tokenEnc: _tokenEnc, passwordHash: _passwordHash, passwordSalt: _passwordSalt, snapshot: _snapshot, ...meta } = share
+    return { share: { ...meta, messageCount: snapshot.messages.length, hasPassword: Boolean(pass) }, token: raw, snapshot }
+  }
+
+  refresh(owner, id, conversation, { allowSensitive = false } = {}) {
+    const share = this.data.shares.find((item) => item.id === id && item.owner === owner)
+    if (!share || share.revokedAt) return null
+    if (!Array.isArray(share.messageIds)) {
+      throw Object.assign(new Error('这是旧版分享，无法确认原来选中了哪些消息；请撤销后重新生成'), { status: 409 })
+    }
+    const snapshot = this.buildSnapshot(conversation, {
+      includeTools: share.includeTools,
+      includeThinking: share.includeThinking,
+      messageIds: share.messageIds || [],
+    })
+    const sensitive = countSensitive(snapshot.messages)
+    if (sensitive && !allowSensitive) {
+      throw Object.assign(new Error(`更新后的快照有 ${sensitive} 处可能的手机号/邮箱/证件/密钥。确认要更新请再次确认。`), { status: 409, sensitive })
+    }
+    share.snapshot = snapshot
+    share.updatedAt = now()
+    this.scheduleSave()
+    return { share: { ...share, token: decryptToken(share.tokenEnc) }, snapshot }
   }
 
   list(owner) {
     this.prune()
     return this.data.shares
       .filter((share) => share.owner === owner)
-      .map(({ tokenHash, tokenEnc, snapshot, token, ...meta }) => ({
+      .map(({ tokenHash, tokenEnc, passwordHash, passwordSalt, snapshot, token, ...meta }) => ({
         ...meta,
         token: token || decryptToken(tokenEnc),
         messageCount: Array.isArray(snapshot?.messages) ? snapshot.messages.length : 0,
@@ -285,12 +334,22 @@ export class ShareStore {
     return count
   }
 
-  findPublic(rawToken) {
+  findPublic(rawToken, password = '') {
     const hash = hashToken(rawToken)
     const share = this.data.shares.find((item) => item.tokenHash === hash)
     if (!share) return { error: 'notfound' }
     if (share.revokedAt) return { error: 'revoked' }
     if (share.expiresAt && share.expiresAt <= now()) return { error: 'expired' }
+    if (share.passwordHash) {
+      const supplied = String(password || '')
+      let ok = false
+      try {
+        const candidate = crypto.scryptSync(supplied, share.passwordSalt, 32)
+        const expected = Buffer.from(share.passwordHash, 'base64url')
+        ok = candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected)
+      } catch {}
+      if (!ok) return { error: 'password' }
+    }
     share.viewCount += 1
     share.lastViewedAt = now()
     // A public page view must not rewrite multi-megabyte snapshots. Counters

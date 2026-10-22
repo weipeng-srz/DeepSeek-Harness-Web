@@ -94,6 +94,16 @@ export class LibraryStore {
     })
   }
 
+  removeConversation(owner, conversationId) {
+    const entry = this.data.owners[owner]
+    if (!entry) return 0
+    const before = Array.isArray(entry.bookmarks) ? entry.bookmarks.length : 0
+    entry.bookmarks = (entry.bookmarks || []).filter((item) => item.conversationId !== conversationId)
+    const removed = before - entry.bookmarks.length
+    if (removed) this.scheduleSave()
+    return removed
+  }
+
   get(owner) {
     const entry = this.data.owners[owner]
     if (!entry) return { bookmarks: [], prompts: [], updatedAt: 0 }

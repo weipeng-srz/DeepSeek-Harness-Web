@@ -177,12 +177,13 @@ export class MemoryStore {
    * "我喜欢咖啡" and "我喜欢咖啡，不加糖" must not both occupy the prompt, so
    * the longer phrasing wins and the shorter one is retired in place.
    */
-  findNearDuplicate(owner, text, exceptId = '') {
+  findNearDuplicate(owner, text, exceptId = '', projectId = null) {
     const key = normalizeMemoryText(text)
     if (!key) return null
     const keyLength = [...key].length
     for (const item of this.data.items) {
       if (item.id === exceptId || item.owner !== owner) continue
+      if ((item.projectId || null) !== (projectId || null)) continue
       const other = normalizeMemoryText(item.text)
       if (!other) continue
       if (other === key) return { item, relation: 'same' }
@@ -210,7 +211,7 @@ export class MemoryStore {
 
   add(owner, value, options = {}) {
     const text = this.validateText(owner, value)
-    const near = this.findNearDuplicate(owner, text)
+    const near = this.findNearDuplicate(owner, text, '', options.projectId || null)
     if (near) {
       // A longer phrasing of the same fact replaces the shorter one; this is
       // how "我喜欢咖啡" naturally grows into "我喜欢咖啡，不加糖".
@@ -239,6 +240,7 @@ export class MemoryStore {
       text,
       source: SOURCES.has(options.source) ? options.source : 'manual',
       conversationId: typeof options.conversationId === 'string' ? options.conversationId : null,
+      projectId: typeof options.projectId === 'string' && options.projectId ? options.projectId : null,
       createdAt: now,
       updatedAt: now,
       pinned: false,
@@ -257,7 +259,7 @@ export class MemoryStore {
     if (typeof patch.text === 'string') {
       const text = this.validateText(owner, patch.text)
       if (text !== item.text) {
-        const conflict = this.findNearDuplicate(owner, text, item.id)
+        const conflict = this.findNearDuplicate(owner, text, item.id, item.projectId || null)
         if (conflict) throw memoryError('已经有一条相似的记忆了', 409)
         item.text = text
         changed = true
@@ -288,6 +290,32 @@ export class MemoryStore {
     return true
   }
 
+  removeProject(owner, projectId) {
+    const before = this.data.items.length
+    this.data.items = this.data.items.filter(
+      (item) => !(item.owner === owner && item.projectId === projectId),
+    )
+    const removed = before - this.data.items.length
+    if (removed) {
+      this.data.updatedAt = Date.now()
+      this.scheduleSave()
+    }
+    return removed
+  }
+
+  removeConversation(owner, conversationId) {
+    const before = this.data.items.length
+    this.data.items = this.data.items.filter(
+      (item) => !(item.owner === owner && item.conversationId === conversationId),
+    )
+    const removed = before - this.data.items.length
+    if (removed) {
+      this.data.updatedAt = Date.now()
+      this.scheduleSave()
+    }
+    return removed
+  }
+
   clear(owner) {
     const before = this.data.items.length
     this.data.items = this.data.items.filter((entry) => entry.owner !== owner)
@@ -299,7 +327,7 @@ export class MemoryStore {
     return removed
   }
 
-  capture(owner, text, conversationId = null) {
+  capture(owner, text, conversationId = null, projectId = null) {
     if (!this.data.settings.enabled || !this.data.settings.autoCapture) return []
     const candidates = extractMemoryCandidates(text)
     if (!candidates.length) return []
@@ -311,6 +339,7 @@ export class MemoryStore {
         const { item, created } = this.add(owner, candidate, {
           source: 'auto',
           conversationId,
+          projectId,
         })
         if (created) saved.push(item)
       } catch {
@@ -321,10 +350,12 @@ export class MemoryStore {
     return saved
   }
 
-  promptBlock(owner) {
+  promptBlock(owner, projectId = null) {
     if (!this.data.settings.enabled) return ''
     return buildMemoryPromptBlock(
-      this.list(owner).filter((item) => !item.disabled),
+      this.list(owner).filter((item) =>
+        !item.disabled && (!item.projectId || (projectId && item.projectId === projectId)),
+      ),
     )
   }
 
@@ -357,7 +388,7 @@ export class MemoryStore {
     }
   }
 
-  import(owner, payload) {
+  import(owner, payload, options = {}) {
     const list = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : []
     let imported = 0
     let skipped = 0
@@ -380,6 +411,8 @@ export class MemoryStore {
         item.updatedAt = Number(raw?.updatedAt) || item.updatedAt
         item.pinned = Boolean(raw?.pinned)
         item.disabled = Boolean(raw?.disabled)
+        const rawProjectId = typeof raw?.projectId === 'string' ? raw.projectId : ''
+        item.projectId = rawProjectId ? (options.projectMap?.get(rawProjectId) || null) : null
         imported += 1
       } catch {
         skipped += 1
