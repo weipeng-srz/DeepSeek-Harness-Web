@@ -111,7 +111,9 @@ function parseCookies(req) {
     if (index < 0) continue
     const key = part.slice(0, index).trim()
     const value = part.slice(index + 1).trim()
-    if (key) out[key] = decodeURIComponent(value)
+    if (key) {
+      try { out[key] = decodeURIComponent(value) } catch { /* Ignore only this malformed cookie. */ }
+    }
   }
   return out
 }
@@ -169,9 +171,13 @@ async function readJsonBody(req, maxBytes = MAX_BODY) {
   }
   if (!chunks.length) return {}
   try {
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    const body = JSON.parse(Buffer.concat(chunks).toString('utf8'))
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new Error('JSON body must be an object')
+    }
+    return body
   } catch {
-    throw Object.assign(new Error('请求体不是合法 JSON'), { status: 400 })
+    throw Object.assign(new Error('请求体必须是合法的 JSON 对象'), { status: 400 })
   }
 }
 
@@ -691,6 +697,11 @@ function sanitizeUploadName(raw) {
 function uploadDestination(directory, name) {
   const uploadsDir = path.join(directory, 'uploads')
   fs.mkdirSync(uploadsDir, { recursive: true })
+  const realRoot = fs.realpathSync(directory)
+  const realUploads = fs.realpathSync(uploadsDir)
+  if (!realUploads.startsWith(realRoot + path.sep)) {
+    throw Object.assign(new Error('上传目录不在对话工作区内'), { status: 400 })
+  }
   const extension = path.extname(name)
   const base = path.basename(name, extension)
   let target = path.join(uploadsDir, name)
@@ -703,7 +714,7 @@ function uploadDestination(directory, name) {
 }
 
 async function readUploadTo(req, target) {
-  const temp = `${target}.part`
+  const temp = path.join(path.dirname(target), `.upload-${crypto.randomUUID()}.part`)
   let bytes = 0
   const limiter = new Transform({
     transform(chunk, _encoding, callback) {
@@ -716,10 +727,25 @@ async function readUploadTo(req, target) {
     },
   })
   try {
-    await pipeline(req, limiter, fs.createWriteStream(temp, { mode: 0o600 }))
+    await pipeline(req, limiter, fs.createWriteStream(temp, { mode: 0o600, flags: 'wx' }))
     if (bytes === 0) throw Object.assign(new Error('上传内容为空'), { status: 400 })
-    fs.renameSync(temp, target)
-    return bytes
+    // link() publishes a complete file exclusively. Concurrent uploads cannot
+    // overwrite one another, and no empty reservation is visible in the drawer.
+    const extension = path.extname(target)
+    const base = target.slice(0, target.length - extension.length)
+    let destination = target
+    let index = 1
+    while (true) {
+      try {
+        fs.linkSync(temp, destination)
+        break
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error
+        destination = `${base}-${index++}${extension}`
+      }
+    }
+    fs.rmSync(temp, { force: true })
+    return { size: bytes, target: destination }
   } catch (error) {
     try {
       fs.rmSync(temp, { force: true })
@@ -1777,8 +1803,8 @@ async function handleApi(req, res, url) {
       }
       const name = sanitizeUploadName(url.searchParams.get('name'))
       const directory = await ensureUploadWorkspace(conv)
-      const { target } = uploadDestination(directory, name)
-      const size = await readUploadTo(req, target)
+      const destination = uploadDestination(directory, name)
+      const { target } = await readUploadTo(req, destination.target)
       const stat = fs.statSync(target)
       const relative = path.relative(directory, target).split(path.sep).join('/')
       return sendJson(res, 201, {
@@ -1831,9 +1857,14 @@ async function handleApi(req, res, url) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
   securityHeaders(res)
   try {
+    let url
+    try {
+      url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`)
+    } catch {
+      return sendJson(res, 400, { error: '请求地址无效' })
+    }
     if (url.pathname.startsWith('/api/')) {
       return await handleApi(req, res, url)
     }
