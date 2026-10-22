@@ -1,0 +1,189 @@
+{
+  "label": "round5",
+  "generatedAt": "2026-10-22T05:25:42.569Z",
+  "sourceSnapshot": "/var/folders/dk/8smfqslj1x9035fw9kx777rm0000gn/T/dsh-quality-round5-polish-Xq02oM",
+  "results": [
+    {
+      "name": "empty draft scenario fills, selects placeholder and persists immediately",
+      "status": "passed",
+      "evidence": {
+        "selection": {
+          "start": 13,
+          "selected": "{{粘贴网址}}",
+          "focused": true
+        },
+        "exactRestore": true
+      }
+    },
+    {
+      "name": "scenario appends exact separator and selects only new template placeholder",
+      "status": "passed",
+      "evidence": {
+        "exactAppend": true,
+        "selection": {
+          "start": 57,
+          "selected": "{{粘贴网址}}",
+          "focused": true
+        },
+        "expectedStart": 57,
+        "exactRestore": true
+      }
+    },
+    {
+      "name": "model modal isolates background and traps forward and reverse focus",
+      "status": "passed",
+      "evidence": {
+        "states": [
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true,
+          true
+        ],
+        "shellInert": true,
+        "dialog": {
+          "role": "dialog",
+          "modal": "true"
+        },
+        "focus": "codexSettingsBtn"
+      }
+    },
+    {
+      "name": "repeated model and quick modal cycles leave no background lock",
+      "status": "passed",
+      "evidence": {
+        "checks": [
+          {
+            "inert": false,
+            "model": false,
+            "quick": false
+          },
+          {
+            "inert": false,
+            "model": false,
+            "quick": false
+          },
+          {
+            "inert": false,
+            "model": false,
+            "quick": false
+          }
+        ]
+      }
+    },
+    {
+      "name": "open model modal recalculates compact and desktop layout on resize",
+      "status": "passed",
+      "evidence": {
+        "measured": [
+          {
+            "width": 390,
+            "height": 844,
+            "rect": {
+              "x": 0,
+              "y": 423.609375,
+              "width": 390,
+              "height": 420.390625
+            }
+          },
+          {
+            "width": 1440,
+            "height": 1000,
+            "rect": {
+              "x": 1036,
+              "y": 332,
+              "width": 392,
+              "height": 367.390625
+            }
+          },
+          {
+            "width": 320,
+            "height": 844,
+            "rect": {
+              "x": 0,
+              "y": 423.609375,
+              "width": 320,
+              "height": 420.390625
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "model modal respects reduced motion preference",
+      "status": "passed",
+      "evidence": {
+        "motion": {
+          "reduced": true,
+          "animation": "1e-05s",
+          "transition": "1e-05s"
+        }
+      }
+    },
+    {
+      "name": "existing conversation scenario draft survives cached-shell reload",
+      "status": "passed",
+      "evidence": {
+        "exactBefore": true,
+        "exactAfter": true,
+        "exactStored": true,
+        "route": "/c/quality-polish-existing"
+      }
+    },
+    {
+      "name": "existing conversation ordinary draft survives two cached-shell reloads",
+      "status": "passed",
+      "evidence": {
+        "restoredLengths": [
+          51,
+          51
+        ],
+        "expectedLength": 51
+      }
+    },
+    {
+      "name": "cached conversation A and direct deep link B keep separate drafts",
+      "status": "passed",
+      "evidence": {
+        "displayed": "QA draft belonging only to B",
+        "stored": {
+          "a": "QA draft belonging only to A",
+          "b": "QA draft belonging only to B"
+        },
+        "route": "/c/quality-polish-other"
+      }
+    },
+    {
+      "name": "restored over-limit draft keeps sending disabled",
+      "status": "passed",
+      "evidence": {
+        "length": 24001,
+        "disabled": true,
+        "counter": "24,001 / 24,000"
+      }
+    }
+  ]
+}

@@ -1,0 +1,71 @@
+{
+  "capturedAt": "2026-10-22T04:52:55.570Z",
+  "scope": "Original CSS bundle function, actual HTTP over localhost, copied real CSS assets, instrumented filesystem reads. Local timings are not browser Core Web Vitals.",
+  "sourceHash": "e53ee3a1469e606a9e45449e0ab89c57e0fcec2dce04c054b0a0b418226239ce",
+  "results": [
+    {
+      "name": "cold gzip response reads all seven files once",
+      "passed": true,
+      "contentReads": 7,
+      "contentBytes": 219023,
+      "statCalls": 7,
+      "compressions": 1,
+      "rawBytes": 219030,
+      "gzipBytes": 36380
+    },
+    {
+      "name": "100 warm 200 responses read and compress no content",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 700,
+      "compressions": 0,
+      "requests": 100,
+      "medianHttpMs": 0.1969580000000022,
+      "p95HttpMs": 0.6138750000000002
+    },
+    {
+      "name": "100 conditional 304 responses read and compress no content",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 700,
+      "compressions": 0,
+      "requests": 100,
+      "medianHttpMs": 0.14441599999999255,
+      "p95HttpMs": 0.20495900000000233
+    },
+    {
+      "name": "identity and HEAD preserve content length and unversioned cache policy",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 14,
+      "compressions": 0
+    },
+    {
+      "name": "same-size content edit with changed mtime invalidates ETag and bytes",
+      "passed": true,
+      "invalidation": {
+        "contentReads": 7,
+        "contentBytes": 219023,
+        "statCalls": 7,
+        "compressions": 1
+      },
+      "nextConditional": {
+        "contentReads": 0,
+        "contentBytes": 0,
+        "statCalls": 7,
+        "compressions": 0
+      }
+    },
+    {
+      "name": "missing source returns error and restoring it recovers",
+      "passed": true,
+      "missingStatus": 500,
+      "recoveredStatus": 200
+    }
+  ],
+  "passed": 6,
+  "failed": 0
+}

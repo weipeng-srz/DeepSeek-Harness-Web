@@ -1,0 +1,52 @@
+{
+  "capturedAt": "2026-10-22T04:31:06.917Z",
+  "runtime": "v22.17.1",
+  "scope": "Original server CSS helper instrumented against actual public assets; store benchmark uses explicit synthetic 300 conversations x 120 messages x 1000 chars, not real user data. Timings are local function time, not browser Core Web Vitals.",
+  "cssCold": {
+    "reads": 7,
+    "readBytes": 219001,
+    "stats": 7
+  },
+  "cssWarm": [
+    {
+      "mode": "cached 200",
+      "requests": 100,
+      "reads": 700,
+      "readBytes": 21900100,
+      "stats": 700,
+      "medianMs": 0.16708400000000267,
+      "p95Ms": 0.3877920000000046,
+      "maxMs": 0.9889159999999997
+    },
+    {
+      "mode": "conditional 304",
+      "requests": 100,
+      "reads": 700,
+      "readBytes": 21900100,
+      "stats": 700,
+      "medianMs": 0.16933300000000173,
+      "p95Ms": 0.29308300000000287,
+      "maxMs": 0.43166700000000446
+    }
+  ],
+  "syntheticSearch": [
+    {
+      "query": "(list)",
+      "requests": 20,
+      "medianMs": 0.21579199999999332,
+      "p95Ms": 0.8894999999999982
+    },
+    {
+      "query": "message",
+      "requests": 20,
+      "medianMs": 6.091082999999998,
+      "p95Ms": 30.123374999999996
+    },
+    {
+      "query": "needle-not-found",
+      "requests": 20,
+      "medianMs": 5.340167000000008,
+      "p95Ms": 5.794167000000016
+    }
+  ]
+}

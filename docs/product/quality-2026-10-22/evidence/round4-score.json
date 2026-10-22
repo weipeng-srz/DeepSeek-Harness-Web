@@ -1,0 +1,635 @@
+{
+  "label": "round4",
+  "version": 1,
+  "definition": "固定有限检查表的证据完成分。通过=1，失败/阻塞/未测=0，并始终计入分母。同一证据可影响不同质量维度；不是WCAG认证、用户满意度或商业发布认证。",
+  "weighted": 79.4,
+  "dimensions": [
+    {
+      "dimension": "功能完整性",
+      "weight": 20,
+      "passed": 12,
+      "denominator": 14,
+      "score": 85.7,
+      "checks": [
+        {
+          "name": "login shell and fixture list",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "conversation opens with messages and route",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "rename saves title and closes modal",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "API archive appears in archive list",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "API duplicate preserves conversation messages",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "API delete can be undone in window",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "API backup returns all synthetic conversations",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "attachment can be staged",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "file upload, listing and raw download",
+          "status": "passed",
+          "evidence": {
+            "uploadStatus": 201,
+            "listingCount": 1,
+            "rawStatus": 200
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "file sheet and preview display text",
+          "status": "passed",
+          "evidence": {
+            "text": "QA file content"
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "custom prompt persists and inserts",
+          "status": "passed",
+          "evidence": {},
+          "source": "exploration.json"
+        },
+        {
+          "name": "message bookmark opens original message",
+          "status": "passed",
+          "evidence": {},
+          "source": "exploration.json"
+        },
+        {
+          "name": "EXTERNAL:真实 DSR 生成/停止/续接",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        },
+        {
+          "name": "EXTERNAL:真实 Codex 生成/工具审批",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    },
+    {
+      "dimension": "UX用户体验",
+      "weight": 20,
+      "passed": 10,
+      "denominator": 11,
+      "score": 90.9,
+      "checks": [
+        {
+          "name": "authenticated logout control discoverable",
+          "status": "passed",
+          "evidence": {
+            "hidden": null
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "title and message search",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "per-conversation draft restoration",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "newly created conversation updates deep-link route",
+          "status": "passed",
+          "evidence": {
+            "pathname": "/c/2ed3d70b-39cd-4536-b67c-5cd8075fd950",
+            "conversationCreated": true
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "chat failure presents retry action",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "prompt insertion preserves existing draft or asks",
+          "status": "passed",
+          "evidence": {
+            "composer": "QA valuable existing draft\n\nQA reusable request",
+            "restored": "QA valuable existing draft\n\nQA reusable request",
+            "focus": "input"
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "long conversation find reaches older messages",
+          "status": "passed",
+          "evidence": {
+            "count": "1/1",
+            "renderedBefore": 60,
+            "placeholder": "查找全部消息正文"
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "quick switcher supports keyboard select",
+          "status": "passed",
+          "evidence": {},
+          "source": "exploration.json"
+        },
+        {
+          "name": "settings Escape close",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "batch archive partial failure reports exact counts",
+          "status": "passed",
+          "evidence": {
+            "message": "已归档 1 段对话，1 段失败，可重试\n撤销",
+            "selected": 1
+          },
+          "source": "batch.json"
+        },
+        {
+          "name": "EXTERNAL:真人首次使用任务验证",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    },
+    {
+      "dimension": "UI视觉品质",
+      "weight": 15,
+      "passed": 5,
+      "denominator": 7,
+      "score": 71.4,
+      "checks": [
+        {
+          "name": "dark theme selection",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "theme persists after reload",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "Codex model settings measured controls and text",
+          "status": "passed",
+          "evidence": {
+            "texts": [
+              {
+                "selector": "codex-pop-sub",
+                "size": 12
+              },
+              {
+                "selector": "codex-model-desc",
+                "size": 12
+              },
+              {
+                "selector": "codex-pop-source",
+                "size": 12
+              }
+            ],
+            "width": 392
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "layout has no horizontal overflow at 1440",
+          "status": "passed",
+          "evidence": {
+            "viewport": 1440,
+            "document": 1440,
+            "body": 1440
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "mobile model dialog stays in viewport",
+          "status": "passed",
+          "evidence": {
+            "rect": {
+              "x": 0,
+              "y": 426.21875,
+              "width": 390,
+              "height": 417.78125
+            }
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "EXTERNAL:浅色全页面文本对比度审计",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        },
+        {
+          "name": "EXTERNAL:深色全页面文本对比度审计",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    },
+    {
+      "dimension": "性能和响应速度",
+      "weight": 15,
+      "passed": 3,
+      "denominator": 6,
+      "score": 50,
+      "checks": [
+        {
+          "name": "METRIC:localLoadUnder1000ms",
+          "status": "passed",
+          "evidence": {
+            "value": 16,
+            "threshold": 1000,
+            "note": "单机本地样本，不是现场Core Web Vitals"
+          },
+          "source": "performance.json"
+        },
+        {
+          "name": "METRIC:encodedResourcesUnder500KB",
+          "status": "passed",
+          "evidence": {
+            "value": 113680,
+            "threshold": 512000,
+            "note": "单机本地样本，不是现场Core Web Vitals"
+          },
+          "source": "performance.json"
+        },
+        {
+          "name": "long conversation initial DOM remains bounded",
+          "status": "passed",
+          "evidence": {
+            "messages": 40,
+            "nodes": 905
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "EXTERNAL:低端移动设备性能采样",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        },
+        {
+          "name": "EXTERNAL:真实慢速网络交互采样",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        },
+        {
+          "name": "EXTERNAL:十分钟持续流式内存稳定性",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    },
+    {
+      "dimension": "稳定性与可靠性",
+      "weight": 15,
+      "passed": 13,
+      "denominator": 14,
+      "score": 92.9,
+      "checks": [
+        {
+          "name": "latest conversation selection wins response race",
+          "status": "passed",
+          "evidence": {
+            "title": "[导入] QA Beta",
+            "route": "/c/8604b49c-4b64-4602-b3ba-01a25dda2d5c"
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "invalid conversation ends loading state",
+          "status": "passed",
+          "evidence": {
+            "skeletons": 0,
+            "toast": [
+              "会话不存在"
+            ]
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "repeated Meta+k does not leave page inert",
+          "status": "passed",
+          "evidence": {
+            "inert": false
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "repeated Meta+p does not leave page inert",
+          "status": "passed",
+          "evidence": {
+            "inert": false
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "no uncaught browser exceptions",
+          "status": "passed",
+          "evidence": {
+            "errors": []
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "API rejects unauthenticated requests",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "API rejects blank conversation titles",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "API rejects cross-origin mutation",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "batch undo failure does not claim restored",
+          "status": "passed",
+          "evidence": {
+            "message": "恢复失败，1 段对话未更改"
+          },
+          "source": "batch.json"
+        },
+        {
+          "name": "batch all failures preserve selection and allow retry",
+          "status": "passed",
+          "evidence": {
+            "message": "归档失败，2 段对话未更改",
+            "selection": 2
+          },
+          "source": "batch.json"
+        },
+        {
+          "name": "batch double click sends each mutation once",
+          "status": "passed",
+          "evidence": {
+            "mutations": 2,
+            "unique": 2
+          },
+          "source": "batch.json"
+        },
+        {
+          "name": "batch deletion all failures remain recoverable",
+          "status": "passed",
+          "evidence": {
+            "message": "删除失败，2 段对话未更改",
+            "selection": 2
+          },
+          "source": "batch.json"
+        },
+        {
+          "name": "batch failure leaves page interactive",
+          "status": "passed",
+          "evidence": {},
+          "source": "batch.json"
+        },
+        {
+          "name": "EXTERNAL:真实引擎断线重连与服务重启恢复",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    },
+    {
+      "dimension": "移动端和响应式体验",
+      "weight": 10,
+      "passed": 8,
+      "denominator": 10,
+      "score": 80,
+      "checks": [
+        {
+          "name": "layout has no horizontal overflow at 320",
+          "status": "passed",
+          "evidence": {
+            "viewport": 320,
+            "document": 320,
+            "body": 320
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "layout has no horizontal overflow at 390",
+          "status": "passed",
+          "evidence": {
+            "viewport": 390,
+            "document": 390,
+            "body": 390
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "layout has no horizontal overflow at 768",
+          "status": "passed",
+          "evidence": {
+            "viewport": 768,
+            "document": 768,
+            "body": 768
+          },
+          "source": "results.json"
+        },
+        {
+          "name": "sidebar opens at 320",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "sidebar Escape close at 390",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "sidebar opens at 768",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "mobile model trigger has 44px touch target",
+          "status": "passed",
+          "evidence": {
+            "rect": {
+              "x": 235.671875,
+              "y": 653,
+              "width": 138.328125,
+              "height": 44
+            }
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "mobile model dialog stays in viewport",
+          "status": "passed",
+          "evidence": {
+            "rect": {
+              "x": 0,
+              "y": 426.21875,
+              "width": 390,
+              "height": 417.78125
+            }
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "EXTERNAL:真实iOS Safari和软键盘",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        },
+        {
+          "name": "EXTERNAL:真实Android Chrome和软键盘",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    },
+    {
+      "dimension": "无障碍与易用性",
+      "weight": 5,
+      "passed": 7,
+      "denominator": 9,
+      "score": 77.8,
+      "checks": [
+        {
+          "name": "settings opens accessible dialog",
+          "status": "passed",
+          "evidence": {},
+          "source": "results.json"
+        },
+        {
+          "name": "settings traps Tab focus",
+          "status": "passed",
+          "evidence": {
+            "tabCount": 24
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "settings radio uses arrow-key navigation",
+          "status": "passed",
+          "evidence": {
+            "theme": "dark"
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "settings Escape restores opener focus",
+          "status": "passed",
+          "evidence": {
+            "focus": "settingsBtn"
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "model dialog Escape restores focus to trigger",
+          "status": "failed",
+          "evidence": {
+            "focus": ""
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "quick switcher supports keyboard select",
+          "status": "passed",
+          "evidence": {},
+          "source": "exploration.json"
+        },
+        {
+          "name": "prompt form rejects missing content",
+          "status": "passed",
+          "evidence": {},
+          "source": "exploration.json"
+        },
+        {
+          "name": "mobile model trigger has 44px touch target",
+          "status": "passed",
+          "evidence": {
+            "rect": {
+              "x": 235.671875,
+              "y": 653,
+              "width": 138.328125,
+              "height": 44
+            }
+          },
+          "source": "exploration.json"
+        },
+        {
+          "name": "EXTERNAL:VoiceOver或其他屏幕阅读器完整任务",
+          "status": "blocked",
+          "evidence": {
+            "reason": "本地隔离环境尚无该独立验收证据"
+          }
+        }
+      ]
+    }
+  ]
+}

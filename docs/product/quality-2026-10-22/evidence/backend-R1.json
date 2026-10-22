@@ -1,0 +1,135 @@
+{
+  "capturedAt": "2026-10-22T04:30:33.774Z",
+  "runtime": "v22.17.1",
+  "scope": "temporary store and real HTTP service; engine discovery stubbed; no model calls or user data",
+  "results": [
+    {
+      "id": "R1-006",
+      "name": "invalid import is atomic and reports 400",
+      "status": "passed",
+      "durationMs": 1
+    },
+    {
+      "id": "R1-006",
+      "name": "valid backup preserves long history and preferences",
+      "status": "passed",
+      "durationMs": 3
+    },
+    {
+      "id": "R1-006",
+      "name": "valid import above 100 conversations is complete and durable",
+      "status": "passed",
+      "durationMs": 1
+    },
+    {
+      "id": "R1-007",
+      "name": "301st create cannot delete pinned conversation or files",
+      "status": "passed",
+      "durationMs": 2
+    },
+    {
+      "id": "R1-007",
+      "name": "over-capacity import and duplicate leave data unchanged",
+      "status": "passed",
+      "durationMs": 1
+    },
+    {
+      "id": "R1-008",
+      "name": "three engine modes retain independent files and selection",
+      "status": "passed",
+      "durationMs": 3
+    },
+    {
+      "id": "R1-008",
+      "name": "copy failure removes partial files and publishes no conversation",
+      "status": "passed",
+      "durationMs": 1
+    },
+    {
+      "id": "R1-010",
+      "name": "malformed cookies do not block authentication recovery",
+      "status": "passed",
+      "durationMs": 4
+    },
+    {
+      "id": "R1-010",
+      "name": "non-object JSON rejected without creating conversations",
+      "status": "passed",
+      "durationMs": 6
+    },
+    {
+      "id": "R1-010",
+      "name": "malformed Host returns 400 and server remains healthy",
+      "status": "passed",
+      "durationMs": 2
+    },
+    {
+      "id": "R1-006",
+      "name": "HTTP invalid import returns 400 and no partial records",
+      "status": "passed",
+      "durationMs": 2
+    },
+    {
+      "id": "R1-009",
+      "name": "simultaneous same-name uploads preserve both contents",
+      "status": "passed",
+      "durationMs": 19
+    },
+    {
+      "id": "R1-009",
+      "name": "empty upload cleans temporary files without overwriting existing files",
+      "status": "passed",
+      "durationMs": 3
+    },
+    {
+      "id": "R1-009",
+      "name": "cancelled upload cleans its temporary file",
+      "status": "passed",
+      "durationMs": 63
+    },
+    {
+      "id": "R1-009",
+      "name": "upload limit and path traversal protection remain enforced",
+      "status": "passed",
+      "durationMs": 13
+    },
+    {
+      "id": "R1-009",
+      "name": "upload refuses an external symlink directory",
+      "status": "passed",
+      "durationMs": 3
+    },
+    {
+      "id": "R1-008",
+      "name": "duplicate files survive subsequent upload via HTTP",
+      "status": "passed",
+      "durationMs": 11
+    },
+    {
+      "id": "R1-011",
+      "name": "explicit modern NODE_BIN is respected",
+      "status": "passed",
+      "durationMs": 30
+    },
+    {
+      "id": "R1-011",
+      "name": "invalid explicit runtime fails with actionable explanation",
+      "status": "passed",
+      "durationMs": 6
+    },
+    {
+      "id": "R1-011",
+      "name": "deployment preserves selected runtime and escapes XML paths",
+      "status": "passed",
+      "durationMs": 34
+    },
+    {
+      "id": "R1-011",
+      "name": "old PATH runtime falls back to installed modern runtime",
+      "status": "passed",
+      "durationMs": 205
+    }
+  ],
+  "passed": 21,
+  "failed": 0
+}

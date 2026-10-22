@@ -1,0 +1,64 @@
+{
+  "capturedAt": "2026-10-22T05:45:49.627Z",
+  "fixture": "Synthetic catalog and messages, real Chrome UI and isolated HTTP, no model turns",
+  "results": [
+    {
+      "name": "visible named close has 44px target and true modal background",
+      "passed": true,
+      "width": 44,
+      "height": 44
+    },
+    {
+      "name": "Tab and ShiftTab wrap within model panel",
+      "passed": true
+    },
+    {
+      "name": "Escape and visible close restore the trigger and release inert",
+      "passed": true
+    },
+    {
+      "name": "model response redraw retains a visible focus target",
+      "passed": true,
+      "focusedClass": "codex-model-choice"
+    },
+    {
+      "name": "Escape dismisses only Codex while another modal retains its lock",
+      "passed": true
+    },
+    {
+      "name": "repeated open and close never leaves background inert",
+      "passed": true
+    },
+    {
+      "name": "outside pointer closes without activating the obscured control",
+      "passed": true
+    },
+    {
+      "name": "390 to 1440 resize removes sheet styling and stays in viewport",
+      "passed": true,
+      "desktop": {
+        "x": 988,
+        "y": 403,
+        "width": 440,
+        "height": 530.5
+      },
+      "mobile": {
+        "x": 0,
+        "y": 313.5,
+        "width": 390,
+        "height": 530.5
+      }
+    },
+    {
+      "name": "reduced motion disables panel animation",
+      "passed": true,
+      "duration": "1e-05s"
+    },
+    {
+      "name": "Codex stylesheet uses the new immutable URL",
+      "passed": true
+    }
+  ],
+  "passed": 10,
+  "failed": 0
+}

@@ -1,0 +1,208 @@
+{
+  "capturedAt": "2026-10-22T05:52:17.233Z",
+  "scope": "Original CSS bundle function, actual HTTP over localhost, copied real CSS assets, instrumented filesystem reads. Local timings are not browser Core Web Vitals.",
+  "sourceHash": "8b6299458fa019d2ea612c1301a72e9a1ef8016e6b2c190aa375b0d70b5b5b27",
+  "bundleFiles": [
+    "css/style.css",
+    "css/glass.css",
+    "css/apple.css",
+    "css/apple-pro.css",
+    "css/ux.css",
+    "css/refine.css",
+    "css/visual.css",
+    "css/design-system.css"
+  ],
+  "sourceAssetHashes": {
+    "css/style.css": "8dd3caa80820c16887027b2463a5232974cbdf4e1bd0fca6f2e482c9a4ef02d4",
+    "css/glass.css": "f122ef287c23825832aac37c3771589567bf81e24525d84493d3f98787e4bf15",
+    "css/apple.css": "3bf6463552c3aafdce4f2e292090d3a5c3c3d14eb84658c544303cda12f83e6e",
+    "css/apple-pro.css": "858658173fa765c22ca73486a0767f67f27e4356310f051400630e7e04afd7f0",
+    "css/ux.css": "69e2d505fd0d8e3a90242c39770017c32a8dfcdbac5b2adc02565a9d71507683",
+    "css/refine.css": "0b2bb5c615bfa1b91d48e8c6c4bd5d36ee11ddb4929304dd5c1c87d38f5e9c86",
+    "css/visual.css": "f39f20f625738f94a8636aecd8f67f00e357033cd5cf6e2691e40e05e921373e",
+    "css/design-system.css": "dabedcf801801e5ce3855a9024c458c1b830dd29073d77fc54c818221668db90"
+  },
+  "results": [
+    {
+      "name": "cold gzip response reads all 8 manifest files once",
+      "passed": true,
+      "contentReads": 8,
+      "contentBytes": 252872,
+      "statCalls": 8,
+      "compressions": 1,
+      "rawBytes": 252880,
+      "gzipBytes": 41754
+    },
+    {
+      "name": "100 warm 200 responses read and compress no content",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 800,
+      "compressions": 0,
+      "requests": 100,
+      "medianHttpMs": 0.2032079999999965,
+      "p95HttpMs": 0.6812500000000057
+    },
+    {
+      "name": "100 conditional 304 responses read and compress no content",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 800,
+      "compressions": 0,
+      "requests": 100,
+      "medianHttpMs": 0.1511250000000075,
+      "p95HttpMs": 0.279207999999997
+    },
+    {
+      "name": "identity and HEAD preserve content length and unversioned cache policy",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 16,
+      "compressions": 0
+    },
+    {
+      "name": "same-size edits to every manifest file invalidate ETag and exact bytes",
+      "passed": true,
+      "sources": [
+        {
+          "file": "css/style.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/glass.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/apple.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/apple-pro.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/ux.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/refine.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/visual.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/design-system.css",
+          "invalidation": {
+            "contentReads": 8,
+            "contentBytes": 252872,
+            "statCalls": 8,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 8,
+            "compressions": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "missing source returns error and restoring it recovers",
+      "passed": true,
+      "file": "css/design-system.css",
+      "missingStatus": 500,
+      "recoveredStatus": 200,
+      "recovery": {
+        "contentReads": 8,
+        "contentBytes": 252872,
+        "statCalls": 8,
+        "compressions": 1
+      }
+    }
+  ],
+  "passed": 6,
+  "failed": 0
+}

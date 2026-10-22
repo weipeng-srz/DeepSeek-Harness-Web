@@ -1,0 +1,23 @@
+{
+  "testType": "Actual extracted client functions with mocked failing API; not browser E2E",
+  "results": [
+    {
+      "kind": "archive",
+      "injected": "all requests reject with 503",
+      "calls": 2,
+      "notices": [
+        "已归档 2 段对话"
+      ],
+      "currentConversationCleared": false
+    },
+    {
+      "kind": "delete",
+      "injected": "all requests reject with 503",
+      "calls": 2,
+      "notices": [
+        "已删除 2 段对话"
+      ],
+      "currentConversationCleared": true
+    }
+  ]
+}

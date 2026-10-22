@@ -1,0 +1,30 @@
+{
+  "label": "round4",
+  "results": [
+    {
+      "name": "themeOptions single tab stop, arrows wrap, Home/End",
+      "status": "passed"
+    },
+    {
+      "name": "densityOptions single tab stop, arrows wrap, Home/End",
+      "status": "passed"
+    },
+    {
+      "name": "fontOptions single tab stop, arrows wrap, Home/End",
+      "status": "passed"
+    },
+    {
+      "name": "keyboard changes persist after reload",
+      "status": "failed",
+      "error": "Expected values to be strictly equal:\n\n'false' !== 'true'\n"
+    },
+    {
+      "name": "Tab leaves settings radio group",
+      "status": "passed"
+    },
+    {
+      "name": "engine radio has one tab stop and skips disabled controls",
+      "status": "passed"
+    }
+  ]
+}

@@ -1,0 +1,134 @@
+{
+  "capturedAt": "2026-10-22T04:55:31.663Z",
+  "fixture": "Synthetic model catalog and messages, isolated real server handlers, Chrome UI interaction; zero model runs",
+  "sourceHash": "3fc18de8016d15a96b622f805056723043ccb9c67f5e90dfd655ba0ca8945b0e",
+  "sandbox": "/private/var/folders/dk/8smfqslj1x9035fw9kx777rm0000gn/T/dsh-codex-state-pdjh6k",
+  "results": [
+    {
+      "case": "cross-tab model update targets visible conversation",
+      "correct": true,
+      "before": {
+        "route": "/c/a01933e6-19bf-43c5-970c-08c045645a69",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State A",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/a01933e6-19bf-43c5-970c-08c045645a69",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State A",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "tabB": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "requests": [
+        {
+          "url": "/api/conversations/a01933e6-19bf-43c5-970c-08c045645a69",
+          "body": {
+            "codexModel": "qa-balanced",
+            "codexEffort": "medium"
+          }
+        }
+      ],
+      "serverModels": {
+        "A": "qa-balanced",
+        "B": "qa-fast"
+      },
+      "screenshot": "/Users/liupengbin/Work/DeepSeek-Harness-Web/reports/quality/codex-state-R5/cross-tab.png"
+    },
+    {
+      "case": "late A summary cannot overwrite B selection",
+      "correct": true,
+      "before": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "serverB": "qa-fast",
+      "screenshot": "/Users/liupengbin/Work/DeepSeek-Harness-Web/reports/quality/codex-state-R5/late-summary.png"
+    },
+    {
+      "case": "late A patch cannot overwrite B selection",
+      "correct": true,
+      "before": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "serverB": "qa-balanced",
+      "screenshot": "/Users/liupengbin/Work/DeepSeek-Harness-Web/reports/quality/codex-state-R5/late-patch.png"
+    },
+    {
+      "case": "late creation response cannot select its conversation over visible B",
+      "correct": true,
+      "before": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "createdId": "d8181641-e9c1-4190-b8f2-6080c2659084"
+    },
+    {
+      "case": "desktop open stays on captured A and completion does not notify B",
+      "correct": true,
+      "opened": [
+        "/api/conversations/a01933e6-19bf-43c5-970c-08c045645a69/open-codex"
+      ],
+      "after": {
+        "route": "/c/060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "currentStorage": "060c0342-43f1-46bf-bfcd-96db0c183c01",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "toast": [],
+      "injection": "Synthetic thread id and simulated desktop-open response; no native app call"
+    },
+    {
+      "case": "repeated refresh triggers reuse the pending summary request",
+      "correct": true,
+      "pendingCount": 1
+    },
+    {
+      "case": "failed selection preserves current value and can be retried",
+      "correct": true,
+      "error": "QA temporary save failure",
+      "serverModel": "qa-fast",
+      "injection": "First PATCH response intentionally 503; retry uses real HTTP handler"
+    }
+  ]
+}

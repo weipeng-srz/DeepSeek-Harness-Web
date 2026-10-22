@@ -1,0 +1,40 @@
+{
+  "capturedAt": "2026-10-22T04:23:11.939Z",
+  "scope": "isolated temporary store and original upload helper execution; no user conversation data mutated",
+  "findings": [
+    {
+      "test": "invalid_import_atomicity",
+      "error": "Cannot read properties of null (reading 'role')",
+      "conversationsAfterFailure": 2
+    },
+    {
+      "test": "retention_limit",
+      "count": 300,
+      "pinnedOldestStillExists": false,
+      "oldestWorkspaceStillExists": false
+    },
+    {
+      "test": "duplicate_workspace_and_selection",
+      "copyHasAttachment": true,
+      "copyWorkspaceMatchesNextChatRoot": false,
+      "copyModel": null,
+      "copyEffort": null
+    },
+    {
+      "test": "concurrent_same_name_uploads",
+      "sameTarget": true,
+      "outcomes": [
+        {
+          "status": "fulfilled"
+        },
+        {
+          "status": "rejected",
+          "reason": "ENOENT"
+        }
+      ],
+      "storedFiles": [
+        "same.txt"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,245 @@
+{
+  "capturedAt": "2026-10-22T05:51:10.600Z",
+  "sourceSnapshot": "/var/folders/dk/8smfqslj1x9035fw9kx777rm0000gn/T/dsh-quality-apple-compact-D4ECyC",
+  "sourceFiles": {
+    "server/index.mjs": "8b6299458fa019d2ea612c1301a72e9a1ef8016e6b2c190aa375b0d70b5b5b27",
+    "server/store.mjs": "6c0993a2bafeb5492238a0043ecc39fb86f37ec79428b4fe9bd2f1b809409641",
+    "public/index.html": "093ff163878b02df69380d5a633f6fb0b685e712016a27a96021cc066159a417",
+    "public/js/app.js": "d4329d23078f2a493efd47ac30be92d4a6f545d79a7747b415799f1d92e90dd0",
+    "public/js/codex.js": "4adf45dd8921e7ca36845a6d57f160bfa0339e524e07ecdffee7b3eb553af12d",
+    "public/css/apple-pro.css": "858658173fa765c22ca73486a0767f67f27e4356310f051400630e7e04afd7f0",
+    "public/css/apple.css": "3bf6463552c3aafdce4f2e292090d3a5c3c3d14eb84658c544303cda12f83e6e",
+    "public/css/codex.css": "4293e5237e2f5ba8e87dec31949708a9ab4fae9cdc609b2bb74eb8130c91bbf6",
+    "public/css/design-system.css": "c879a4623766599e6cb90c1aba2eeb3cbcaa057141b1d92e2a3ab557ba104b9e",
+    "public/css/glass.css": "f122ef287c23825832aac37c3771589567bf81e24525d84493d3f98787e4bf15",
+    "public/css/refine.css": "0b2bb5c615bfa1b91d48e8c6c4bd5d36ee11ddb4929304dd5c1c87d38f5e9c86",
+    "public/css/style.css": "8dd3caa80820c16887027b2463a5232974cbdf4e1bd0fca6f2e482c9a4ef02d4",
+    "public/css/ux.css": "69e2d505fd0d8e3a90242c39770017c32a8dfcdbac5b2adc02565a9d71507683",
+    "public/css/visual.css": "f39f20f625738f94a8636aecd8f67f00e357033cd5cf6e2691e40e05e921373e"
+  },
+  "scope": "Actual isolated HTTP and Chrome; synthetic data/catalog; short CSS viewports and a 640x400 CSS viewport at DPR 2 to model 1280x800 at 200% browser reflow. No native zoom-menu or physical iOS claim.",
+  "modelRequests": 0,
+  "results": [
+    {
+      "name": "320x568: all home scenarios and long composer remain reachable",
+      "passed": true,
+      "titles": [
+        "网页总结",
+        "股票分析",
+        "操作电脑",
+        "分析内容",
+        "日报整理"
+      ],
+      "composer": {
+        "x": 16,
+        "y": 291,
+        "width": 288,
+        "height": 236
+      },
+      "documentWidth": 320,
+      "screenshot": "320x568-long-composer.png"
+    },
+    {
+      "name": "320x568: settings lower actions and close are reachable",
+      "passed": true,
+      "panel": {
+        "x": 0,
+        "y": 102.25,
+        "width": 320,
+        "height": 465.75
+      },
+      "screenshot": "320x568-settings-bottom.png"
+    },
+    {
+      "name": "320x568: last conversation menu action and rename are reachable",
+      "passed": true,
+      "menu": {
+        "x": 10,
+        "y": 135,
+        "width": 300,
+        "height": 421
+      },
+      "rename": {
+        "x": 24,
+        "y": 145.203125,
+        "width": 272,
+        "height": 277.59375
+      },
+      "screenshot": "320x568-menu-last.png"
+    },
+    {
+      "name": "320x568: permission explanation is bounded and last choice reachable",
+      "passed": true,
+      "panel": {
+        "x": 24,
+        "y": 64.203125,
+        "width": 272,
+        "height": 342.796875
+      },
+      "screenshot": "320x568-permission.png"
+    },
+    {
+      "name": "320x568: quick switch search and close stay reachable",
+      "passed": true,
+      "panel": {
+        "x": 14,
+        "y": 68.15625,
+        "width": 292,
+        "height": 198
+      },
+      "screenshot": "320x568-quick.png"
+    },
+    {
+      "name": "320x568: Codex model choices and visible close remain reachable",
+      "passed": true,
+      "panel": {
+        "x": 0,
+        "y": 24,
+        "width": 320,
+        "height": 544
+      },
+      "screenshot": "320x568-codex.png",
+      "documentWidth": 320
+    },
+    {
+      "name": "390x568: all home scenarios and long composer remain reachable",
+      "passed": true,
+      "titles": [
+        "网页总结",
+        "股票分析",
+        "操作电脑",
+        "分析内容",
+        "日报整理"
+      ],
+      "composer": {
+        "x": 16,
+        "y": 291,
+        "width": 358,
+        "height": 236
+      },
+      "documentWidth": 390,
+      "screenshot": "390x568-long-composer.png"
+    },
+    {
+      "name": "390x568: settings lower actions and close are reachable",
+      "passed": true,
+      "panel": {
+        "x": 0,
+        "y": 102.25,
+        "width": 390,
+        "height": 465.75
+      },
+      "screenshot": "390x568-settings-bottom.png"
+    },
+    {
+      "name": "390x568: last conversation menu action and rename are reachable",
+      "passed": true,
+      "menu": {
+        "x": 10,
+        "y": 135,
+        "width": 370,
+        "height": 421
+      },
+      "rename": {
+        "x": 24,
+        "y": 157.09375,
+        "width": 342,
+        "height": 253.796875
+      },
+      "screenshot": "390x568-menu-last.png"
+    },
+    {
+      "name": "390x568: permission explanation is bounded and last choice reachable",
+      "passed": true,
+      "panel": {
+        "x": 24,
+        "y": 64.203125,
+        "width": 342,
+        "height": 342.796875
+      },
+      "screenshot": "390x568-permission.png"
+    },
+    {
+      "name": "390x568: quick switch search and close stay reachable",
+      "passed": true,
+      "panel": {
+        "x": 14,
+        "y": 68.15625,
+        "width": 362,
+        "height": 198
+      },
+      "screenshot": "390x568-quick.png"
+    },
+    {
+      "name": "390x568: Codex model choices and visible close remain reachable",
+      "passed": true,
+      "panel": {
+        "x": 0,
+        "y": 24,
+        "width": 390,
+        "height": 544
+      },
+      "screenshot": "390x568-codex.png",
+      "documentWidth": 390
+    },
+    {
+      "name": "200pct-reflow-640x400: all home scenarios and long composer remain reachable",
+      "passed": true,
+      "titles": [
+        "网页总结",
+        "股票分析",
+        "操作电脑",
+        "分析内容",
+        "日报整理"
+      ],
+      "composer": {
+        "x": 20,
+        "y": 127,
+        "width": 600,
+        "height": 241
+      },
+      "documentWidth": 640,
+      "screenshot": "200pct-reflow-640x400-long-composer.png"
+    },
+    {
+      "name": "200pct-reflow-640x400: settings lower actions and close are reachable",
+      "passed": true,
+      "panel": {
+        "x": 60,
+        "y": 72,
+        "width": 520,
+        "height": 328
+      },
+      "screenshot": "200pct-reflow-640x400-settings-bottom.png"
+    },
+    {
+      "name": "200pct-reflow-640x400: last conversation menu action and rename are reachable",
+      "passed": false,
+      "error": "{\"x\":10,\"y\":-33,\"width\":620,\"height\":421}"
+    },
+    {
+      "name": "200pct-reflow-640x400: permission explanation is bounded and last choice reachable",
+      "passed": false,
+      "error": "locator.click: Timeout 6000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#permissionBtn')\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" id=\"permissionBtn\" aria-label=\"权限等级：标准\" data-tone=\"standard\" aria-expanded=\"false\" aria-haspopup=\"dialog\" class=\"permission-chip\" title=\"权限等级：标准↵仅允许在工作区内写入；敏感操作会先征求你的同意。\">…</button>\u001b[22m\n\u001b[2m  - attempting click action\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <button type=\"button\" role=\"menuitem\" data-action=\"archive\" class=\"conv-popover-item\">…</button> from <div role=\"menu\" id=\"convPopover\" aria-label=\"对话操作\" class=\"conv-popover sheet-mode\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <button type=\"button\" role=\"menuitem\" data-action=\"archive\" class=\"conv-popover-item\">…</button> from <div role=\"menu\" id=\"convPopover\" aria-label=\"对话操作\" class=\"conv-popover sheet-mode\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    12 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <button type=\"button\" role=\"menuitem\" data-action=\"archive\" class=\"conv-popover-item\">…</button> from <div role=\"menu\" id=\"convPopover\" aria-label=\"对话操作\" class=\"conv-popover sheet-mode\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "name": "200pct-reflow-640x400: quick switch search and close stay reachable",
+      "passed": false,
+      "error": "locator.click: Timeout 6000ms exceeded.\nCall log:\n\u001b[2m  - waiting for locator('#quickList .quick-item').first()\u001b[22m\n\u001b[2m    - locator resolved to <button type=\"button\" role=\"option\" aria-selected=\"true\" class=\"quick-item active\" id=\"quick-option-qa-apple-compact\">…</button>\u001b[22m\n\u001b[2m  - attempting click action (trial run)\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <button type=\"button\" role=\"menuitem\" data-action=\"duplicate\" class=\"conv-popover-item\">…</button> from <div role=\"menu\" id=\"convPopover\" aria-label=\"对话操作\" class=\"conv-popover sheet-mode\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action (trial run)\u001b[22m\n\u001b[2m    - waiting 20ms\u001b[22m\n\u001b[2m    2 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m      - element is visible, enabled and stable\u001b[22m\n\u001b[2m      - scrolling into view if needed\u001b[22m\n\u001b[2m      - done scrolling\u001b[22m\n\u001b[2m      - <button type=\"button\" role=\"menuitem\" data-action=\"duplicate\" class=\"conv-popover-item\">…</button> from <div role=\"menu\" id=\"convPopover\" aria-label=\"对话操作\" class=\"conv-popover sheet-mode\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m    - retrying click action (trial run)\u001b[22m\n\u001b[2m      - waiting 100ms\u001b[22m\n\u001b[2m    11 × waiting for element to be visible, enabled and stable\u001b[22m\n\u001b[2m       - element is visible, enabled and stable\u001b[22m\n\u001b[2m       - scrolling into view if needed\u001b[22m\n\u001b[2m       - done scrolling\u001b[22m\n\u001b[2m       - <button type=\"button\" role=\"menuitem\" data-action=\"duplicate\" class=\"conv-popover-item\">…</button> from <div role=\"menu\" id=\"convPopover\" aria-label=\"对话操作\" class=\"conv-popover sheet-mode\">…</div> subtree intercepts pointer events\u001b[22m\n\u001b[2m     - retrying click action (trial run)\u001b[22m\n\u001b[2m       - waiting 500ms\u001b[22m\n"
+    },
+    {
+      "name": "200pct-reflow-640x400: Codex model choices and visible close remain reachable",
+      "passed": true,
+      "panel": {
+        "x": 0,
+        "y": 24,
+        "width": 640,
+        "height": 376
+      },
+      "screenshot": "200pct-reflow-640x400-codex.png",
+      "documentWidth": 640
+    }
+  ],
+  "passed": 15,
+  "failed": 3
+}

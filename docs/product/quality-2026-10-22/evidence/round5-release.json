@@ -1,0 +1,99 @@
+{
+  "label": "round5",
+  "generatedAt": "2026-10-22T05:34:32.787Z",
+  "scope": "Isolated service-worker-enabled Chrome. Full original public tree from Git HEAD: HTML app53/codex1/bundle47/CSS1/SWv14 actually loaded; restored final public tree and clicked the old client update action to app54/codex2/bundle48/CSS2/SWv15. Synthetic stale old static asset; no user site caches touched.",
+  "sourceSnapshot": "/var/folders/dk/8smfqslj1x9035fw9kx777rm0000gn/T/dsh-quality-round5-release-79tSfo",
+  "results": [
+    {
+      "name": "quick switcher has a visible touch close control",
+      "status": "passed",
+      "evidence": {
+        "rect": {
+          "x": 317,
+          "y": 114.265625,
+          "width": 44,
+          "height": 44
+        }
+      }
+    },
+    {
+      "name": "model settings has a visible touch close control and restores focus",
+      "status": "passed",
+      "evidence": {
+        "rect": {
+          "x": 331,
+          "y": 433.609375,
+          "width": 44,
+          "height": 44
+        }
+      }
+    },
+    {
+      "name": "release service worker version differs from original v14",
+      "status": "passed",
+      "evidence": {
+        "oldVersion": "dsh-v14",
+        "latestVersion": "dsh-v15"
+      }
+    },
+    {
+      "name": "real v14 worker controls page with seeded stale asset",
+      "status": "passed",
+      "evidence": {
+        "caches": [
+          "dsh-v14"
+        ],
+        "asset": "/js/app.js?v=53",
+        "assets": {
+          "app": "/js/app.js?v=53",
+          "codex": "/js/codex.js?v=1",
+          "bundle": "/css/bundle.css?v=47",
+          "codexCSS": "/css/codex.css?v=1"
+        },
+        "controlled": true,
+        "appVisible": true
+      }
+    },
+    {
+      "name": "v14 upgrade removes obsolete cache and loads fresh app",
+      "status": "passed",
+      "evidence": {
+        "caches": [
+          "dsh-v15"
+        ],
+        "stale": false,
+        "controlled": true,
+        "appVisible": true,
+        "assets": {
+          "app": "/js/app.js?v=54",
+          "codex": "/js/codex.js?v=2",
+          "bundle": "/css/bundle.css?v=48",
+          "codexCSS": "/css/codex.css?v=2"
+        },
+        "newQuickClose": true
+      }
+    },
+    {
+      "name": "service worker does not store private API responses",
+      "status": "passed",
+      "evidence": {
+        "cachedAPIs": []
+      }
+    },
+    {
+      "name": "offline reload renders cached shell while API stays network-only",
+      "status": "passed",
+      "evidence": {
+        "shellVisible": true,
+        "offline": true,
+        "apiRejected": true,
+        "feedback": "网络中断，正在重新连接…"
+      }
+    },
+    {
+      "name": "online recovery restores authenticated application",
+      "status": "passed",
+      "evidence": {}
+    }
+  ]
+}

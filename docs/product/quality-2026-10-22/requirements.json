@@ -1,0 +1,674 @@
+[
+  {
+    "id": "R1-001",
+    "round": 1,
+    "priority": "P1",
+    "roles": "UX/新用户",
+    "problem": "登录后无法找到退出入口",
+    "evidence": "logoutBtn始终hidden，IAB侧栏可访问树无退出",
+    "acceptance": "已登录用户能从侧栏退出；Cookie清理后受保护接口401；退出期间按钮禁用",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "不改变访问码或会话数据",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "登录态同步退出入口；退出成功后清缓存，失败保留页面并提示；防重复提交",
+    "testEvidence": [
+      "reports/quality/round1/results.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-002",
+    "round": 1,
+    "priority": "P1",
+    "roles": "工程/效率用户",
+    "problem": "慢响应覆盖最近选择的会话",
+    "evidence": "openConversation没有过期请求防护",
+    "acceptance": "延迟A后打开B，A晚到不覆盖B；点新对话也能取消尚未完成的打开",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "请求取消只影响浏览器呈现，不停止服务端任务",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "navigationRequest递增令牌丢弃旧响应，空白/登录视图也作废请求",
+    "testEvidence": [
+      "reports/quality/round1/results.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-003",
+    "round": 1,
+    "priority": "P1",
+    "roles": "UX/普通用户",
+    "problem": "新建/空白会话与浏览器地址不同步，失败导航骨架不恢复",
+    "evidence": "pushRoute只在openConversation调用；showEmptyChat和ensureConversation缺失",
+    "acceptance": "新对话地址/，首次创建/c/id；404恢复可用视图；前进后退与当前会话一致",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "保留深链并避免popstate重复push",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "统一创建/清空/失败路由同步；404恢复上一可用视图，前进后退不重复push",
+    "testEvidence": [
+      "reports/quality/round1/results.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-004",
+    "round": 1,
+    "priority": "P1",
+    "roles": "UX/键盘用户",
+    "problem": "重复打开模态层会遗留inert锁",
+    "evidence": "lockShell用计数；Cmd+K/P重复open会多次增加",
+    "acceptance": "重复Cmd+K/P关闭后输入可聚焦；关闭上层仍保持下层隔离；焦点回到有效触发器",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "维持嵌套弹窗和减少动态效果",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "背景inert由当前可见模态推导；重复打开复用当前焦点",
+    "testEvidence": [
+      "reports/quality/round1/results.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-005",
+    "round": 1,
+    "priority": "P1",
+    "roles": "产品/熟练用户",
+    "problem": "批量归档/删除及撤销吞错后报告全部成功",
+    "evidence": "batchArchive/batchDelete中的catch空处理",
+    "acceptance": "混合成功失败准确计数；失败项保留选择；只撤销成功项；双击不重复执行",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "删除当前会话仅在该项成功时清空",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "批量变更返回成功与失败集合；失败保留选择、仅撤销成功集合、忙碌锁",
+    "testEvidence": [
+      "reports/quality/round1/batch.json",
+      "docs/product/quality-2026-10-22/evidence/frontend-batch-unit.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-006",
+    "round": 1,
+    "priority": "P1",
+    "roles": "QA/数据用户",
+    "problem": "非法备份导入会部分落库",
+    "evidence": "backend-baseline.json：null消息导致异常后仍增加2会话",
+    "acceptance": "先完整校验，再提交；无效导入返回4xx且原数据/文件不变；有效备份可往返",
+    "files": [
+      "server/store.mjs",
+      "server/index.mjs"
+    ],
+    "risk": "原数据格式兼容；所有修改发生在校验后",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "整个备份先验证再构造提交；保留完整历史、偏好与消息状态",
+    "testEvidence": [
+      "docs/product/quality-2026-10-22/evidence/backend-R1.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-007",
+    "round": 1,
+    "priority": "P0",
+    "roles": "工程/长期用户",
+    "problem": "301个会话静默删除旧置顶会话及工作区",
+    "evidence": "backend-baseline.json：旧会话和文件都消失",
+    "acceptance": "达到上限时明确拒绝新增或导入并给出整理指引；已有会话/置顶/文件不变",
+    "files": [
+      "server/store.mjs"
+    ],
+    "risk": "保留300容量限制但禁止静默淘汰；不删除历史数据",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "容量显式409，禁止旧数据与工作区被静默淘汰",
+    "testEvidence": [
+      "docs/product/quality-2026-10-22/evidence/backend-R1.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-008",
+    "round": 1,
+    "priority": "P1",
+    "roles": "工程/高频用户",
+    "problem": "副本附件在后续操作切换目录后不可见且模型偏好丢失",
+    "evidence": "backend-baseline.json：copy根与后续chat根不一致、model/effort为null",
+    "acceptance": "副本独立目录保持文件可读；上传后仍在；保留Codex模型和强度；原会话不改",
+    "files": [
+      "server/store.mjs",
+      "server/index.mjs"
+    ],
+    "risk": "原生/Headless/Codex目录兼容，不复用原会话运行ID",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "副本规范工作区与后续引擎目录一致；完整复制后才发布并保留模型/强度",
+    "testEvidence": [
+      "docs/product/quality-2026-10-22/evidence/backend-R1.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-009",
+    "round": 1,
+    "priority": "P1",
+    "roles": "QA/文件用户",
+    "problem": "并发同名上传竞争.part及最终文件",
+    "evidence": "backend-baseline.json：一成功一ENOENT仅一文件",
+    "acceptance": "同时上传同名不同内容均成功，各有独立名称和内容；失败不覆盖另一上传",
+    "files": [
+      "server/index.mjs"
+    ],
+    "risk": "25MB限制、路径校验、失败清理继续生效",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "独立临时文件+排他硬链接发布，竞争时生成独立文件名；失败清理",
+    "testEvidence": [
+      "docs/product/quality-2026-10-22/evidence/backend-R1.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-010",
+    "round": 1,
+    "priority": "P2",
+    "roles": "工程/可靠性",
+    "problem": "畸形Cookie使健康身份查询500",
+    "evidence": "只读请求已复现URI解码异常",
+    "acceptance": "非法Cookie只忽略该项，正常返回未登录；有效Cookie仍能认证",
+    "files": [
+      "server/index.mjs"
+    ],
+    "risk": "不放宽认证或同源校验",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "忽略坏Cookie片段；JSON对象校验与畸形Host防护",
+    "testEvidence": [
+      "docs/product/quality-2026-10-22/evidence/backend-R1.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R1-011",
+    "round": 1,
+    "priority": "P1",
+    "roles": "工程/首次部署用户",
+    "problem": "默认Node14导致直接启动失败",
+    "evidence": "本机PATH Node14与当前现代NodeAPI不兼容",
+    "acceptance": "启动器选择可用Node22+或清晰报错；保留显式NODE_BIN；不更改全局Node版本",
+    "files": [
+      "start.sh",
+      "deploy/install.sh"
+    ],
+    "risk": "运行时选择可回退，不修改用户shell配置",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "选择受支持Node22+并尊重NODE_BIN；安装服务写入选中运行时且XML转义",
+    "testEvidence": [
+      "docs/product/quality-2026-10-22/evidence/backend-R1.json"
+    ],
+    "acceptanceNote": "按本项验收场景完成本地验证；真实引擎外部行为、真人研究和物理设备测试不在该证据范围内。"
+  },
+  {
+    "id": "R2-001",
+    "round": 2,
+    "priority": "P2",
+    "roles": "UI/普通用户",
+    "problem": "Codex模型设置字号过小且深入说明被裁切",
+    "reproduction": "打开模型设置，在320/1440观察说明，computed fontSize为9.5/10.5px；深入说明scrollHeight37而clientHeight25",
+    "evidence": "reports/quality/r2-before/metrics.json、截图；R2-005见baseline/exploration.json与manual-prompt-overwrite.png",
+    "acceptance": "说明至少12px、标题至少14px；取消截行，长中文可完整阅读；面板超高时内部滚动且不溢出视口",
+    "files": [
+      "public/css/codex.css"
+    ],
+    "risk": "需要更大垂直空间，保留最大视口高度与滚动",
+    "benefit": "选择模型前能读懂速度与推理深度差异",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round2/design.json",
+      "reports/quality/round2/exploration.json"
+    ],
+    "implementation": "说明至少12px、标题至少14px；取消截行，长中文可完整阅读；面板超高时内部滚动且不溢出视口"
+  },
+  {
+    "id": "R2-002",
+    "round": 2,
+    "priority": "P2",
+    "roles": "Apple工程/平板用户",
+    "problem": "触控平板的模型入口与弹窗操作目标过小",
+    "reproduction": "768px coarse下foot24px高；在Codex打开32px；手机已有44px不能重复记缺陷",
+    "evidence": "reports/quality/r2-before/metrics.json、截图；R2-005见baseline/exploration.json与manual-prompt-overwrite.png",
+    "acceptance": "coarse设备所有Codex交互目标最小44px；320/390/768不横溢出，桌面保持紧凑",
+    "files": [
+      "public/css/codex.css"
+    ],
+    "risk": "只调整触控命中尺寸，不改变模型选择行为",
+    "benefit": "减少平板误触，跨设备保持一致",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round2/design.json",
+      "reports/quality/round2/exploration.json"
+    ],
+    "implementation": "coarse设备所有Codex交互目标最小44px；320/390/768不横溢出，桌面保持紧凑"
+  },
+  {
+    "id": "R2-003",
+    "round": 2,
+    "priority": "P2",
+    "roles": "UI/低视力用户",
+    "problem": "浅色默认标签对比度不足",
+    "reproduction": "默认标签蓝字与叠色背景合成对比度3.60:1，深色5.68:1",
+    "evidence": "reports/quality/r2-before/metrics.json、截图；R2-005见baseline/exploration.json与manual-prompt-overwrite.png",
+    "acceptance": "标签普通文本在浅/深色均达到4.5:1；使用明确语义颜色，不依赖叠透明度",
+    "files": [
+      "public/css/codex.css"
+    ],
+    "risk": "保留主品牌蓝色和已有主题变量",
+    "benefit": "提高默认模型状态可辨识性",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round2/design.json",
+      "reports/quality/round2/exploration.json"
+    ],
+    "implementation": "标签普通文本在浅/深色均达到4.5:1；使用明确语义颜色，不依赖叠透明度"
+  },
+  {
+    "id": "R2-004",
+    "round": 2,
+    "priority": "P2",
+    "roles": "UI/手机用户",
+    "problem": "多列表格在小屏挤成单字竖排",
+    "reproduction": "320px五列表格client/scroll均290，列头负责人/当前状态单字断行",
+    "evidence": "reports/quality/r2-before/metrics.json、截图；R2-005见baseline/exploration.json与manual-prompt-overwrite.png",
+    "acceptance": "表格单元格保留可读最小宽度，横向滚动发生在表格容器内；正文/代码区不造成页面横溢出",
+    "files": [
+      "public/css/style.css"
+    ],
+    "risk": "长无空格内容必须能换行，避免无限宽表格",
+    "benefit": "手机能理解结构化回答",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round2/design.json",
+      "reports/quality/round2/exploration.json"
+    ],
+    "implementation": "表格单元格保留可读最小宽度，横向滚动发生在表格容器内；正文/代码区不造成页面横溢出"
+  },
+  {
+    "id": "R2-005",
+    "round": 2,
+    "priority": "P1",
+    "roles": "UX/熟练用户",
+    "problem": "提示词插入静默覆盖已写草稿",
+    "reproduction": "写草稿→打开提示词库→插入周报，旧内容立即消失；IAB及扩展基线同现",
+    "evidence": "reports/quality/r2-before/metrics.json、截图；R2-005见baseline/exploration.json与manual-prompt-overwrite.png",
+    "acceptance": "已有草稿保留并在末尾分段追加提示词，空稿仍直接插入；焦点返回输入框，草稿立即持久化；刷新内容一致",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "不自动发送或增加确认步骤；不改变已有模板",
+    "benefit": "保护正在编辑的内容，消除重复输入",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round2/design.json",
+      "reports/quality/round2/exploration.json"
+    ],
+    "implementation": "已有草稿保留并在末尾分段追加提示词，空稿仍直接插入；焦点返回输入框，草稿立即持久化；刷新内容一致"
+  },
+  {
+    "id": "R3-001",
+    "round": 3,
+    "priority": "P2",
+    "roles": "UX/效率用户",
+    "problem": "Cmd+P只查已加载标题与末条预览，遗漏历史内容和第61项以后的会话",
+    "evidence": "在75会话中搜索第75项，或搜索仅早期正文存在的词，均无匹配；reports/quality/round1/advanced.json",
+    "reproduction": "在75会话中搜索第75项，或搜索仅早期正文存在的词，均无匹配；reports/quality/round1/advanced.json",
+    "acceptance": "使用现有服务端全文API；200ms去抖、过期请求不覆盖新查询；显示加载/空/失败可重试；键盘上下/Enter及combobox语义；选中历史结果后重新聚焦页面仍保持该对话",
+    "files": [
+      "public/js/app.js",
+      "public/index.html"
+    ],
+    "risk": "无新后端接口；查询上限12条，状态反馈不谎称无结果",
+    "benefit": "无需翻页即可2~3步定位全部活跃对话",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/r3-quick-after/results.json",
+      "reports/quality/round3/advanced.json"
+    ],
+    "implementation": "使用现有服务端全文API；200ms去抖、过期请求不覆盖新查询；显示加载/空/失败可重试；键盘上下/Enter及combobox语义；选中历史结果后重新聚焦页面仍保持该对话"
+  },
+  {
+    "id": "R3-002",
+    "round": 3,
+    "priority": "P2",
+    "roles": "UX/阅读用户",
+    "problem": "长会话查找及旧消息链接被60条渲染窗口限制",
+    "evidence": "160条会话首条唯一needle查找0/0；同旧消息书签/深链无法定位；baseline/exploration.json",
+    "reproduction": "160条会话首条唯一needle查找0/0；同旧消息书签/深链无法定位；baseline/exploration.json",
+    "acceptance": "静态会话查找全部可读正文；可在命中间前后跳转；定位旧消息时仅渲染附近窗口，保留前后加载/回最近入口；关闭查找恢复普通阅读；初次仍最多60条；生成中不破坏live view",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "窗口渲染必须不影响流式生成；对用户明确搜索范围，避免为查找加载全部DOM",
+    "benefit": "旧信息可发现且无需连续加载历史",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round3/find.json",
+      "reports/quality/round3/find-flow.json"
+    ],
+    "implementation": "静态会话查找全部可读正文；可在命中间前后跳转；定位旧消息时仅渲染附近窗口，保留前后加载/回最近入口；关闭查找恢复普通阅读；初次仍最多60条；生成中不破坏live view"
+  },
+  {
+    "id": "R3-003",
+    "round": 3,
+    "priority": "P2",
+    "roles": "产品/普通用户",
+    "problem": "自定义提示词误删没有恢复路径且焦点丢失",
+    "evidence": "创建QA提示词→删除→toast无撤销且按钮消失后focus不可见；round1/advanced.json",
+    "reproduction": "创建QA提示词→删除→toast无撤销且按钮消失后focus不可见；round1/advanced.json",
+    "acceptance": "删除后显示含名称的撤销提示；撤销恢复原内容与位置且持久化；保留可见焦点；删除多个时撤销只恢复对应条目且不重复",
+    "files": [
+      "public/js/app.js",
+      "public/css/style.css"
+    ],
+    "risk": "复用现有toast，6秒撤销；不新增确认弹窗，不恢复其他标签页已编辑内容",
+    "benefit": "误触可恢复，同时保持高频操作效率",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round3/advanced.json",
+      "reports/quality/round3/find.json"
+    ],
+    "implementation": "删除后显示含名称的撤销提示；撤销恢复原内容与位置且持久化；保留可见焦点；删除多个时撤销只恢复对应条目且不重复"
+  },
+  {
+    "id": "R3-004",
+    "round": 3,
+    "priority": "P1",
+    "roles": "工程/多标签页熟练用户",
+    "problem": "Codex设置受共享localStorage和迟响应影响，可误改另一标签页会话",
+    "reproduction": "A/B两个标签页打开不同会话，在A改模型实际PATCH B；延迟summary/PATCH可使B显示A模型",
+    "evidence": "evidence/codex-state-baseline.json；reports/quality/codex-state-baseline/",
+    "acceptance": "会话归属从当前页路由获得；A操作只修改A；过期summary/PATCH/create响应不覆盖当前B；打开Codex操作也绑定点击时ID；两tab与延迟响应三类回归通过",
+    "files": [
+      "public/js/codex.js"
+    ],
+    "risk": "不改变账号或模型目录来源；本地默认偏好可共享但会话设置不可串台",
+    "benefit": "防止修改错误会话，保持当前界面与持久设置一致",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "evidence/codex-state-R3.json",
+      "reports/quality/round3/codex-tabs.json"
+    ],
+    "implementation": "会话归属从当前页路由获得；A操作只修改A；过期summary/PATCH/create响应不覆盖当前B；打开Codex操作也绑定点击时ID；两tab与延迟响应三类回归通过"
+  },
+  {
+    "id": "R4-001",
+    "round": 4,
+    "priority": "P2",
+    "roles": "工程/日常用户",
+    "problem": "CSS缓存命中仍重复读取全部七文件",
+    "evidence": "backend-R4-baseline.json：100次暖缓存200或304各读取700次共21.9MB",
+    "reproduction": "backend-R4-baseline.json：100次暖缓存200或304各读取700次共21.9MB",
+    "acceptance": "先stat计算key，仅未命中读取/压缩；内容修改正确失效；gzip/ETag/304行为相同；暖缓存100请求内容读取0次",
+    "files": [
+      "server/index.mjs"
+    ],
+    "risk": "仅减少重复I/O，不能据此宣称首屏快若干倍",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "evidence/backend-R4-cache.json"
+    ],
+    "implementation": "CSS bundle先stat算缓存键，仅miss读文件/压缩；保持ETag、HEAD、gzip与错误恢复"
+  },
+  {
+    "id": "R4-002",
+    "round": 4,
+    "priority": "P2",
+    "roles": "UX/文件用户",
+    "problem": "文件预览旧请求污染新的文件或关闭后的容器",
+    "evidence": "R2 advanced：A延迟1秒→关A开B，B正文出现B+A；关闭后也追加",
+    "reproduction": "R2 advanced：A延迟1秒→关A开B，B正文出现B+A；关闭后也追加",
+    "acceptance": "每次打开/关闭作废请求；文本用AbortController，慢A不能改B/关闭视图；图片错误状态也只属于本次；焦点及下载链接匹配当前文件",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "取消只终止预览读取，不取消生成或上传",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round4/advanced.json",
+      "reports/quality/r5-image-preview/results.json"
+    ],
+    "implementation": "预览打开/关闭递增版本并取消读取；文本/图片回调及延后焦点核验本次请求"
+  },
+  {
+    "id": "R4-003",
+    "round": 4,
+    "priority": "P2",
+    "roles": "工程/内容阅读用户",
+    "problem": "公式资源一次加载失败使同页永久无法渲染",
+    "evidence": "R2 recovery：本地/vendor/katex JS首请求故障后下一公式仍仅一次请求，0个.katex",
+    "reproduction": "R2 recovery：本地/vendor/katex JS首请求故障后下一公式仍仅一次请求，0个.katex",
+    "acceptance": "失败后清除失败promise与元素，下一次公式请求可重试；并发只加载一次；失败保留可读原文，成功后公式正常",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "无新CDN，不无限后台重试，不重复注入CSS",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round4/recovery.json",
+      "reports/quality/r4-frontend-after/edges.json"
+    ],
+    "implementation": "CSS/脚本全部就绪后渲染；失败清理promise/标签，可重试且复用成功资源"
+  },
+  {
+    "id": "R4-004",
+    "round": 4,
+    "priority": "P2",
+    "roles": "工程/搜索用户",
+    "problem": "分页旧响应混入新搜索结果",
+    "evidence": "R2 recovery：Alpha加载更多延迟，改Beta后仍混入10条Alpha并错误计数70",
+    "reproduction": "R2 recovery：Alpha加载更多延迟，改Beta后仍混入10条Alpha并错误计数70",
+    "acceptance": "分页捕获查询和版本；查询变化或刷新时旧响应不能改结果/计数/hasMore；加载按钮可恢复；同查询正常追加去重",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "保留原列表分页和全文API，查询A-B-A也需防旧请求",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round4/recovery.json",
+      "reports/quality/r4-frontend-after/edges.json"
+    ],
+    "implementation": "列表/搜索/分页用版本和请求对象隔离，避免旧响应/旧finally影响当前查询"
+  },
+  {
+    "id": "R4-005",
+    "round": 4,
+    "priority": "P2",
+    "roles": "UX/键盘用户",
+    "problem": "设置单选组宣称radio却没有箭头键行为",
+    "evidence": "R2 advanced：theme/density/font按ArrowRight均不变",
+    "reproduction": "R2 advanced：theme/density/font按ArrowRight均不变",
+    "acceptance": "统一radio键盘：方向键循环，Home/End首尾，单一tabstop，禁用选项跳过；主题/密度/字号点击与持久化仍正常；引擎组同语义且禁用不可选",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "不改变引擎业务；组内切换焦点不能逃出弹窗",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round4/radio.json",
+      "reports/quality/round4/advanced.json"
+    ],
+    "implementation": "统一radio方向键、Home/End、单Tab入口，跳过禁用并保持选择焦点"
+  },
+  {
+    "id": "R4-006",
+    "round": 4,
+    "priority": "P2",
+    "roles": "QA/熟练用户",
+    "problem": "阅读密度和字号保存后刷新恢复默认",
+    "reproduction": "设置紧凑和大字号→刷新→按钮均恢复默认；R4键盘持久化用例真实失败",
+    "evidence": "evidence/preferences-before.json；state初始化早于PREFS_KEY声明，loadPrefs捕获TDZ并静默回默认",
+    "acceptance": "将存储键在state读取前初始化；点击和键盘设置密度/字号后刷新仍选中原值；非法存储仍安全使用默认",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "不改现有存储键和值，兼容已有偏好",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "testEvidence": [
+      "reports/quality/round4/radio.json",
+      "reports/quality/round4/features.json"
+    ],
+    "implementation": "PREFS_KEY提前初始化，启动loadPrefs正确读取既有存储"
+  },
+  {
+    "id": "R5-001",
+    "round": 5,
+    "priority": "P2",
+    "roles": "Apple工程/UX/移动及键盘用户",
+    "problem": "模型面板无可见关闭且Escape后焦点落body；快速切换只有Esc文字缺少触控关闭",
+    "reproduction": "打开模型设置→Escape→activeElement是body；手机无键盘时只能猜测点外部；quick顶部Esc不是按钮",
+    "evidence": "round1/2/3 exploration模型回焦失败；r2-after模型截图及当前index quick结构",
+    "acceptance": "两个面板都有明确有名关闭按钮，触控44px；Codex modal Tab/ShiftTab圈内、Escape只关顶层并回有效触发器，背景隔离与app其它modal一致；重复打开/关闭不遗留inert；viewport变化布局不保留旧sheet样式；减少动态效果生效",
+    "files": [
+      "public/js/codex.js",
+      "public/css/codex.css",
+      "public/js/app.js",
+      "public/index.html",
+      "public/css/refine.css"
+    ],
+    "risk": "不能将关闭旧modal误解为停止生成；外部点击不执行被遮挡操作；与既有锁状态协调",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "quick和Codex增加44px关闭；模型modal共享背景锁、焦点圈/回焦/顶层Escape与resize定位",
+    "testEvidence": [
+      "reports/quality/round5/polish.json",
+      "reports/quality/round5/release.json",
+      "evidence/codex-modal-R5.json"
+    ]
+  },
+  {
+    "id": "R5-002",
+    "round": 5,
+    "priority": "P1",
+    "roles": "工程/已有用户",
+    "problem": "已修改资源仍沿用原immutable URL和SW版本，已有用户可能继续执行旧代码",
+    "reproduction": "index仍bundle?v47/app?v53/codex?v1，codex动态CSS?v1，sw版本dsh-v14；服务器对版本资源返回一年immutable",
+    "evidence": "当前public/index.html、codex.js ensureStyles、sw.js及server静态Cache-Control",
+    "acceptance": "发布涉及的JS/CSS URL统一递增，SW版本递增；真实浏览器从旧SW安装更新，点击更新后使用新URL并清理旧缓存；离线shell可重开且不缓存API；主服务最新版重启后真实健康与核心AI验收，明确外部未覆盖范围",
+    "files": [
+      "public/index.html",
+      "public/js/codex.js",
+      "public/sw.js"
+    ],
+    "risk": "更新不可自动中断正在生成；沿用现有用户点击更新流程；无数据迁移或凭据更换",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "bundle48/app54/codex2/codex.css2与SWv15；真实旧缓存升级及离线/在线恢复；主服务安全重启",
+    "testEvidence": [
+      "reports/quality/round5/release.json",
+      "reports/quality/round5/local-restart.json",
+      "reports/quality/round5/native.json"
+    ]
+  },
+  {
+    "id": "R5-003",
+    "round": 5,
+    "priority": "P1",
+    "roles": "QA/新用户及已有草稿的日常用户",
+    "problem": "场景模板覆盖已有草稿且刷新后模板丢失",
+    "reproduction": "44字草稿→场景库首项→78字模板覆盖旧稿；立即刷新恢复旧44字",
+    "evidence": "reports/quality/round3/features.json",
+    "acceptance": "保留已有草稿双换行追加，空稿直接填入，立即保存，正确选中新模板首个占位符；仍阻止未替换占位符发送",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "复用现有draft持久化，无数据迁移，不自动发送",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "场景模板双换行追加保留原稿，立即保存，正确选择新占位符并校验输入上限",
+    "testEvidence": [
+      "reports/quality/round5/features.json",
+      "reports/quality/round5/polish.json",
+      "reports/quality/r5-scenario-after/results.json"
+    ]
+  },
+  {
+    "id": "R5-004",
+    "round": 5,
+    "priority": "P1",
+    "roles": "QA/日常及移动端用户",
+    "problem": "缓存启动不恢复当前会话草稿，认证后空输入覆盖已保存内容",
+    "reproduction": "已有会话插入模板，刷新并等待对话GET结束，input为空且dsh.draft.id被删除",
+    "evidence": "reports/quality/r5-scenario-currentdraft-bug/results.json",
+    "acceptance": "缓存阶段和认证后恢复同ID草稿；缓存A访问B不串稿；新草稿无回归；恢复超24k仍禁用发送",
+    "files": [
+      "public/js/app.js"
+    ],
+    "risk": "不改已有键，不迁移数据，保留深链路由",
+    "development": "已开发",
+    "test": "测试通过",
+    "acceptanceStatus": "验收通过",
+    "implementation": "缓存恢复currentId后立刻恢复对应草稿，避免空值回写；恢复发送状态保留24k校验",
+    "testEvidence": [
+      "reports/quality/round5/polish.json",
+      "reports/quality/r5-scenario-after/results.json"
+    ]
+  }
+]

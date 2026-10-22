@@ -1,0 +1,182 @@
+{
+  "capturedAt": "2026-10-22T05:42:04.868Z",
+  "scope": "Original CSS bundle function, actual HTTP over localhost, copied real CSS assets, instrumented filesystem reads. Local timings are not browser Core Web Vitals.",
+  "sourceHash": "e53ee3a1469e606a9e45449e0ab89c57e0fcec2dce04c054b0a0b418226239ce",
+  "bundleFiles": [
+    "css/style.css",
+    "css/glass.css",
+    "css/apple.css",
+    "css/apple-pro.css",
+    "css/ux.css",
+    "css/refine.css",
+    "css/visual.css"
+  ],
+  "results": [
+    {
+      "name": "cold gzip response reads all 7 manifest files once",
+      "passed": true,
+      "contentReads": 7,
+      "contentBytes": 219147,
+      "statCalls": 7,
+      "compressions": 1,
+      "rawBytes": 219154,
+      "gzipBytes": 36405
+    },
+    {
+      "name": "100 warm 200 responses read and compress no content",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 700,
+      "compressions": 0,
+      "requests": 100,
+      "medianHttpMs": 0.17258400000000051,
+      "p95HttpMs": 0.4631660000000011
+    },
+    {
+      "name": "100 conditional 304 responses read and compress no content",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 700,
+      "compressions": 0,
+      "requests": 100,
+      "medianHttpMs": 0.1296249999999901,
+      "p95HttpMs": 0.19462500000000205
+    },
+    {
+      "name": "identity and HEAD preserve content length and unversioned cache policy",
+      "passed": true,
+      "contentReads": 0,
+      "contentBytes": 0,
+      "statCalls": 14,
+      "compressions": 0
+    },
+    {
+      "name": "same-size edits to every manifest file invalidate ETag and exact bytes",
+      "passed": true,
+      "sources": [
+        {
+          "file": "css/style.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/glass.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/apple.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/apple-pro.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/ux.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/refine.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        },
+        {
+          "file": "css/visual.css",
+          "invalidation": {
+            "contentReads": 7,
+            "contentBytes": 219147,
+            "statCalls": 7,
+            "compressions": 1
+          },
+          "nextConditional": {
+            "contentReads": 0,
+            "contentBytes": 0,
+            "statCalls": 7,
+            "compressions": 0
+          }
+        }
+      ]
+    },
+    {
+      "name": "missing source returns error and restoring it recovers",
+      "passed": true,
+      "file": "css/visual.css",
+      "missingStatus": 500,
+      "recoveredStatus": 200,
+      "recovery": {
+        "contentReads": 7,
+        "contentBytes": 219147,
+        "statCalls": 7,
+        "compressions": 1
+      }
+    }
+  ],
+  "passed": 6,
+  "failed": 0
+}

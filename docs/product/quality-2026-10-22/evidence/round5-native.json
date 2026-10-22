@@ -1,0 +1,63 @@
+{
+  "generatedAt": "2026-10-22T05:26:11.180Z",
+  "scope": "Real local server and installed DSR/Codex accounts; Playwright UI send/stop/reload, no mocked streams, read-only QA conversations only; real tool execution and approvals not covered.",
+  "results": [
+    {
+      "name": "latest local app and configured engines are available",
+      "status": "passed",
+      "evidence": {
+        "native": true,
+        "codex": true,
+        "codexReady": true
+      }
+    },
+    {
+      "name": "real DSR reply completes and is visible",
+      "status": "passed",
+      "evidence": {
+        "conversationId": "c0165eac-ec6a-4166-ab30-fc8382e93cb7",
+        "sessionId": "session-bf8cb556-73d6-42e8-879a-dcad393ac41b",
+        "status": "done",
+        "text": "握手7429",
+        "durationMs": 1564
+      }
+    },
+    {
+      "name": "real DSR stop terminates an active streamed reply",
+      "status": "passed",
+      "evidence": {
+        "status": "stopped",
+        "streamedCharacters": 29,
+        "stopMs": 341
+      }
+    },
+    {
+      "name": "real DSR resumes same session and remembers prior context",
+      "status": "passed",
+      "evidence": {
+        "status": "done",
+        "text": "7429",
+        "sameSession": true,
+        "durationMs": 1041
+      }
+    },
+    {
+      "name": "real DSR history persists after browser reload",
+      "status": "passed",
+      "evidence": {
+        "assistantMessages": 3
+      }
+    },
+    {
+      "name": "real Codex basic reply completes and is visible",
+      "status": "passed",
+      "evidence": {
+        "conversationId": "ebcc47ed-c29f-4ff6-88cb-f21f9730a101",
+        "threadId": "01a16212-cab4-7b63-a1c9-310ea94f878f",
+        "status": "done",
+        "text": "Codex 网页验收通过",
+        "durationMs": 10024
+      }
+    }
+  ]
+}

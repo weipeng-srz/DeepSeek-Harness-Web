@@ -1,0 +1,92 @@
+{
+  "testType": "Actual client helper and function unit test with injected API outcomes; not browser E2E",
+  "results": [
+    {
+      "operation": "batchArchive",
+      "failures": [],
+      "result": [
+        "已归档 2 段对话",
+        "已恢复 2 段对话"
+      ],
+      "passed": true
+    },
+    {
+      "operation": "batchArchive",
+      "failures": [
+        "a"
+      ],
+      "result": [
+        "已归档 1 段对话，1 段失败，可重试",
+        "已恢复 1 段对话"
+      ],
+      "passed": true
+    },
+    {
+      "operation": "batchArchive",
+      "failures": [
+        "a",
+        "b"
+      ],
+      "result": [
+        "归档失败，2 段对话未更改"
+      ],
+      "passed": true
+    },
+    {
+      "operation": "batchDelete",
+      "failures": [],
+      "result": [
+        "已删除 2 段对话",
+        "已恢复 2 段对话"
+      ],
+      "passed": true
+    },
+    {
+      "operation": "batchDelete",
+      "failures": [
+        "a"
+      ],
+      "result": [
+        "已删除 1 段对话，1 段失败，可重试",
+        "已恢复 1 段对话"
+      ],
+      "passed": true
+    },
+    {
+      "operation": "batchDelete",
+      "failures": [
+        "a",
+        "b"
+      ],
+      "result": [
+        "删除失败，2 段对话未更改"
+      ],
+      "passed": true
+    },
+    {
+      "case": "undo failure reported accurately",
+      "failedUndo": [
+        "a"
+      ],
+      "message": "已恢复 1 段对话，1 段失败，可重试",
+      "passed": true
+    },
+    {
+      "case": "undo failure reported accurately",
+      "failedUndo": [
+        "a",
+        "b"
+      ],
+      "message": "恢复失败，2 段对话未更改",
+      "passed": true
+    },
+    {
+      "case": "refresh failure preserves mutation result",
+      "passed": true
+    },
+    {
+      "case": "concurrent archive only sends one batch",
+      "passed": true
+    }
+  ]
+}

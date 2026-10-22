@@ -1,0 +1,69 @@
+{
+  "capturedAt": "2026-10-22T04:46:29.423Z",
+  "scope": "Original CSS bundle function, actual HTTP over localhost, copied real CSS assets, instrumented filesystem reads. Local timings are not browser Core Web Vitals.",
+  "sourceHash": "e41be762b23039029a8d5bdf8f1fb8cdc1245aec8805631bc45bdd1a7c4157b4",
+  "results": [
+    {
+      "name": "cold gzip response reads all seven files once",
+      "passed": true,
+      "contentReads": 7,
+      "contentBytes": 219023,
+      "statCalls": 7,
+      "compressions": 1,
+      "rawBytes": 219030,
+      "gzipBytes": 36380
+    },
+    {
+      "name": "100 warm 200 responses read and compress no content",
+      "passed": false,
+      "error": "Expected values to be strictly equal:\n\n700 !== 0\n",
+      "metrics": {
+        "contentReads": 700,
+        "contentBytes": 21902300,
+        "statCalls": 700,
+        "compressions": 0
+      }
+    },
+    {
+      "name": "100 conditional 304 responses read and compress no content",
+      "passed": false,
+      "error": "Expected values to be strictly equal:\n\n700 !== 0\n",
+      "metrics": {
+        "contentReads": 700,
+        "contentBytes": 21902300,
+        "statCalls": 700,
+        "compressions": 0
+      }
+    },
+    {
+      "name": "identity and HEAD preserve content length and unversioned cache policy",
+      "passed": false,
+      "error": "Expected values to be strictly equal:\n\n14 !== 0\n",
+      "metrics": {
+        "contentReads": 14,
+        "contentBytes": 438046,
+        "statCalls": 14,
+        "compressions": 0
+      }
+    },
+    {
+      "name": "same-size content edit with changed mtime invalidates ETag and bytes",
+      "passed": false,
+      "error": "Expected values to be strictly equal:\n\n7 !== 0\n",
+      "metrics": {
+        "contentReads": 7,
+        "contentBytes": 219023,
+        "statCalls": 7,
+        "compressions": 0
+      }
+    },
+    {
+      "name": "missing source returns error and restoring it recovers",
+      "passed": true,
+      "missingStatus": 500,
+      "recoveredStatus": 200
+    }
+  ],
+  "passed": 2,
+  "failed": 4
+}

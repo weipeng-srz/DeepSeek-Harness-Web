@@ -1,0 +1,87 @@
+{
+  "capturedAt": "2026-10-22T04:36:17.904Z",
+  "fixture": "Synthetic model catalog and messages, isolated real server handlers, Chrome UI interaction; zero model runs",
+  "sourceHash": "4cc37bed0be5f41cf8253565fbabdff3033c4e623263003d7a758c8ecf1381a2",
+  "sandbox": "/private/var/folders/dk/8smfqslj1x9035fw9kx777rm0000gn/T/dsh-codex-state-CGf48O",
+  "results": [
+    {
+      "case": "cross-tab model update targets visible conversation",
+      "correct": false,
+      "before": {
+        "route": "/c/c726f251-a6c2-4126-bee8-b999b1895148",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State A",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/c726f251-a6c2-4126-bee8-b999b1895148",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State A",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "tabB": {
+        "route": "/c/87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State B",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "requests": [
+        {
+          "url": "/api/conversations/87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+          "body": {
+            "codexModel": "qa-balanced",
+            "codexEffort": "medium"
+          }
+        }
+      ],
+      "serverModels": {
+        "A": "qa-balanced",
+        "B": "qa-balanced"
+      },
+      "screenshot": "/Users/liupengbin/Work/DeepSeek-Harness-Web/reports/quality/codex-state-baseline/cross-tab.png"
+    },
+    {
+      "case": "late A summary cannot overwrite B selection",
+      "correct": false,
+      "before": {
+        "route": "/c/87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State B",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "serverB": "qa-fast",
+      "screenshot": "/Users/liupengbin/Work/DeepSeek-Harness-Web/reports/quality/codex-state-baseline/late-summary.png"
+    },
+    {
+      "case": "late A patch cannot overwrite B selection",
+      "correct": false,
+      "before": {
+        "route": "/c/87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State B",
+        "pill": "QA balanced · medium",
+        "hidden": false
+      },
+      "after": {
+        "route": "/c/87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "currentStorage": "87b2b564-7d5a-4c1f-981d-f9a3818f88f5",
+        "title": "[导入] State B",
+        "pill": "QA fast · medium",
+        "hidden": false
+      },
+      "serverB": "qa-balanced",
+      "screenshot": "/Users/liupengbin/Work/DeepSeek-Harness-Web/reports/quality/codex-state-baseline/late-patch.png"
+    }
+  ]
+}

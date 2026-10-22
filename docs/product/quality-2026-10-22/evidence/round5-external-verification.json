@@ -1,0 +1,18 @@
+{
+  "scope": "真实本机引擎，主代理浏览器/服务端独立交叉验收；只标记完整满足的固定项",
+  "results": [
+    {
+      "name": "EXTERNAL:真实 DSR 生成/停止/续接",
+      "status": "passed",
+      "evidence": {
+        "source": "native.json",
+        "cases": [
+          "real DSR reply completes and is visible",
+          "real DSR stop terminates an active streamed reply",
+          "real DSR resumes same session and remembers prior context"
+        ],
+        "limitations": "不包含DSR工具审批、断线或服务重启恢复；Codex仅基本回复，组合工具审批评分项仍不通过"
+      }
+    }
+  ]
+}
