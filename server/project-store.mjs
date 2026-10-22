@@ -5,6 +5,7 @@ import { DATA_DIR } from './config.mjs'
 
 const STORE_PATH = path.join(DATA_DIR, 'projects.json')
 const MAX_PROJECTS = 100
+const TRASH_RETENTION_MS = 30 * 86_400_000
 const NAME_MAX = 40
 const INSTRUCTIONS_MAX = 4000
 const NOTES_MAX = 8000
@@ -76,6 +77,7 @@ export class ProjectStore {
         ? input.defaultPermission
         : 'workspace-write',
       archivedAt: Number(input.archivedAt) > 0 ? Number(input.archivedAt) : null,
+      deletedAt: Number(input.deletedAt) > 0 ? Number(input.deletedAt) : null,
     }
     return base
   }
@@ -117,11 +119,45 @@ export class ProjectStore {
   }
 
   list() {
-    return [...this.data.projects].sort((left, right) => {
+    this.pruneTrash()
+    return this.data.projects.filter((project) => !project.deletedAt).sort((left, right) => {
       const pin = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
       if (pin) return pin
       return (right.updatedAt || 0) - (left.updatedAt || 0)
     })
+  }
+
+  listTrash() {
+    this.pruneTrash()
+    return this.data.projects
+      .filter((project) => project.deletedAt)
+      .sort((left, right) => right.deletedAt - left.deletedAt)
+      .map((project) => ({
+        ...project,
+        purgeAt: Number(project.deletedAt) + TRASH_RETENTION_MS,
+        fileCount: this.listFiles(project.id).length,
+      }))
+  }
+
+  pruneTrash() {
+    const expired = this.data.projects.filter(
+      (project) => project.deletedAt && Date.now() - project.deletedAt > TRASH_RETENTION_MS,
+    )
+    if (!expired.length) return false
+    for (const project of expired) {
+      this.purge(project.id)
+    }
+    return true
+  }
+
+  restore(id) {
+    const project = this.get(id)
+    if (!project || !project.deletedAt) return null
+    if (Date.now() - project.deletedAt > TRASH_RETENTION_MS) return null
+    delete project.deletedAt
+    project.updatedAt = now()
+    this.scheduleSave()
+    return project
   }
 
   get(id) {
@@ -129,7 +165,7 @@ export class ProjectStore {
   }
 
   create(input = {}) {
-    if (this.data.projects.length >= MAX_PROJECTS) {
+    if (this.data.projects.filter((project) => !project.deletedAt).length >= MAX_PROJECTS) {
       throw Object.assign(new Error(`项目最多 ${MAX_PROJECTS} 个，请先归档或删除不用的项目`), { status: 409 })
     }
     if (!String(input?.name ?? '').trim()) {
@@ -197,6 +233,15 @@ export class ProjectStore {
   }
 
   remove(id) {
+    const project = this.get(id)
+    if (!project) return null
+    project.deletedAt = now()
+    project.updatedAt = now()
+    this.scheduleSave()
+    return project
+  }
+
+  purge(id) {
     const index = this.data.projects.findIndex((project) => project.id === id)
     if (index < 0) return null
     const [project] = this.data.projects.splice(index, 1)
@@ -208,10 +253,11 @@ export class ProjectStore {
   }
 
   export() {
+    // Backup must not trigger trash pruning: exporting is a read-only action.
     return {
       version: 1,
       exportedAt: now(),
-      projects: JSON.parse(JSON.stringify(this.list())),
+      projects: JSON.parse(JSON.stringify(this.data.projects.filter((project) => !project.deletedAt))),
     }
   }
 
@@ -247,7 +293,7 @@ export class ProjectStore {
       seen.set(signature, copy.id)
       imported.push(copy)
     }
-    if (this.data.projects.length + imported.length > MAX_PROJECTS) {
+    if (this.data.projects.filter((project) => !project.deletedAt).length + imported.length > MAX_PROJECTS) {
       throw Object.assign(new Error(`项目数量超过上限（${MAX_PROJECTS}）`), { status: 409 })
     }
     this.data.projects.unshift(...imported.reverse())

@@ -398,6 +398,8 @@
     prompts: loadPrompts(),
     memory: { enabled: true, autoCapture: true, count: 0, items: [], loaded: false, loading: false },
     threadWindow: 60,
+    hasEarlier: false,
+    totalMessages: 0,
     threadEnd: null,
     commandIndex: 0,
     commandItems: [],
@@ -3645,6 +3647,12 @@
       ? `${engineLabel}正在生成…`
       : `${engineLabel}${relativeTime(conv.updatedAt)}`
     if (count) meta.title = `${count} 条消息`
+    if (conv.archived && state.search.trim()) {
+      const archived = document.createElement('span')
+      archived.className = 'project-badge'
+      archived.textContent = '已归档'
+      meta.prepend(archived, document.createTextNode(' · '))
+    }
     const project = !state.activeProjectId && conv.projectId ? projectById(conv.projectId) : null
     if (project) {
       const badge = document.createElement('span')
@@ -4122,6 +4130,11 @@
       link.target = '_blank'
       link.rel = 'noopener noreferrer'
       link.textContent = `${file.name} · ${formatBytes(file.size)}`
+      const download = document.createElement('a')
+      download.href = `/api/projects/${state.editingProjectId}/file?download=1&name=${encodeURIComponent(file.name)}`
+      download.download = file.name
+      download.textContent = '下载'
+      download.className = 'project-file-download'
       const remove = document.createElement('button')
       remove.type = 'button'
       remove.textContent = '删除'
@@ -4143,7 +4156,7 @@
           },
         })
       })
-      row.append(link, remove)
+      row.append(link, download, remove)
       els.projectFileList.appendChild(row)
     }
   }
@@ -4241,8 +4254,8 @@
     if (!project) return
     askConfirm({
       title: `删除项目「${project.name}」？`,
-      body: `项目里的 ${project.conversationCount || 0} 个对话不会删除，只会回到最近列表；项目指令、${project.fileCount || 0} 个项目文件以及该项目的记忆会被永久删除。`,
-      okLabel: '删除项目',
+      body: `项目会移到「最近删除」保留 30 天；${project.conversationCount || 0} 个对话暂时回到最近列表，恢复项目时会自动回到项目里。${project.fileCount || 0} 个项目文件会保留。`,
+      okLabel: '移到最近删除',
       onOk: async () => {
         try {
           const data = await api(`/api/projects/${id}`, { method: 'DELETE' })
@@ -4258,7 +4271,7 @@
           renderProjects()
           renderProjectUI()
           await refreshConversations()
-          showToast(`项目已删除，${data.moved || 0} 个对话已移出`)
+          showToast(`项目已移到最近删除，${data.moved || 0} 个对话已移出；30 天内可恢复`)
         } catch (error) {
           showToast(error.message || '删除失败', { tone: 'error' })
         }
@@ -4658,7 +4671,7 @@
           messageIds: (() => {
             const visible = shareVisibleMessages(state.shareMessages)
             const selected = visible.filter((msg) => state.shareSelected.has(msg.id)).map((msg) => msg.id)
-            return selected.length && selected.length < visible.length ? selected : []
+            return selected
           })(),
           allowSensitive,
           redactSensitive: els.shareRedactSensitive?.checked === true,
@@ -4905,6 +4918,9 @@
       const data = await api(`/api/conversations/${target.conversationId}`)
       if (state.currentId === target.conversationId) {
         state.messages = data.conversation.messages || []
+        state.hasEarlier = false
+        state.totalMessages = state.messages.length
+        state.threadWindow = Math.max(60, state.messages.length)
         renderMessages(state.messages, { restoreScroll: false })
         scrollToBottom()
       }
@@ -5232,8 +5248,8 @@
       }],
       ['share', 'i-share', '分享只读链接', () => openShareSheet(id)],
       ['export', 'i-download', '导出…', () => openExportSheet(id)],
-      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); document.body.classList.remove('print-text-only'); setTimeout(() => window.print(), 60) }],
-      ['print-clean', 'i-file', '打印（仅正文）', () => { closeConvMenu({ restoreFocus: false }); document.body.classList.add('print-text-only'); const done = () => { document.body.classList.remove('print-text-only'); window.removeEventListener('afterprint', done) }; window.addEventListener('afterprint', done); setTimeout(() => window.print(), 60) }],
+      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); void printConversation(false) }],
+      ['print-clean', 'i-file', '打印（仅正文）', () => { closeConvMenu({ restoreFocus: false }); void printConversation(true) }],
       ['link', 'i-external', '复制对话链接', () => void copyConversationLink(id)],
       ['duplicate', 'i-copy', '创建副本', () => void duplicateConversation(id)],
       ['stats', 'i-info', '对话统计', () => void openStats(id)],
@@ -6375,6 +6391,24 @@
             ? '运行中…'
             : '（无输出）'
       appendSection(entry.body, '结果', entry.resultText, 'result')
+      if (call.resultTruncated && call.messageId && call.id) {
+        const loadFull = document.createElement('button')
+        loadFull.type = 'button'
+        loadFull.className = 'tool-copy tool-load-full'
+        loadFull.textContent = '查看完整结果'
+        loadFull.addEventListener('click', async (event) => {
+          event.stopPropagation()
+          try {
+            const data = await api(`/api/conversations/${state.currentId}/messages/${call.messageId}/tool?callId=${encodeURIComponent(call.id)}`)
+            const full = { ...call, result: data.result, input: data.input, resultTruncated: false, inputTruncated: false }
+            entry.pendingCall = full
+            renderToolBody(entry, full)
+          } catch (error) {
+            showToast(error.message || '完整结果加载失败', { tone: 'error' })
+          }
+        })
+        entry.body.appendChild(loadFull)
+      }
       if (entry.resultRaw) {
         const copy = document.createElement('button')
         copy.type = 'button'
@@ -6844,11 +6878,22 @@
 
   /* ── thread rendering ──────────────────────────────────────────────── */
 
+  /* On phones the top bar is a floating overlay with no background, so the
+     title steps aside once the thread is scrolled and content runs to the
+     very top edge. Desktop keeps the bar as-is (the class is inert there). */
+  let topbarEl = null
+  function updateTopbarImmersive() {
+    if (!topbarEl) topbarEl = document.querySelector('.topbar')
+    if (!topbarEl || !els.scrollArea) return
+    topbarEl.classList.toggle('is-scrolled', els.scrollArea.scrollTop > 8)
+  }
+
   function updateScrollButton() {
     const el = els.scrollArea
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
     const reading = Boolean(state.currentId) && !els.thread.hidden
     els.scrollBottom.hidden = !reading || nearBottom
+    updateTopbarImmersive()
     return nearBottom
   }
 
@@ -6908,6 +6953,8 @@
     state.currentEngine = state.engine
     state.permission = state.permissionCatalog?.default || 'workspace-write'
     state.messages = []
+    state.hasEarlier = false
+    state.totalMessages = 0
     state.threadEnd = null
     closeFind()
     els.thread.replaceChildren()
@@ -6999,6 +7046,46 @@
     return true
   }
 
+  async function loadEarlierMessages() {
+    if (!state.currentId || !state.hasEarlier || state.loadingEarlier) return
+    const first = state.messages[0]
+    if (!first) return
+    state.loadingEarlier = true
+    const before = els.scrollArea.scrollHeight
+    try {
+      const data = await api(`/api/conversations/${state.currentId}?before=${encodeURIComponent(first.id)}&limit=60`)
+      const older = data.conversation.messages || []
+      const seen = new Set(state.messages.map((msg) => msg.id))
+      state.messages = [...older.filter((msg) => !seen.has(msg.id)), ...state.messages]
+      state.hasEarlier = data.hasEarlier === true
+      state.totalMessages = Number(data.totalMessages) || state.messages.length
+      state.threadWindow = Math.max(state.threadWindow, state.messages.length)
+      renderMessages(state.messages, { restoreScroll: false })
+      requestAnimationFrame(() => {
+        els.scrollArea.scrollTop += els.scrollArea.scrollHeight - before
+      })
+    } catch (error) {
+      showToast(error.message || '加载更早消息失败', { tone: 'error' })
+    } finally {
+      state.loadingEarlier = false
+    }
+  }
+
+  async function loadAllMessages() {
+    if (!state.currentId || !state.hasEarlier) return false
+    try {
+      const data = await api(`/api/conversations/${state.currentId}?full=1`)
+      state.messages = data.conversation.messages || state.messages
+      state.hasEarlier = data.hasEarlier === true
+      state.totalMessages = Number(data.totalMessages) || state.messages.length
+      state.threadWindow = Math.max(60, state.messages.length)
+      renderMessages(state.messages)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   function renderMessages(messages, { restoreScroll = true } = {}) {
     for (const view of state.liveViews.values()) view.destroy?.()
     state.liveViews.clear()
@@ -7006,7 +7093,14 @@
     const total = messages.length
     const end = state.threadEnd == null ? total : Math.min(total, state.threadEnd)
     const start = Math.max(0, end - state.threadWindow)
-    if (start > 0) {
+    if (state.hasEarlier) {
+      const earlier = document.createElement('button')
+      earlier.type = 'button'
+      earlier.className = 'load-earlier'
+      earlier.textContent = `加载更早的 ${Math.max(0, state.totalMessages - state.messages.length)} 条消息`
+      earlier.addEventListener('click', () => void loadEarlierMessages())
+      els.thread.appendChild(earlier)
+    } else if (start > 0) {
       const earlier = document.createElement('button')
       earlier.type = 'button'
       earlier.className = 'load-earlier'
@@ -7108,6 +7202,7 @@
             status: block.status,
             result: block.result,
             summary: summarizeInput(block.input),
+            messageId: msg.id,
             lazy: true,
           })
         }
@@ -7198,9 +7293,22 @@
       showThreadSkeleton()
     }
     try {
-      const data = await api(`/api/conversations/${id}`)
+      const data = await api(`/api/conversations/${id}?tail=60`)
       if (request !== state.navigationRequest) return
-      const conv = data.conversation
+      let conv = data.conversation
+      let hasEarlier = data.hasEarlier === true
+      let totalMessages = Number(data.totalMessages) || conv.messages.length
+      const hashMessage = options.messageId || routeHashMessage()
+      if (hashMessage && !conv.messages.some((msg) => msg.id === hashMessage) && totalMessages > conv.messages.length) {
+        const full = await api(`/api/conversations/${id}?tail=2000`)
+        if (request !== state.navigationRequest) return
+        conv = full.conversation
+        hasEarlier = full.hasEarlier === true
+        totalMessages = Number(full.totalMessages) || conv.messages.length
+      }
+      state.hasEarlier = hasEarlier
+      state.totalMessages = totalMessages
+      state.threadWindow = hasEarlier ? Math.max(60, conv.messages.length) : 60
       state.currentId = conv.id
       markConversationRead(conv.id)
       state.currentEngine = conv.engine === 'codex' ? 'codex' : 'dsr'
@@ -7212,7 +7320,6 @@
       els.topbarName.textContent = conv.title || 'DSH Chat'
       setDocumentTitle(conv.title || 'DSH Chat')
       renderMessages(state.messages)
-      const hashMessage = options.messageId || routeHashMessage()
       if (hashMessage) {
         setTimeout(() => { if (request === state.navigationRequest) focusMessage(hashMessage) }, 60)
       } else if (location.hash.startsWith('#q=')) {
@@ -7630,11 +7737,12 @@
     } catch {}
   }
 
-  function openFind(initial = '') {
+  async function openFind(initial = '') {
     if (!state.currentId) {
       showToast('先打开一段对话再查找')
       return
     }
+    if (state.hasEarlier) await loadAllMessages()
     els.findBar.hidden = false
     els.findInput.placeholder = state.streaming ? '生成中：查找已加载内容' : '查找全部消息正文'
     if (initial) els.findInput.value = initial
@@ -8709,13 +8817,13 @@
     if (draft.trim()) showToast('提示词已追加，原草稿已保留')
   }
 
-  function insertPromptText(text) {
+  function insertPromptText(text, scope = '') {
     const names = [...new Set([...String(text).matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map((match) => match[1].trim()))].filter(Boolean)
     if (!names.length) {
       insertIntoComposer(text)
       return
     }
-    openTemplateModal(names, (values) => {
+    openTemplateModal(names, scope, (values) => {
       const filled = String(text).replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (all, name) => {
         const value = values[String(name).trim()]
         return value ? value : all
@@ -8724,7 +8832,8 @@
     })
   }
 
-  function openTemplateModal(names, onFill) {
+  function openTemplateModal(names, scope, onFill) {
+    state.templateScope = scope || ''
     state.templateFocus = document.activeElement
     state.templateOnFill = onFill
     els.templateFields.replaceChildren()
@@ -8737,7 +8846,7 @@
       const input = document.createElement('input')
       input.type = 'text'
       input.name = name
-      input.value = state.templateValues[name] || ''
+      input.value = state.templateValues[`${state.templateScope}::${name}`] || state.templateValues[name] || ''
       input.autocomplete = 'off'
       input.placeholder = `填写${name}`
       label.append(text, input)
@@ -8775,7 +8884,7 @@
       els.templateFields.querySelector(`input[name="${CSS.escape(missing)}"]`)?.focus()
       return
     }
-    for (const [name, value] of Object.entries(values)) state.templateValues[name] = value
+    for (const [name, value] of Object.entries(values)) state.templateValues[`${state.templateScope || ''}::${name}`] = value
     saveTemplateValues()
     const onFill = state.templateOnFill
     closeTemplateModal({ restoreFocus: false })
@@ -8805,7 +8914,7 @@
       insert.setAttribute('aria-label', `插入提示词：${prompt.name}`)
       insert.addEventListener('click', () => {
         closePrompts()
-        insertPromptText(prompt.text)
+        insertPromptText(prompt.text, prompt.id || prompt.name)
       })
       const remove = document.createElement('button')
       remove.type = 'button'
@@ -8967,13 +9076,82 @@
     els.trashList.replaceChildren()
     els.trashList.innerHTML = '<p class="archive-empty">正在加载…</p>'
     try {
-      const data = await api('/api/conversations?trash=1')
+      const [data, projectData] = await Promise.all([
+        api('/api/conversations?trash=1'),
+        api('/api/projects?trash=1').catch(() => ({ projects: [] })),
+      ])
       const items = data.conversations || []
-      if (!items.length) {
+      const projectItems = projectData.projects || []
+      els.trashList.replaceChildren()
+      if (projectItems.length) {
+        const heading = document.createElement('div')
+        heading.className = 'conv-group'
+        heading.textContent = '项目'
+        els.trashList.appendChild(heading)
+        for (const project of projectItems) {
+          const row = document.createElement('div')
+          row.className = 'archive-row'
+          const main = document.createElement('div')
+          main.className = 'archive-main'
+          const title = document.createElement('div')
+          title.className = 'archive-title'
+          title.textContent = `${project.emoji || '📁'} ${project.name}`
+          const meta = document.createElement('div')
+          meta.className = 'archive-meta'
+          meta.textContent = `${project.fileCount || 0} 个文件 · 删除于 ${new Date(project.deletedAt).toLocaleDateString('zh-CN')}`
+          main.append(title, meta)
+          const actions = document.createElement('div')
+          actions.className = 'archive-actions'
+          const restore = document.createElement('button')
+          restore.type = 'button'
+          restore.className = 'ghost-btn'
+          restore.textContent = '恢复'
+          restore.addEventListener('click', async () => {
+            try {
+              await api(`/api/projects/${project.id}/restore`, { method: 'POST' })
+              await Promise.all([loadProjects({ silent: true }), refreshConversations()])
+              showToast('项目已恢复')
+              await openTrash()
+            } catch (error) {
+              showToast(error.message || '恢复失败', { tone: 'error' })
+            }
+          })
+          const purge = document.createElement('button')
+          purge.type = 'button'
+          purge.className = 'ghost-btn danger'
+          purge.textContent = '永久删除'
+          purge.addEventListener('click', () => {
+            askConfirm({
+              title: `永久删除项目「${project.name}」？`,
+              body: '项目文件、项目资料与项目记忆都会立即删除，无法恢复。',
+              okLabel: '永久删除',
+              onOk: async () => {
+                try {
+                  await api(`/api/projects/${project.id}/purge`, { method: 'POST' })
+                  await loadProjects({ silent: true })
+                  showToast('项目已永久删除')
+                  await openTrash()
+                } catch (error) {
+                  showToast(error.message || '删除失败', { tone: 'error' })
+                }
+              },
+            })
+          })
+          actions.append(restore, purge)
+          row.append(main, actions)
+          els.trashList.appendChild(row)
+        }
+      }
+      if (items.length) {
+        const heading = document.createElement('div')
+        heading.className = 'conv-group'
+        heading.textContent = '对话'
+        els.trashList.appendChild(heading)
+      }
+      if (!items.length && !projectItems.length) {
         els.trashList.innerHTML = '<p class="archive-empty">最近删除是空的。</p>'
         return
       }
-      els.trashList.replaceChildren()
       for (const item of items) {
         const row = document.createElement('div')
         row.className = 'archive-row'
@@ -9546,6 +9724,11 @@
 
     const target = event.target
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName || '') || target?.isContentEditable
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'p') {
+      event.preventDefault()
+      void printConversation(false)
+      return
+    }
     if (event.key === '?' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
       event.preventDefault()
       openShortcutsSheet()
@@ -9620,6 +9803,14 @@
     let value = ''
     try {
       value = localStorage.getItem(draftKey()) || ''
+      if (!value) {
+        const unsent = JSON.parse(localStorage.getItem('dsh.unsent.v1') || 'null')
+        if (unsent && typeof unsent.text === 'string' && Date.now() - Number(unsent.at) < 86_400_000) {
+          value = unsent.text
+          localStorage.removeItem('dsh.unsent.v1')
+          showToast('上次未发送的内容已恢复到输入框', { duration: 5000 })
+        }
+      }
     } catch {}
     if (els.input.value === value) return
     els.input.value = value
@@ -10112,6 +10303,11 @@
       if (!detached) {
         setComposerStreaming(false)
         view.finish({ status: 'done' })
+        if (!failed) {
+          try {
+            localStorage.removeItem('dsh.unsent.v1')
+          } catch {}
+        }
         if (!failed && bubble) {
           bubble.classList.remove('pending')
           bubble.querySelector('.pending-label')?.remove()
@@ -10142,10 +10338,12 @@
       view.destroy?.()
       view.el.remove()
     }
+    const retryOf = view?.el?.dataset.messageId
     void sendMessage(text, {
       conversationId,
       attachments,
       skipUserBubble: true,
+      ...(retryOf ? { retryOf } : {}),
       idempotencyKey: `retry_${conversationId}_${Date.now()}`,
     })
   }
@@ -10189,6 +10387,9 @@
         attachments = uploaded
         clearStagedAttachments()
       }
+      try {
+        localStorage.setItem('dsh.unsent.v1', JSON.stringify({ text, at: Date.now() }))
+      } catch {}
       els.input.value = ''
       resizeInput()
       updateComposerMeta()
@@ -10353,8 +10554,9 @@
   async function syncConversation(id) {
     if (state.currentId !== id) return
     try {
-      const data = await api(`/api/conversations/${id}`)
+      const data = await api(`/api/conversations/${id}?tail=2000`)
       state.messages = data.conversation.messages || []
+      state.hasEarlier = data.hasEarlier === true
       els.topbarName.textContent = data.conversation.title || 'DSH Chat'
       scheduleCacheSave()
     } catch {}
@@ -10564,8 +10766,24 @@
     }, 1500)
   })
 
+  async function printConversation(textOnly = false) {
+    if (state.hasEarlier) await loadAllMessages()
+    if (textOnly) {
+      document.body.classList.add('print-text-only')
+      const done = () => {
+        document.body.classList.remove('print-text-only')
+        window.removeEventListener('afterprint', done)
+      }
+      window.addEventListener('afterprint', done)
+    } else {
+      document.body.classList.remove('print-text-only')
+    }
+    setTimeout(() => window.print(), 80)
+  }
+
   let printState = null
   window.addEventListener('beforeprint', () => {
+    if (state.hasEarlier) void loadAllMessages()
     if (!state.currentId || !state.messages.length) return
     printState = { end: state.threadEnd, stick: state.stick, window: state.threadWindow }
     state.threadEnd = null

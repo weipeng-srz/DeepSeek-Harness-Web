@@ -49,6 +49,7 @@ try {
   await page.waitForTimeout(500)
   const rows = await page.locator('#projectFileList .project-file-row').count()
   record('project editor lists files', rows === 1, String(rows))
+  record('project file has a download link', await page.locator('#projectFileList .project-file-download').count() === 1)
   await page.locator('#projectFileUploadBtn').click()
   await page.locator('#projectFileInput').setInputFiles({ name: 'spec.md', mimeType: 'text/markdown', buffer: Buffer.from('# 规格\n目标 2') })
   await page.waitForTimeout(900)

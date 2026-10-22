@@ -4,6 +4,28 @@
 
 ![移动端深色模式](docs/mobile-dark.png)
 
+## v5 体验演进（2026-10-22）
+
+五轮「20 位体验官 × 50 条反馈 → PM 收敛 → 研发 → QA → 验收」闭环，把单用户聊天页推进为
+**有项目上下文、可安全交付、可修改可追溯的个人 AI 工作台**。详细过程与证据见
+[`docs/product/v5/`](docs/product/v5/README.md)。
+
+- **项目空间**：项目指令/资料/文件、默认引擎权限、归档与 30 天回收站、按项目隔离记忆、随备份导入导出。
+- **安全交付**：`/s/<token>` 只读分享（有效期、单条/选段、默认不选、工具/思考可选、可选口令、
+  自动打码、更新快照、撤销、删除联动、全局管理）；Markdown/HTML 导出安全默认、打印全量/仅正文。
+- **回答控制**：版本历史（30 版）/采用/并排对比、按指令重写、就地编辑（保留工具与思考）、
+  从任意回答分叉（复制工作区）、来源 chip。
+- **长期使用**：消息分页与首屏 60 条、工具结果 200KB 落库 + 按需加载、30 天回收站、
+  幂等导入与引用重映射、跨设备收藏/提示词、操作审计（含设备指纹）、日备份。
+- **可信边界**：完全权限二次确认、headless 权限透传、单实例锁、可选 HTTPS/Secure Cookie/HSTS、
+  退出登录吊销旧 Cookie、分享令牌加密、敏感扫描（服务端不可绕过）。
+- **可达与工程**：320–1440、5 档字号、读屏播报、焦点陷阱、PWA/SW、`npm run qa` 20+ 套件与静态预算检查。
+
+**明确未完成（不宣称完美）**：工作区/项目文件不随 JSON 备份；单访问码无只读成员；
+审计无“人”的身份；搜索仍是同步扫描；app.js 未拆模块、无 lint/typecheck/CI；无 i18n；
+HTTP 内网下 PWA/通知/语音不可用；iOS Web Push 未接。详见
+[`docs/product/v5/final-report.md`](docs/product/v5/final-report.md)。
+
 ## v4 视觉对齐升级（2026-10-22）
 
 以 Apple 前端工程师视角完成 50 条展示/布局需求，分 5 轮闭环。重点不是换风格，而是把“对齐”变成系统：
@@ -544,7 +566,7 @@ dsh-chat/
 ## 技术约束
 
 - 无需 npm 依赖；使用 macOS 自带的 Node，或 DeepSeek Harness 内置的 Node 运行时（`start.sh` 会自动查找）。
-- 样式入口为 `/css/bundle.css`（服务端按固定顺序拼接 8 个 CSS，带 gzip/ETag）；新增样式请追加到 `public/css/visual.css`（最后加载）并更新 bundle 版本号。
+- 样式入口为 `/css/bundle.css`（服务端按固定顺序拼接 9 个 CSS，带 gzip/ETag）；新增样式请追加到 `public/css/visual.css`（最后加载）并更新 bundle 版本号。手机端专属样式统一收在 `visual.css` 末尾的 `21 · phone chat layout`（`@media (max-width: 640px)`），桌面与平板不受影响。
 - KaTeX 不再首屏加载：出现 `\(...\)`、`\[...\]`、`$$...$$` 时动态注入。
 - 静态资源使用 `?v=` 做 immutable 缓存，改完前端务必 bump 版本号（HTML/CSS/JS）。
 - Service Worker（`public/sw.js`）缓存 shell；API 请求永不缓存。

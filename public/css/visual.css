@@ -1852,3 +1852,217 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   21 · phone chat layout (≤ 640px only)
+   只作用于手机宽度；桌面与平板（> 640px）的几何完全不变。
+
+   01 侧边栏入口收成一颗小圆按钮，不再是整块 44px 的空心点击区。
+   02 右上「新对话 + 场景菜单」合并成一颗小胶囊，两个图标共用一枚外壳。
+   03 输入框贴着屏幕底部，去掉手机上没用的键盘快捷键提示。
+   04 省下来的高度全部让给对话正文：更窄的页边、更紧凑的间距。
+   ───────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 640px) {
+  :root {
+    --topbar-h-phone: 50px;
+    --page-gutter: 10px;
+  }
+
+  /* ── 01 · 顶栏改成悬浮控件，不再是一条横幅 ────────────────────── */
+
+  .topbar {
+    position: absolute !important;
+    inset: 0 0 auto 0 !important;
+    z-index: 30;
+    grid-template-columns: 40px minmax(0, 1fr) auto !important;
+    gap: 8px;
+    height: calc(var(--topbar-h-phone) + env(safe-area-inset-top)) !important;
+    padding: env(safe-area-inset-top) 10px 0 !important;
+    background: transparent !important;
+    border-bottom: 0 !important;
+    box-shadow: none !important;
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* 正文从屏幕顶端开始排版；控件浮在上方，第一行仍然完整可见 */
+  .scroll-area {
+    padding-top: calc(54px + env(safe-area-inset-top)) !important;
+  }
+
+  .thread {
+    padding-top: 10px !important;
+  }
+
+  .read-progress {
+    top: calc(env(safe-area-inset-top) + 50px) !important;
+  }
+
+  /* 往下读的时候标题让位，顶部只剩两颗小控件 */
+  .topbar-title {
+    transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+  }
+
+  .topbar.is-scrolled .topbar-title {
+    opacity: 0;
+    transform: translate(-50%, -50%) translateY(-6px) !important;
+    pointer-events: none !important;
+  }
+
+  .topbar > #menuBtn {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    min-height: 38px;
+    justify-self: center;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-2) 92%, transparent);
+    color: var(--text-2);
+  }
+
+  .topbar > #menuBtn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .topbar > #menuBtn:hover {
+    background: var(--hover);
+    color: var(--text);
+  }
+
+  .topbar > #menuBtn:active {
+    background: var(--active-bg, var(--surface-2));
+  }
+
+  /* ── 02 · 右上：新对话 + 菜单抽成一颗小胶囊 ────────────────────── */
+
+  .topbar-actions {
+    display: inline-flex !important;
+    flex: none;
+    align-items: center;
+    gap: 0;
+    height: 40px;
+    padding: 2px;
+    border: 1px solid color-mix(in srgb, var(--border-strong) 45%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), inset 0 1px 0 color-mix(in srgb, #ffffff 6%, transparent);
+  }
+
+  .topbar-actions .icon-btn {
+    width: 36px;
+    height: 36px;
+    min-width: 36px;
+    min-height: 36px;
+    border-radius: 999px;
+    color: var(--text-2);
+  }
+
+  .topbar-actions .icon-btn svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .topbar-actions .icon-btn:hover {
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text);
+  }
+
+  .topbar-actions .icon-btn:active {
+    background: color-mix(in srgb, var(--text) 13%, transparent);
+  }
+
+  /* 标题留在正中间，同时和左右两颗控件都留出呼吸位 */
+  .topbar-title {
+    max-width: calc(100% - 204px) !important;
+    min-height: 40px !important;
+    padding: 2px 14px 2px 4px !important;
+  }
+
+  .topbar-name {
+    font-size: 14.5px;
+  }
+
+  /* ── 03 · 输入框尽量贴近页面底部 ──────────────────────────────── */
+
+  .composer-wrap {
+    padding: 6px 10px calc(5px + env(safe-area-inset-bottom)) !important;
+    /* 底部渐隐收窄，减少对正文的遮挡 */
+    background: linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--bg) 0%, transparent),
+      var(--bg) 18%
+    );
+  }
+
+  /* 手机上没有物理键盘，“Enter 发送”这行提示只会把输入框顶高 */
+  .composer-hint {
+    display: none !important;
+  }
+
+  .composer-foot {
+    min-height: 0 !important;
+    margin-top: 2px !important;
+    padding: 0 12px !important;
+  }
+
+  .composer-foot .char-count {
+    font-size: 10.5px;
+  }
+
+  /* 辅助条（引擎 / 文件）压扁，别把输入框往上顶 */
+  .engine-bar {
+    min-height: 34px !important;
+    margin-bottom: 5px !important;
+  }
+
+  .engine-label {
+    display: none !important;
+  }
+
+  .files-bar {
+    margin-bottom: 5px !important;
+  }
+
+  .files-pill {
+    height: 30px;
+  }
+
+  /* ── 04 · 把省下来的空间全部让给对话内容 ──────────────────────── */
+
+  .thread {
+    padding: 14px 12px 8px !important;
+    gap: 20px;
+  }
+
+  .scroll-area {
+    padding-bottom: 4px !important;
+  }
+
+  .msg.user .bubble {
+    max-width: 92% !important;
+  }
+
+  .day-separator {
+    margin: 2px 2px 6px;
+  }
+}
+
+/* 不支持实时模糊 / 降低透明度时，胶囊退化为实色，避免出现半透明脏块 */
+@media (max-width: 640px) and (prefers-reduced-transparency: reduce) {
+  .topbar-actions {
+    background: var(--surface-2);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  @media (max-width: 640px) {
+    .topbar-actions {
+      background: var(--surface-2);
+    }
+  }
+}

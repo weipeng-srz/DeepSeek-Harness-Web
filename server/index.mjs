@@ -71,6 +71,7 @@ const STATIC_CACHE = new Map()
 const chatRate = new Map()
 const idempotency = new Map()
 const shareViewRate = new Map()
+const shareFailures = new Map()
 const startingRuns = new Set()
 
 const DEFAULT_PERMISSION = 'workspace-write'
@@ -582,11 +583,57 @@ function projectsPayload(owner) {
 
 function ownedProject(id, res) {
   const project = projects.get(id)
-  if (!project) {
+  if (!project || project.deletedAt) {
     sendJson(res, 404, { error: '项目不存在' })
     return null
   }
   return project
+}
+
+function clampPayloadText(value, max = 4000) {
+  if (typeof value !== 'string') return value
+  if (value.length <= max) return value
+  return `${value.slice(0, max)}\n…（为加快首屏已截断，完整内容可单独加载）`
+}
+
+function limitedMessagePayload(messages) {
+  const clampBlock = (block) => {
+    if (!block || typeof block !== 'object') return block
+    if (block.type === 'text') return block
+    if (block.type === 'thinking') {
+      if (!block.text || block.text.length <= 12_000) return block
+      return { ...block, text: clampPayloadText(block.text, 12_000), textTruncated: true }
+    }
+    if (block.type !== 'tool') return block
+    const next = { ...block }
+    if (typeof block.result === 'string' && block.result.length > 4000) {
+      next.result = clampPayloadText(block.result, 4000)
+      next.resultTruncated = true
+      next.resultLength = block.result.length
+    }
+    try {
+      const serializedInput = JSON.stringify(block.input ?? null)
+      if (serializedInput && serializedInput.length > 4000) {
+        next.input = { _truncated: true, preview: serializedInput.slice(0, 4000) }
+        next.inputTruncated = true
+      }
+    } catch {}
+    return next
+  }
+  return messages.map((msg) => ({
+    ...msg,
+    ...(msg.thinking ? { thinking: clampPayloadText(msg.thinking, 12_000) } : {}),
+    ...(Array.isArray(msg.blocks) ? { blocks: msg.blocks.map(clampBlock) } : {}),
+    ...(Array.isArray(msg.versions)
+      ? {
+          versions: msg.versions.map((version) => ({
+            ...version,
+            text: clampPayloadText(version.text || '', 4000),
+            ...(Array.isArray(version.blocks) ? { blocks: version.blocks.map(clampBlock) } : {}),
+          })),
+        }
+      : {}),
+  }))
 }
 
 function ownedConversation(id, res, owner) {
@@ -1001,7 +1048,7 @@ function serveConversationFile(req, res, conv, url) {
 function projectPromptBlock(conv, english = false) {
   if (!conv.projectId) return ''
   const project = projects.get(conv.projectId)
-  if (!project) return ''
+  if (!project || project.deletedAt) return ''
   const parts = english
     ? ['[Project context]', `Project: ${project.name}`]
     : ['[项目上下文]', `项目：${project.name}`]
@@ -1109,6 +1156,9 @@ async function handleChat(req, res, owner, restId) {
   const conv = ownedConversation(restId, res, owner)
   if (!conv) return
   const archivedProject = conv.projectId ? projects.get(conv.projectId) : null
+  if (archivedProject?.deletedAt) {
+    return sendJson(res, 409, { error: '项目在最近删除中，恢复项目后才能继续对话' })
+  }
   if (archivedProject?.archivedAt) {
     return sendJson(res, 409, { error: '项目已归档，恢复项目后才能继续对话' })
   }
@@ -1183,7 +1233,9 @@ async function handleChat(req, res, owner, restId) {
           store.touch(branch)
           editBranchTitle = branch.title
         }
-      } catch {}
+      } catch (error) {
+        return sendJson(res, error.status || 409, { error: `无法为编辑前的后文创建分支，已取消本次编辑：${error.message}` })
+      }
     }
     userMessage.text = text
     userMessage.editedAt = now
@@ -1527,7 +1579,9 @@ async function handleChat(req, res, owner, restId) {
       }
       case 'tool_result': {
         const cappedResult = typeof event.result === 'string'
-          ? (event.result.length > 200_000 ? `${event.result.slice(0, 200_000)}\n…（工具输出超过 200KB，已截断后保存）` : event.result)
+          ? (event.result.length > 200_000
+            ? `${event.result.slice(0, 80_000)}\n…（中间省略 ${event.result.length - 180_000} 字）…\n${event.result.slice(-100_000)}\n（工具输出超过 200KB，已截断后保存）`
+            : event.result)
           : event.result
         state.toolResult(event.callId, event.status, cappedResult)
         hub.send({
@@ -1905,6 +1959,11 @@ async function handleApi(req, res, url) {
     } catch {
       return sendJson(res, 400, { error: '链接无效' })
     }
+    const failKey = `${rest[1]}:${ip}`
+    const failure = shareFailures.get(failKey)
+    if (failure && failure.count >= 8 && now - failure.resetAt < 10 * 60_000) {
+      return sendJson(res, 429, { error: '口令尝试次数过多，请 10 分钟后再试' })
+    }
     let password = ''
     if (req.method === 'POST') {
       try {
@@ -1912,11 +1971,21 @@ async function handleApi(req, res, url) {
         password = String(body.password || '').slice(0, 64)
       } catch {}
     }
-    const result = shares.findPublic(raw, password)
+    const result = await shares.findPublic(raw, password)
     if (result.error === 'notfound') return sendJson(res, 404, { error: '分享不存在或已被撤销' })
     if (result.error === 'revoked') return sendJson(res, 410, { error: '这个分享已被撤销' })
     if (result.error === 'expired') return sendJson(res, 410, { error: '这个分享已过期' })
-    if (result.error === 'password') return sendJson(res, 401, { passwordRequired: true, error: '请输入分享口令' })
+    if (result.error === 'password') {
+      const current = shareFailures.get(failKey) || { count: 0, resetAt: now }
+      if (now - current.resetAt > 10 * 60_000) {
+        current.count = 0
+        current.resetAt = now
+      }
+      current.count += 1
+      shareFailures.set(failKey, current)
+      return sendJson(res, 401, { passwordRequired: true, error: '请输入分享口令' })
+    }
+    shareFailures.delete(failKey)
     securityHeaders(res)
     res.setHeader('Cache-Control', 'no-store')
     res.setHeader('X-Robots-Tag', 'noindex, nofollow')
@@ -1928,7 +1997,12 @@ async function handleApi(req, res, url) {
   if (rest[0] === 'projects') {
     try {
       if (rest.length === 1) {
-        if (req.method === 'GET') return sendJson(res, 200, projectsPayload(owner))
+        if (req.method === 'GET') {
+          if (url.searchParams.get('trash') === '1') {
+            return sendJson(res, 200, { projects: projects.listTrash(), counts: { trash: projects.listTrash().length } })
+          }
+          return sendJson(res, 200, projectsPayload(owner))
+        }
         if (req.method === 'POST') {
           const body = await readJsonBody(req)
           const project = projects.create(body)
@@ -1986,13 +2060,32 @@ async function handleApi(req, res, url) {
         const extension = path.extname(file.absolute).toLowerCase()
         const contentType = IMAGE_TYPES[extension] || (TEXT_EXTENSIONS.has(extension) ? 'text/plain; charset=utf-8' : extension === '.pdf' ? 'application/pdf' : 'application/octet-stream')
         securityHeaders(res)
+        const download = url.searchParams.get('download') === '1'
         res.writeHead(200, {
           'Content-Type': contentType,
           'Content-Length': file.stat.size,
-          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(path.basename(file.absolute))}`,
+          'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(file.absolute))}`,
           'Cache-Control': 'no-store',
         })
         return fs.createReadStream(file.absolute).pipe(res)
+      }
+      if (rest.length === 3 && rest[2] === 'restore' && req.method === 'POST') {
+        const project = projects.get(rest[1])
+        if (!project || !project.deletedAt) return sendJson(res, 404, { error: '最近删除里没有这个项目' })
+        const restored = projects.restore(project.id)
+        if (!restored) return sendJson(res, 410, { error: '超过 30 天，无法恢复' })
+        const attached = store.attachProject(project.detachedConversationIds || [], project.id)
+        delete project.detachedConversationIds
+        audit.add('project.restore', `恢复项目：${String(project.name || '').slice(0, 60)}`, { projectId: project.id, attached })
+        return sendJson(res, 200, { ok: true, ...projectsPayload(owner) })
+      }
+      if (rest.length === 3 && rest[2] === 'purge' && req.method === 'POST') {
+        const project = projects.get(rest[1])
+        if (!project || !project.deletedAt) return sendJson(res, 404, { error: '最近删除里没有这个项目' })
+        const removedMemories = memory.removeProject(owner, project.id)
+        projects.purge(project.id)
+        audit.add('project.purge', `永久删除项目：${String(project.name || '').slice(0, 60)}`, { projectId: project.id, removedMemories })
+        return sendJson(res, 200, { ok: true, removedMemories, ...projectsPayload(owner) })
       }
       if (rest.length === 2) {
         const project = ownedProject(rest[1], res)
@@ -2007,10 +2100,10 @@ async function handleApi(req, res, url) {
         }
         if (req.method === 'DELETE') {
           const removed = projects.remove(project.id)
-          const moved = store.unfileProject(project.id)
-          const removedMemories = memory.removeProject(owner, project.id)
-          audit.add('project.delete', `删除项目：${String(project.name || '').slice(0, 60)}`, { projectId: project.id, moved, removedMemories })
-          return sendJson(res, 200, { ok: true, removed: Boolean(removed), moved, ...projectsPayload(owner) })
+          const detached = store.detachProject(project.id)
+          if (removed) removed.detachedConversationIds = detached
+          audit.add('project.trash', `移到最近删除：${String(project.name || '').slice(0, 60)}`, { projectId: project.id, detached: detached.length })
+          return sendJson(res, 200, { ok: true, removed: Boolean(removed), moved: detached.length, ...projectsPayload(owner) })
         }
         return sendJson(res, 405, { error: '不支持的方法' })
       }
@@ -2247,7 +2340,7 @@ async function handleApi(req, res, url) {
       projectImport = body.projects ? projects.import({ projects: body.projects }) : projectImport
       result = store.import(owner, body, { projectMap: projectImport.map })
     } catch (error) {
-      for (const id of projectImport.map.values()) projects.remove(id)
+      for (const id of projectImport.map.values()) projects.purge(id)
       throw error
     }
     audit.add('backup.import', `导入备份：${result.imported} 段对话`, { conversations: result.imported, projects: projectImport.imported })
@@ -2276,7 +2369,7 @@ async function handleApi(req, res, url) {
         }
         const projectId = url.searchParams.get('projectId') || ''
         const unfiled = url.searchParams.get('unfiled') === '1'
-        const result = store.list(owner, { query, limit, offset, archived, projectId, unfiled })
+        const result = store.list(owner, { query, limit, offset, archived, projectId, unfiled, includeArchived: Boolean(query) && !archived })
         return sendJson(res, 200, {
           conversations: result.items.map((conv) => ({
             ...conv,
@@ -2292,8 +2385,8 @@ async function handleApi(req, res, url) {
         const engine = body.engine === 'codex' ? 'codex' : 'dsr'
         const permission = normalizePermission(body.permission)
         const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
-        if (projectId && !projects.get(projectId)) {
-          return sendJson(res, 400, { error: '项目不存在' })
+        if (projectId && (!projects.get(projectId) || projects.get(projectId)?.deletedAt)) {
+          return sendJson(res, 400, { error: '项目不存在或已删除' })
         }
         if (projectId && projects.get(projectId)?.archivedAt) {
           return sendJson(res, 409, { error: '项目已归档，请先恢复项目再新建对话' })
@@ -2341,13 +2434,33 @@ async function handleApi(req, res, url) {
     if (!conv) return
     if (rest.length === 2 && req.method === 'GET') {
       const summaryOnly = url.searchParams.get('summary') === '1'
+      if (summaryOnly) return sendJson(res, 200, { conversation: convSummary(conv) })
+      const totalMessages = conv.messages.length
+      const tail = Math.min(Math.max(Number(url.searchParams.get('tail')) || 0, 0), 2000)
+      const before = url.searchParams.get('before') || ''
+      const fullRequest = url.searchParams.get('full') === '1'
+      const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 60, 1), 500)
+      let start = 0
+      let end = totalMessages
+      if (fullRequest) {
+        start = 0
+        end = totalMessages
+      } else if (before) {
+        const index = conv.messages.findIndex((msg) => msg.id === before)
+        if (index >= 0) {
+          end = index
+          start = Math.max(0, end - limit)
+        }
+      } else if (tail > 0) {
+        start = Math.max(0, totalMessages - tail)
+      }
+      const paginated = Boolean(tail || before) && !fullRequest
+      const messages = paginated ? limitedMessagePayload(conv.messages.slice(start, end)) : conv.messages.slice(start, end)
       return sendJson(res, 200, {
-        conversation: summaryOnly
-          ? convSummary(conv)
-          : {
-              ...convSummary(conv),
-              messages: conv.messages,
-            },
+        conversation: { ...convSummary(conv), messages },
+        totalMessages,
+        hasEarlier: start > 0,
+        start,
       })
     }
     if (rest.length === 2 && req.method === 'DELETE') {
@@ -2420,7 +2533,9 @@ async function handleApi(req, res, url) {
       }
       if (body.projectId !== undefined) {
         const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
-        if (projectId && !projects.get(projectId)) return sendJson(res, 400, { error: '项目不存在' })
+        if (projectId && (!projects.get(projectId) || projects.get(projectId)?.deletedAt)) {
+          return sendJson(res, 400, { error: '项目不存在或已删除' })
+        }
         if (projectId && projects.get(projectId)?.archivedAt) return sendJson(res, 409, { error: '项目已归档，不能把对话移入' })
         if (conv.projectId !== projectId) {
           conv.projectId = projectId
@@ -2501,6 +2616,14 @@ async function handleApi(req, res, url) {
       audit.add('message.edit', '手动编辑回答', { conversationId: conv.id, messageId: message.id })
       return sendJson(res, 200, { ok: true, messageId: message.id })
     }
+    if (rest.length === 5 && rest[2] === 'messages' && rest[4] === 'tool' && req.method === 'GET') {
+      const message = conv.messages.find((msg) => msg.id === rest[3])
+      if (!message) return sendJson(res, 404, { error: '消息不存在' })
+      const callId = url.searchParams.get('callId') || ''
+      const block = (message.blocks || []).find((item) => item && item.type === 'tool' && item.id === callId)
+      if (!block) return sendJson(res, 404, { error: '工具调用不存在' })
+      return sendJson(res, 200, { tool: block.tool, input: block.input ?? null, result: block.result ?? null })
+    }
     if (rest.length === 7 && rest[2] === 'messages' && rest[4] === 'versions' && rest[6] === 'activate' && req.method === 'POST') {
       const message = conv.messages.find((msg) => msg.id === rest[3] && msg.role === 'assistant')
       if (!message) return sendJson(res, 404, { error: '回答不存在' })
@@ -2512,7 +2635,7 @@ async function handleApi(req, res, url) {
       restoreVersion(message, selected)
       const remaining = versions.filter((_, itemIndex) => itemIndex !== index)
       remaining.splice(Math.min(index, remaining.length), 0, current)
-      message.versions = remaining.slice(0, 10)
+      message.versions = remaining.slice(0, 30)
       store.touch(conv)
       return sendJson(res, 200, { ok: true, messageId: message.id })
     }

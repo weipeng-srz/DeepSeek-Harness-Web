@@ -1667,7 +1667,7 @@ body.text-large .msg-meta { font-size: 12px; }
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 170px;
+  max-height: 44vh;
   overflow-y: auto;
 }
 
@@ -1830,5 +1830,30 @@ body.text-large .msg-meta { font-size: 12px; }
   body.print-text-only .msg-sources,
   body.print-text-only .msg-actions {
     display: none !important;
+  }
+}
+
+.project-file-download {
+  flex: 0 0 auto;
+  height: 26px;
+  padding: 0 7px;
+  border-radius: 6px;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 26px;
+  text-decoration: none;
+}
+
+.project-file-download:hover {
+  background: var(--hover);
+}
+
+.tool-load-full {
+  margin-top: 4px;
+}
+
+@media (hover: none), (pointer: coarse) {
+  .msg-actions {
+    opacity: 1 !important;
   }
 }

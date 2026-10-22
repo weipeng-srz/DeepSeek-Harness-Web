@@ -64,7 +64,14 @@ function redactMessages(messages) {
 
 function countSensitive(messages) {
   const text = (messages || [])
-    .map((msg) => [msg.text || '', ...(msg.blocks || []).filter((block) => block.type === 'text').map((block) => block.text || '')].join('\n'))
+    .map((msg) => [
+      msg.text || '',
+      ...(msg.blocks || []).map((block) => {
+        if (block.type === 'text' || block.type === 'thinking') return block.text || ''
+        if (block.type === 'tool') return `${JSON.stringify(block.input ?? null)} ${typeof block.result === 'string' ? block.result : ''}`
+        return ''
+      }),
+    ].join('\n'))
     .join('\n')
   return (
     (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) || []).length +
@@ -174,7 +181,7 @@ export class ShareStore {
     if (this.data.shares.length !== before) this.scheduleSave()
   }
 
-  buildSnapshot(conversation, { includeTools = false, includeThinking = false, messageIds = [] } = {}) {
+  buildSnapshot(conversation, { includeTools = false, includeThinking = false, messageIds = [], redactSensitive = false } = {}) {
     const selected = new Set(Array.isArray(messageIds) ? messageIds.filter((id) => typeof id === 'string') : [])
     const onlySelected = selected.size > 0
     const source = []
@@ -236,7 +243,7 @@ export class ShareStore {
       throw Object.assign(new Error('这段对话还没有可分享的内容'), { status: 400 })
     }
     const snapshot = {
-      title: cleanText(conversation.title || '未命名对话', 120),
+      title: redactSensitive ? redactText(cleanText(conversation.title || '未命名对话', 120)) : cleanText(conversation.title || '未命名对话', 120),
       createdAt: Number(conversation.createdAt) || now(),
       messages,
       engine: conversation.engine === 'codex' ? 'codex' : 'dsr',
@@ -254,7 +261,7 @@ export class ShareStore {
     if (this.data.shares.length >= MAX_SHARES) {
       throw Object.assign(new Error(`分享链接最多 ${MAX_SHARES} 个，请先在设置里撤销不用的链接`), { status: 409 })
     }
-    const snapshot = this.buildSnapshot(conversation, { includeTools, includeThinking, messageIds })
+    const snapshot = this.buildSnapshot(conversation, { includeTools, includeThinking, messageIds, redactSensitive })
     if (redactSensitive) redactMessages(snapshot.messages)
     const sensitive = redactSensitive ? 0 : countSensitive(snapshot.messages)
     if (sensitive && !allowSensitive) {
@@ -262,8 +269,8 @@ export class ShareStore {
     }
     const raw = token()
     const pass = String(password || '')
-    if (pass && (pass.length < 4 || pass.length > 64)) {
-      throw Object.assign(new Error('分享口令需要 4–64 个字符'), { status: 400 })
+    if (pass && (pass.length < 6 || pass.length > 64)) {
+      throw Object.assign(new Error('分享口令需要 6–64 个字符'), { status: 400 })
     }
     const passwordSalt = pass ? crypto.randomBytes(16).toString('base64url') : ''
     const passwordHash = pass ? crypto.scryptSync(pass, passwordSalt, 32).toString('base64url') : ''
@@ -303,6 +310,7 @@ export class ShareStore {
       includeTools: share.includeTools,
       includeThinking: share.includeThinking,
       messageIds: share.messageIds || [],
+      redactSensitive: share.redactSensitive === true,
     })
     if (share.redactSensitive) redactMessages(snapshot.messages)
     const sensitive = share.redactSensitive ? 0 : countSensitive(snapshot.messages)
@@ -361,7 +369,7 @@ export class ShareStore {
     return count
   }
 
-  findPublic(rawToken, password = '') {
+  async findPublic(rawToken, password = '') {
     const hash = hashToken(rawToken)
     const share = this.data.shares.find((item) => item.tokenHash === hash)
     if (!share) return { error: 'notfound' }
@@ -371,7 +379,12 @@ export class ShareStore {
       const supplied = String(password || '')
       let ok = false
       try {
-        const candidate = crypto.scryptSync(supplied, share.passwordSalt, 32)
+        const candidate = await new Promise((resolve, reject) => {
+          crypto.scrypt(supplied, share.passwordSalt, 32, (error, derived) => {
+            if (error) reject(error)
+            else resolve(derived)
+          })
+        })
         const expected = Buffer.from(share.passwordHash, 'base64url')
         ok = candidate.length === expected.length && crypto.timingSafeEqual(candidate, expected)
       } catch {}
@@ -387,6 +400,7 @@ export class ShareStore {
         title: share.snapshot.title,
         createdAt: share.snapshot.createdAt,
         sharedAt: share.createdAt,
+        updatedAt: share.updatedAt || share.createdAt,
         expiresAt: share.expiresAt,
         includeTools: share.includeTools,
         includeThinking: share.includeThinking,

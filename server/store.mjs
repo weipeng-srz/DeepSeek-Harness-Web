@@ -44,6 +44,32 @@ function importSignature(raw) {
   return crypto.createHash('sha256').update(seed).digest('hex').slice(0, 24)
 }
 
+function directoryWithin(root, limit) {
+  let total = 0
+  const walk = (dir) => {
+    let entries
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true })
+    } catch {
+      return true
+    }
+    for (const entry of entries) {
+      if (entry.isSymbolicLink()) continue
+      const absolute = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (!walk(absolute)) return false
+      } else if (entry.isFile()) {
+        try {
+          total += fs.statSync(absolute).size
+        } catch {}
+        if (total > limit) return false
+      }
+    }
+    return true
+  }
+  return walk(root)
+}
+
 export class ConversationStore {
   constructor() {
     this.data = { version: 1, conversations: [] }
@@ -195,6 +221,7 @@ export class ConversationStore {
     this.data.conversations = this.data.conversations.filter((conv) => !expired.includes(conv))
     for (const conv of expired) {
       this.removeWorkspace(conv)
+      this.purgeFromBackups(conv.id)
       try {
         this.onPurge?.(conv)
       } catch {}
@@ -263,13 +290,14 @@ export class ConversationStore {
     const offset = Math.max(Number(options.offset) || 0, 0)
     const lower = query.toLowerCase()
     const wantArchived = Boolean(options.archived)
+    const includeArchived = options.includeArchived === true
     const projectFilter = typeof options.projectId === 'string' ? options.projectId : ''
     const unfiled = options.unfiled === true
     const active = this.data.conversations.filter(
       (conv) =>
         conv.owner === owner &&
         !conv.deletedAt &&
-        (wantArchived ? Boolean(conv.archivedAt) : !conv.archivedAt) &&
+        (wantArchived ? Boolean(conv.archivedAt) : includeArchived ? true : !conv.archivedAt) &&
         (unfiled ? !conv.projectId : projectFilter ? conv.projectId === projectFilter : true),
     )
 
@@ -355,6 +383,29 @@ export class ConversationStore {
     for (const conv of this.data.conversations) {
       if (conv.projectId !== projectId) continue
       conv.projectId = null
+      moved += 1
+    }
+    if (moved) this.scheduleSave()
+    return moved
+  }
+
+  detachProject(projectId) {
+    const ids = []
+    for (const conv of this.data.conversations) {
+      if (conv.projectId !== projectId) continue
+      conv.projectId = null
+      ids.push(conv.id)
+    }
+    if (ids.length) this.scheduleSave()
+    return ids
+  }
+
+  attachProject(ids, projectId) {
+    const wanted = new Set(Array.isArray(ids) ? ids : [])
+    let moved = 0
+    for (const conv of this.data.conversations) {
+      if (!wanted.has(conv.id) || conv.projectId) continue
+      conv.projectId = projectId
       moved += 1
     }
     if (moved) this.scheduleSave()
@@ -557,9 +608,15 @@ export class ConversationStore {
     const sourceRoot = source.mode === 'native' ? source.nativeCwd || source.workspace : source.workspace
     try {
       if (sourceRoot && sourceRoot !== targetRoot && fs.existsSync(sourceRoot)) {
-        fs.cpSync(sourceRoot, targetRoot, { recursive: true, force: false, errorOnExist: false })
+        if (directoryWithin(sourceRoot, 50 * 1024 * 1024)) {
+          fs.cpSync(sourceRoot, targetRoot, { recursive: true, force: false, errorOnExist: false })
+        } else {
+          copy.forkedFrom = { ...(copy.forkedFrom || {}), workspaceCopied: false }
+        }
       }
-    } catch {}
+    } catch {
+      copy.forkedFrom = { ...(copy.forkedFrom || {}), workspaceCopied: false }
+    }
     this.data.conversations.unshift(copy)
     this.scheduleSave()
     return copy
@@ -674,7 +731,7 @@ export class ConversationStore {
           cloned.completedAt = Number(msg.completedAt) || null
           cloned.files = Array.isArray(msg.files) ? JSON.parse(JSON.stringify(msg.files)).slice(0, 100) : []
           if (Array.isArray(msg.versions)) {
-            cloned.versions = msg.versions.slice(-10).map((version) => {
+            cloned.versions = msg.versions.slice(-30).map((version) => {
               if (!isObject(version)) throw invalid(`${label}的消息版本格式不正确`)
               const copy = JSON.parse(JSON.stringify(version))
               copy.id = typeof copy.id === 'string' ? copy.id : messageId()
