@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
-import { DATA_DIR, WORKSPACE_ROOT } from './config.mjs'
+import { DATA_DIR, WORKSPACE_ROOT, SHARED_WORKSPACE } from './config.mjs'
 
 const STORE_PATH = path.join(DATA_DIR, 'conversations.json')
 const MAX_CONVERSATIONS = 300
@@ -158,7 +158,21 @@ export class ConversationStore {
     return true
   }
 
+  assertCapacity(additional = 1) {
+    if (this.data.conversations.length + additional > MAX_CONVERSATIONS) {
+      throw Object.assign(new Error(`会话已达到 ${MAX_CONVERSATIONS} 个上限，请先导出备份并删除不需要的会话，等待撤销期结束后重试。`), { status: 409 })
+    }
+  }
+
   create(owner, options = {}) {
+    this.assertCapacity()
+    const conv = this.makeConversation(owner, options)
+    this.data.conversations.unshift(conv)
+    this.scheduleSave()
+    return conv
+  }
+
+  makeConversation(owner, options = {}) {
     const id = crypto.randomUUID()
     const engine = options.engine === 'codex' ? 'codex' : 'dsr'
     const conv = {
@@ -177,17 +191,7 @@ export class ConversationStore {
       workspace: path.join(WORKSPACE_ROOT, id),
       messages: [],
     }
-    this.data.conversations.unshift(conv)
-    this.prune()
-    this.scheduleSave()
     return conv
-  }
-
-  prune() {
-    const list = this.data.conversations
-    if (list.length <= MAX_CONVERSATIONS) return
-    const excess = list.splice(MAX_CONVERSATIONS)
-    for (const conv of excess) this.removeWorkspace(conv)
   }
 
   removeWorkspace(conv) {
@@ -323,7 +327,11 @@ export class ConversationStore {
   duplicate(owner, id) {
     const source = this.get(id)
     if (!source || source.owner !== owner || source.deletedAt) return null
-    const copy = this.create(owner, { engine: source.engine, permission: source.permission })
+    this.assertCapacity()
+    const copy = this.makeConversation(owner, { engine: source.engine, permission: source.permission })
+    copy.codexModel = source.codexModel || null
+    copy.codexEffort = source.codexEffort || null
+    if (source.mode) copy.mode = source.mode
     copy.title = `${source.title || '新对话'} 副本`
     copy.pinned = false
     copy.messages = (source.messages || []).map((msg) => {
@@ -337,41 +345,65 @@ export class ConversationStore {
       cloned.status = cloned.status === 'running' ? 'interrupted' : cloned.status
       return cloned
     })
-    const sourceRoot = source.workspace
-    const targetRoot = path.join(WORKSPACE_ROOT, copy.id)
+    const sourceRoot = source.mode === 'native' ? source.nativeCwd || source.workspace : source.workspace
+    // Native and Codex runs use this same canonical directory on their next turn.
+    const targetRoot = copy.mode === 'headless'
+      ? path.join(WORKSPACE_ROOT, copy.id)
+      : path.join(SHARED_WORKSPACE, 'chats', copy.id)
+    copy.workspace = targetRoot
+    if (copy.mode === 'native') copy.nativeCwd = targetRoot
     try {
       if (sourceRoot && fs.existsSync(sourceRoot)) {
-        fs.cpSync(sourceRoot, targetRoot, { recursive: true, force: false })
-        copy.workspace = targetRoot
+        fs.cpSync(sourceRoot, targetRoot, { recursive: true, force: false, errorOnExist: true })
       }
-    } catch {}
+    } catch {
+      this.removeWorkspace(copy)
+      throw Object.assign(new Error('创建副本失败，文件未能完整复制，请重试。'), { status: 500 })
+    }
+    this.data.conversations.unshift(copy)
     this.scheduleSave()
     return copy
   }
 
   import(owner, payload) {
-    const list = Array.isArray(payload?.conversations) ? payload.conversations : []
+    const invalid = (message) => Object.assign(new Error(message), { status: 400 })
+    const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
+    if (!isObject(payload) || !Array.isArray(payload.conversations)) throw invalid('备份格式不正确')
+    if (payload.version !== undefined && payload.version !== 1) throw invalid('不支持这个备份版本')
+    const list = payload.conversations
     if (!list.length) return { imported: 0 }
-    let imported = 0
-    for (const raw of list.slice(0, 100)) {
-      if (!raw || typeof raw !== 'object') continue
-      const conv = this.create(owner, {
+    this.assertCapacity(list.length)
+    // Build the complete import in isolation. No schedule, insertion, or pruning
+    // may happen until every conversation and message has been validated.
+    const imported = list.map((raw, conversationIndex) => {
+      const label = `第 ${conversationIndex + 1} 个会话`
+      if (!isObject(raw) || (raw.messages !== undefined && !Array.isArray(raw.messages))) {
+        throw invalid(`${label}格式不正确`)
+      }
+      const conv = this.makeConversation(owner, {
         engine: raw.engine === 'codex' ? 'codex' : 'dsr',
         permission: raw.permission,
       })
       conv.title = `[导入] ${String(raw.title || '对话').slice(0, 50)}`
       conv.createdAt = Number(raw.createdAt) || Date.now()
       conv.updatedAt = Number(raw.updatedAt) || Date.now()
-      conv.messages = (Array.isArray(raw.messages) ? raw.messages : []).slice(-400).map((msg) => {
+      conv.pinned = raw.pinned === true
+      if (Number(raw.archivedAt) > 0) conv.archivedAt = Number(raw.archivedAt)
+      conv.codexModel = typeof raw.codexModel === 'string' ? raw.codexModel : null
+      conv.codexEffort = typeof raw.codexEffort === 'string' ? raw.codexEffort : null
+      conv.messages = (raw.messages || []).map((msg, messageIndex) => {
+        if (!isObject(msg) || (msg.blocks !== undefined && !Array.isArray(msg.blocks))) {
+          throw invalid(`${label}的第 ${messageIndex + 1} 条消息格式不正确`)
+        }
         const cloned = {
           id: messageId(),
           role: msg.role === 'assistant' ? 'assistant' : 'user',
-          text: String(msg.text || '').slice(0, 200_000),
+          text: String(msg.text || ''),
           createdAt: Number(msg.createdAt) || Date.now(),
         }
         if (Array.isArray(msg.blocks)) {
-          cloned.blocks = msg.blocks.slice(0, 200).map((block) => {
-            if (!block || typeof block !== 'object') return null
+          cloned.blocks = msg.blocks.map((block) => {
+            if (!isObject(block)) throw invalid(`${label}的消息内容块格式不正确`)
             if (block.type === 'text') return { type: 'text', text: String(block.text || '') }
             if (block.type === 'thinking') return { type: 'thinking', text: String(block.text || '') }
             if (block.type === 'tool') {
@@ -381,14 +413,17 @@ export class ConversationStore {
                 tool: String(block.tool || 'tool'),
                 input: block.input ?? null,
                 status: block.status || 'completed',
-                result: typeof block.result === 'string' ? block.result.slice(0, 20_000) : block.result,
+                result: block.result ?? null,
               }
             }
             return null
           }).filter(Boolean)
         }
         if (msg.role === 'assistant') {
-          cloned.status = msg.status === 'error' ? 'error' : 'done'
+          cloned.status = ['error', 'stopped', 'interrupted', 'done'].includes(msg.status)
+            ? msg.status : msg.status === 'running' ? 'interrupted' : 'done'
+          cloned.error = typeof msg.error === 'string' ? msg.error : null
+          cloned.thinking = typeof msg.thinking === 'string' ? msg.thinking : ''
           cloned.durationMs = Number(msg.durationMs) || null
           cloned.usage = msg.usage || null
           cloned.model = msg.model || null
@@ -396,10 +431,11 @@ export class ConversationStore {
         }
         return cloned
       })
-      imported += 1
-    }
+      return conv
+    })
+    this.data.conversations.unshift(...imported.reverse())
     this.scheduleSave()
-    return { imported }
+    return { imported: imported.length }
   }
 
   backup(owner) {
