@@ -252,6 +252,7 @@
     paletteIndex: 0,
     paletteItems: [],
     hasPhysicalKeyboard: false,
+    lastRenderedQuery: '',
   }
 
   let overlayLocks = 0
@@ -2988,6 +2989,13 @@
   function renderConversations() {
     const query = state.search.trim()
     const source = query ? state.searchResults : state.conversations
+    const scroller = els.convList.closest('.conv-scroll')
+    if (scroller && query && state.lastRenderedQuery !== query) {
+      // A new query must start at its first result, not at the previous
+      // list's scroll offset.
+      scroller.scrollTop = 0
+    }
+    state.lastRenderedQuery = query
     const startOfToday = new Date()
     startOfToday.setHours(0, 0, 0, 0)
     const todayStart = startOfToday.getTime()
@@ -3225,7 +3233,7 @@
         ['Token', tokens ? formatTokens(tokens) : '—'],
         ['总用时', duration ? formatDuration(duration) : '—'],
         ['产出文件', files.size ? `${files.size} 个` : '—'],
-        ['引擎', conv.engine === 'codex' ? 'Codex' : 'DSR'],
+        ['引擎', conv.engine === 'codex' ? 'Codex' : 'DSH'],
         ['权限', permissionEntry(conv.permission).label],
         ['创建时间', new Date(conv.createdAt).toLocaleString('zh-CN', { hour12: false })],
         ['最近更新', new Date(conv.updatedAt).toLocaleString('zh-CN', { hour12: false })],
@@ -3346,7 +3354,7 @@
       const conv = data.conversation
       const lines = [`# ${conv.title || 'DSH Chat'}`, '']
       lines.push(`> 导出时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`)
-      lines.push(`> 引擎：${conv.engine === 'codex' ? 'Codex' : 'DSR'} · 权限：${permissionEntry(conv.permission).label}`, '')
+      lines.push(`> 引擎：${conv.engine === 'codex' ? 'Codex' : 'DSH'} · 权限：${permissionEntry(conv.permission).label}`, '')
       for (const msg of conv.messages || []) {
         if (msg.role === 'user' && msg.internal) continue
         if (msg.role === 'user') {
@@ -5634,7 +5642,7 @@
 
   async function updateStorageInfo() {
     if (!els.storageInfo) return
-    let text = '设置保存在本机浏览器'
+    let text = '本机存储数据暂不可用'
     try {
       if (navigator.storage?.estimate) {
         const estimate = await navigator.storage.estimate()
@@ -5646,7 +5654,7 @@
         const key = localStorage.key(i)
         localBytes += (key?.length || 0) + (localStorage.getItem(key)?.length || 0)
       }
-      text += ` · localStorage ${formatBytes(localBytes)}`
+      text += ` · 浏览器本地键值 ${formatBytes(localBytes)}`
     } catch {}
     els.storageInfo.textContent = text
   }
@@ -7112,7 +7120,14 @@
       // Chromium marks events synthesized by a soft keyboard; ignore those so
       // typing on glass does not masquerade as a hardware keyboard.
       if (event.sourceCapabilities?.firesTouchEvents) return
-      if (!event.key || event.metaKey || event.ctrlKey || event.altKey) return
+      if (!event.key || event.key.length !== 1) return
+      if (event.metaKey || event.ctrlKey || event.altKey) return
+      // Safari has no sourceCapabilities. A shrunken visual viewport means
+      // the on-screen keyboard is up, so a printable key is still touch
+      // input and must not be mistaken for a hardware keyboard.
+      if (!event.sourceCapabilities && window.visualViewport) {
+        if (window.visualViewport.height + 80 < window.innerHeight) return
+      }
       state.hasPhysicalKeyboard = true
       updateComposerHint()
     },

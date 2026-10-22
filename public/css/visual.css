@@ -523,8 +523,8 @@
   .topbar-title {
     position: absolute !important;
     left: 50% !important;
-    width: calc(100% - 220px) !important;
-    max-width: calc(100% - 220px) !important;
+    width: calc(100% - 200px) !important;
+    max-width: calc(100% - 200px) !important;
     transform: translateX(-50%) !important;
   }
 }
@@ -783,12 +783,13 @@
   transition: background 0.15s var(--ease);
 }
 
-.topbar-title:hover {
-  background: color-mix(in srgb, var(--hover) 72%, transparent);
+.topbar-title:hover .topbar-sub {
+  color: var(--text-2);
 }
 
-.topbar-title:active {
-  background: var(--hover);
+.topbar-title:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
 }
 
 .topbar-name {
@@ -804,7 +805,21 @@
 
 @media (min-width: 1024px) {
   .topbar-title {
-    top: calc(env(safe-area-inset-top) + (var(--topbar-h) / 2));
+    top: calc(env(safe-area-inset-top) + (var(--topbar-h) / 2)) !important;
+    width: fit-content !important;
+    max-width: min(560px, calc(100% - 320px)) !important;
+    transform: translate(-50%, -50%) !important;
+  }
+}
+
+/* The older mobile/tablet rules pin the title absolutely; give them an
+   explicit vertical center instead of the stale 26px offset. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  .topbar-title {
+    top: calc(env(safe-area-inset-top) + (var(--topbar-h) / 2)) !important;
+    width: fit-content !important;
+    max-width: calc(100% - 300px) !important;
+    transform: translate(-50%, -50%) !important;
   }
 }
 
@@ -813,14 +828,41 @@
     height: calc(var(--topbar-h-phone) + env(safe-area-inset-top)) !important;
   }
   .topbar-title {
+    top: calc(env(safe-area-inset-top) + (var(--topbar-h-phone) / 2)) !important;
+    width: fit-content !important;
+    max-width: calc(100% - 200px) !important;
     min-height: 42px;
     padding: 2px 6px;
+    transform: translate(-50%, -50%) !important;
   }
   .topbar-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+    max-width: 100%;
     font-size: 15px;
+    line-height: 1.22;
+    white-space: normal;
   }
   /* On phones the conversation title wins; the full engine/model pair
-     lives in the tap-to-open detail card. */
+     lives in the tap-to-open detail card. The small chevron is the only
+     permanent affordance that the title is tappable. */
+  .topbar-title {
+    padding-right: 16px;
+  }
+  .topbar-title::after {
+    content: "";
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    width: 5px;
+    height: 5px;
+    border-right: 1.5px solid var(--text-3);
+    border-bottom: 1.5px solid var(--text-3);
+    opacity: 0.75;
+    transform: translateY(-50%) rotate(45deg);
+  }
   .topbar-sub {
     display: none;
   }
@@ -1320,7 +1362,18 @@
 
 .conv-title mark,
 .conv-snippet mark {
+  padding: 0 1px;
   border-radius: 3px;
+  background: #ffd60a;
+  color: #1d1d1f;
+}
+
+:root[data-theme="dark"] .conv-title mark,
+:root[data-theme="dark"] .conv-snippet mark,
+:root:not([data-theme="light"]) .conv-title mark,
+:root:not([data-theme="light"]) .conv-snippet mark {
+  background: #ffd60a;
+  color: #1d1d1f;
 }
 
 .conv-preview {
@@ -1590,8 +1643,8 @@
   justify-content: center;
   gap: 6px;
   border-color: var(--accent-blue);
-  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
-  color: var(--accent-blue);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  color: #0059b3;
   font-weight: 600;
 }
 
@@ -1603,16 +1656,16 @@
 }
 
 :root[data-theme="dark"] .settings-options button[aria-checked="true"] {
-  border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--border));
-  background: color-mix(in srgb, var(--accent-blue) 17%, transparent);
-  color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 62%, var(--border));
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: #9fd0ff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .settings-options button[aria-checked="true"] {
-    border-color: color-mix(in srgb, var(--accent-blue) 70%, var(--border));
-    background: color-mix(in srgb, var(--accent-blue) 17%, transparent);
-    color: var(--accent-blue);
+    border-color: color-mix(in srgb, var(--accent-blue) 62%, var(--border));
+    background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+    color: #9fd0ff;
   }
 }
 
@@ -1697,6 +1750,13 @@
 
 .switch[aria-checked="true"] .switch-thumb {
   transform: translateX(16px);
+}
+
+.switch[aria-checked="true"] {
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-weight: 400;
 }
 
 .switch-state {

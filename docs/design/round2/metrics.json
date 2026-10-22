@@ -1,0 +1,316 @@
+{
+  "desktopHome": {
+    "cards": [
+      {
+        "title": "网页总结",
+        "top": 394.5,
+        "bottom": 574.5,
+        "h": 180
+      },
+      {
+        "title": "股票分析",
+        "top": 394.5,
+        "bottom": 574.5,
+        "h": 180
+      },
+      {
+        "title": "操作电脑",
+        "top": 586.5,
+        "bottom": 748.6,
+        "h": 162.1
+      },
+      {
+        "title": "分析内容",
+        "top": 586.5,
+        "bottom": 748.6,
+        "h": 162.1
+      },
+      {
+        "title": "日报整理",
+        "top": 586.5,
+        "bottom": 748.6,
+        "h": 162.1
+      }
+    ],
+    "grid": {
+      "top": 394.5,
+      "bottom": 748.6
+    },
+    "composerTop": 806,
+    "scrollBottomHidden": true,
+    "note": "点按场景会把示例填入输入框，可改完再发送。"
+  },
+  "chatInfo": {
+    "open": true,
+    "title": "DSH Chat",
+    "engine": "DSH",
+    "model": "DeepSeek-V4.1-Flash-1017",
+    "rect": {
+      "top": 64,
+      "bottom": 273.5,
+      "left": 655,
+      "right": 1075
+    }
+  },
+  "desktopSettings": {
+    "panel": {
+      "top": 75.6,
+      "bottom": 824.4,
+      "h": 748.7,
+      "radius": "22px"
+    },
+    "footInside": true,
+    "foot": {
+      "top": 749.1,
+      "bottom": 823.4
+    },
+    "bodyScroll": {
+      "scrollH": 617,
+      "clientH": 617
+    },
+    "close": {
+      "top": 83.6,
+      "bottom": 123.6,
+      "visible": true
+    },
+    "preview": {
+      "font": "12.5px",
+      "line": "19.375px"
+    },
+    "selected": {
+      "color": "rgb(159, 208, 255)",
+      "bg": "color(srgb 0.160784 0.592157 1 / 0.14)",
+      "border": "color(srgb 0.165255 0.432706 0.688549)"
+    },
+    "switch": {
+      "role": "switch",
+      "checked": "false",
+      "text": "已关闭",
+      "thumb": "none"
+    },
+    "footerText": "外观与阅读设置保存在此设备；权限随对话保存在服务端。",
+    "storageInDetails": true,
+    "horizontalOverflow": false
+  },
+  "previewLarge": {
+    "font": "13.75px",
+    "line": "18.5625px"
+  },
+  "lightSelected": {
+    "color": "rgb(0, 89, 179)",
+    "bg": "color(srgb 0 0.443137 0.890196 / 0.1)"
+  },
+  "topbar": {
+    "bar": {
+      "top": 0,
+      "bottom": 58,
+      "h": 58
+    },
+    "name": {
+      "top": 12.109375,
+      "bottom": 30.703125
+    },
+    "sub": {
+      "top": 32.703125,
+      "bottom": 45.890625
+    },
+    "subInside": true,
+    "progress": {
+      "top": 58,
+      "left": 290,
+      "mainLeft": 290,
+      "hidden": false
+    },
+    "progressInMain": true,
+    "title": "测试一下吧",
+    "titleOverflow": false
+  },
+  "inlineCode": [
+    {
+      "text": "chats/1acaf672-c230-4741-972f-20f412ea976b",
+      "cls": "code-value",
+      "wbr": 1,
+      "w": 351.7
+    },
+    {
+      "text": "bash",
+      "cls": "",
+      "wbr": 0,
+      "w": 38.3
+    },
+    {
+      "text": "2**10 = 1024",
+      "cls": "",
+      "wbr": 0,
+      "w": 94.9
+    }
+  ],
+  "search": {
+    "count": "搜索结果 · 9",
+    "countVisible": true,
+    "headingHidden": true,
+    "groupLabels": [],
+    "rows": [
+      {
+        "title": "在目录中新建一个文件，放入随机数",
+        "meta": "昨天",
+        "titleMarks": 1,
+        "snippetMarks": 0
+      },
+      {
+        "title": "在目录中新建一个文件，放入随机数",
+        "meta": "昨天",
+        "titleMarks": 1,
+        "snippetMarks": 0
+      },
+      {
+        "title": "[导入] 体验审查20261022-备份导入测试",
+        "snippet": "正文…对话： 1. 主题与目标 2. 关键结论 3. 待办 / 未决问题 4. 涉及的重要文件 不要使用工具，不要编造未出现的信息。",
+        "hitKind": "正文",
+        "meta": "10:25",
+        "titleMarks": 0,
+        "snippetMarks": 1
+      },
+      {
+        "title": "帮我找一下沙丘2高清夸克网盘资源下载链接",
+        "snippet": "正文…的建议是： 直接申请退款，理由写“商品为盗版资源”，平台一般会支持； 别保留那个网盘文件。这类转卖包里塞广告和 exe 播放器的情况很常见。 如果你确实买过正版，想下载到本…",
+        "hitKind": "正文",
+        "meta": "昨天",
+        "titleMarks": 0,
+        "snippetMarks": 1
+      }
+    ],
+    "toolbarGap": 39,
+    "scrollTop": 0
+  },
+  "statusDetail": {
+    "open": true,
+    "text": "连接\n桌面版已连接\n引擎\nDSH\n运行\n原生\n会话\n跨设备共享\n模型\nDeepSeek-V4.1-Flash-1017\n\n“在线”指与桌面版的连接；不同引擎的可用工具可能不同。",
+    "footActions": "偏好"
+  },
+  "mobileHome": {
+    "cards": [
+      {
+        "title": "网页总结",
+        "top": 231.2,
+        "bottom": 319.7,
+        "h": 88.5
+      },
+      {
+        "title": "股票分析",
+        "top": 327.7,
+        "bottom": 416.5,
+        "h": 88.9
+      },
+      {
+        "title": "操作电脑",
+        "top": 327.7,
+        "bottom": 416.5,
+        "h": 88.9
+      },
+      {
+        "title": "分析内容",
+        "top": 424.5,
+        "bottom": 513.4,
+        "h": 88.9
+      },
+      {
+        "title": "日报整理",
+        "top": 424.5,
+        "bottom": 513.4,
+        "h": 88.9
+      }
+    ],
+    "composerTop": 754,
+    "completeCardsAboveComposer": 5,
+    "scrollBottomHidden": true,
+    "topbarH": 54,
+    "subHidden": true,
+    "heroSub": "总结网页、整理日报，或直接操作 Mac。",
+    "horizontalOverflow": false,
+    "composerHint": "点按 ↑ 发送"
+  },
+  "mobileSidebar": {
+    "order": [
+      "sidebar-head",
+      "new-chat",
+      "sidebar-links",
+      "conv-search",
+      "conv-toolbar",
+      "conv-scroll",
+      "sidebar-foot"
+    ],
+    "links": [
+      "收藏",
+      "提示词"
+    ],
+    "tools": [
+      "管理",
+      "归档"
+    ],
+    "hasOldTools": false
+  },
+  "mobileSettings": {
+    "panel": {
+      "top": 151.9,
+      "bottom": 844,
+      "h": 692.1
+    },
+    "footInside": true,
+    "bodyScroll": {
+      "scrollH": 628,
+      "clientH": 543
+    },
+    "closeVisible": true
+  },
+  "mobileTopbar": {
+    "bar": {
+      "top": 0,
+      "bottom": 54,
+      "h": 54
+    },
+    "name": {
+      "top": 18,
+      "bottom": 36,
+      "inside": true
+    },
+    "subHidden": true,
+    "progress": {
+      "top": 54,
+      "left": 0,
+      "hidden": false
+    },
+    "title": "测试一下吧",
+    "titleOverflow": false,
+    "code": [
+      {
+        "text": "chats/1acaf672-c230-4741-972f-20f412ea976b",
+        "wbr": 1,
+        "w": 326.2
+      },
+      {
+        "text": "bash",
+        "wbr": 0,
+        "w": 38.3
+      },
+      {
+        "text": "2**10 = 1024",
+        "wbr": 0,
+        "w": 94.9
+      }
+    ]
+  },
+  "shortSettings": {
+    "vh": 560,
+    "panel": {
+      "top": 44.8,
+      "bottom": 515.2
+    },
+    "footInside": true,
+    "bodyScroll": {
+      "scrollH": 617,
+      "clientH": 339,
+      "scrollable": true
+    }
+  }
+}

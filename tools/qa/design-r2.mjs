@@ -26,6 +26,7 @@ const results = {}
 async function session(width, height, mobile = false, url = '/') {
   const { cdp, tab } = await openApp({ width, height, mobile })
   await cdp.send('Network.setCacheDisabled', { cacheDisabled: true })
+  await cdp.send('Network.setBypassServiceWorker', { bypass: true }).catch(() => {})
   await cdp.navigate(`${APP}${url}`)
   await login(cdp, ACCESS_CODE)
   await new Promise((r) => setTimeout(r, 1400))
@@ -87,7 +88,7 @@ async function desktop() {
     const panel = document.querySelector('#settingsSheet .sheet-panel')
     const body = panel.querySelector('.settings-body')
     const foot = panel.querySelector('.settings-footwrap')
-    const close = document.querySelector('[data-settings-close]').getBoundingClientRect()
+    const close = document.querySelector('.settings-panel [data-settings-close]').getBoundingClientRect()
     const p = panel.getBoundingClientRect(); const f = foot.getBoundingClientRect()
     const preview = document.querySelector('.settings-preview-text')
     const style = getComputedStyle(preview)
@@ -168,7 +169,8 @@ async function desktop() {
       headingHidden: heading.hidden,
       groupLabels: [...document.querySelectorAll('.conv-group')].map((g) => g.textContent),
       rows,
-      toolbarGap: (() => { const s = document.querySelector('.conv-search').getBoundingClientRect(); const l = document.querySelector('.conv-list').getBoundingClientRect(); return +(l.top - s.bottom).toFixed(1) })(),
+      toolbarGap: (() => { const s = document.querySelector('.conv-search').getBoundingClientRect(); const l = document.querySelector('.conv-scroll').getBoundingClientRect(); return +(l.top - s.bottom).toFixed(1) })(),
+      scrollTop: document.querySelector('.conv-scroll').scrollTop,
     }
   })()`)
   await cdp.eval(`(() => { const i = document.querySelector('#convSearch'); i.value=''; i.dispatchEvent(new Event('input',{bubbles:true})); })()`)
@@ -225,7 +227,7 @@ async function mobile() {
     const panel = document.querySelector('#settingsSheet .sheet-panel')
     const p = panel.getBoundingClientRect(); const f = panel.querySelector('.settings-footwrap').getBoundingClientRect()
     const body = panel.querySelector('.settings-body')
-    return { panel: { top: +p.top.toFixed(1), bottom: +p.bottom.toFixed(1), h: +p.height.toFixed(1) }, footInside: f.bottom <= p.bottom + 0.5, bodyScroll: { scrollH: body.scrollHeight, clientH: body.clientHeight }, closeVisible: (() => { const c = document.querySelector('[data-settings-close]').getBoundingClientRect(); return c.top >= p.top && c.bottom <= p.bottom })() }
+    return { panel: { top: +p.top.toFixed(1), bottom: +p.bottom.toFixed(1), h: +p.height.toFixed(1) }, footInside: f.bottom <= p.bottom + 0.5, bodyScroll: { scrollH: body.scrollHeight, clientH: body.clientHeight }, closeVisible: (() => { const c = document.querySelector('.settings-panel [data-settings-close]').getBoundingClientRect(); return c.top >= p.top && c.bottom <= p.bottom })() }
   })()`)
   await cdp.eval(`document.querySelector('[data-settings-close]')?.click()`)
 

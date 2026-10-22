@@ -17,7 +17,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
-    <link rel="stylesheet" href="/css/bundle.css?v=41" />
+    <link rel="stylesheet" href="/css/bundle.css?v=47" />
   </head>
   <body>
     <a class="skip-link" href="#input">跳到输入框</a>
@@ -212,7 +212,7 @@
           <span>新对话</span>
         </button>
 
-        <div class="sidebar-links" aria-label="资料入口">
+        <div class="sidebar-links" role="group" aria-label="资料入口">
           <button id="bookmarksBtn" class="sidebar-link" type="button">
             <svg aria-hidden="true"><use href="#i-star" /></svg>
             <span>收藏</span>
@@ -270,7 +270,7 @@
             </dl>
             <p class="connection-note">“在线”指与桌面版的连接；不同引擎的可用工具可能不同。</p>
           </div>
-          <div class="foot-actions" aria-label="偏好设置">
+          <div class="foot-actions" role="group" aria-label="偏好设置">
             <span class="foot-label" aria-hidden="true">偏好</span>
             <button id="shortcutsBtn" class="icon-btn" type="button" aria-label="键盘快捷键" title="键盘快捷键 (?)">
               <svg><use href="#i-keyboard" /></svg>
@@ -301,11 +301,11 @@
             aria-haspopup="dialog"
             aria-expanded="false"
             aria-controls="chatInfo"
-            aria-label="查看会话标题、模型与运行方式"
             title="查看完整标题、模型与运行方式"
           >
             <span id="topbarName" class="topbar-name">DSH Chat</span>
             <span id="topbarSub" class="topbar-sub">DeepSeek Harness</span>
+            <span class="sr-only">，点按查看完整标题与运行方式</span>
           </button>
           <div class="topbar-actions">
             <button id="scenarioBtn" class="icon-btn" type="button" aria-label="浏览场景">
@@ -778,7 +778,7 @@
 
     <noscript><p class="noscript">请启用 JavaScript 后使用 DSH Chat。</p></noscript>
     <script defer src="/js/markdown.js?v=33"></script>
-    <script defer src="/js/app.js?v=50"></script>
+    <script defer src="/js/app.js?v=53"></script>
     <script defer src="/js/codex.js?v=1"></script>
   </body>
 </html>
