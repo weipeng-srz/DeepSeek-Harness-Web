@@ -780,6 +780,7 @@ function serveConversationFile(req, res, conv, url) {
   if (download) disposition = 'attachment'
   const filename = path.basename(file.absolute)
   const ascii = filename.replace(/[^\x20-\x7e]/g, '_').replace(/["\\]/g, '_')
+  const inlinePdf = contentType === 'application/pdf' && disposition === 'inline'
 
   securityHeaders(res)
   res.writeHead(200, {
@@ -788,7 +789,12 @@ function serveConversationFile(req, res, conv, url) {
     'Content-Disposition': `${disposition}; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
-    'Content-Security-Policy': "default-src 'none'; sandbox",
+    // The native PDF viewer needs an unsandboxed document, but may only be
+    // embedded by this app. All other workspace files retain full isolation.
+    'X-Frame-Options': inlinePdf ? 'SAMEORIGIN' : 'DENY',
+    'Content-Security-Policy': inlinePdf
+      ? "default-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'"
+      : "default-src 'none'; sandbox",
   })
   if (req.method === 'HEAD') return res.end()
   fs.createReadStream(file.absolute).pipe(res)
