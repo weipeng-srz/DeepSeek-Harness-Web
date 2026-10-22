@@ -2429,7 +2429,7 @@
     if (!error) return false
     if (error.name === 'NetworkError') return true
     const message = String(error.message || '')
-    return /load failed|failed to fetch|networkerror|network request failed|internet connection appears to be offline/i.test(
+    return /load failed|failed to fetch|network\s*error|network request failed|internet connection appears to be offline/i.test(
       message,
     )
   }
