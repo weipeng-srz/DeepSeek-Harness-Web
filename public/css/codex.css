@@ -13,7 +13,7 @@
   background: color-mix(in srgb, var(--surface-2) 72%, transparent);
   color: var(--text-2);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 560;
   cursor: pointer;
   transition: background 0.16s var(--ease-apple), border-color 0.16s var(--ease-apple),
@@ -76,7 +76,7 @@
   margin-left: auto;
   min-height: 24px;
   padding: 0 8px;
-  font-size: 10.5px;
+  font-size: 12px;
   border-color: transparent;
   background: transparent;
 }
@@ -90,6 +90,8 @@
 }
 
 .codex-pop {
+  --codex-tag-bg: #e7f0fc;
+  --codex-tag-text: #0755ad;
   position: fixed;
   z-index: 340;
   width: min(392px, calc(100vw - 24px));
@@ -104,6 +106,18 @@
   -webkit-backdrop-filter: blur(24px) saturate(1.5);
   color: var(--text);
   animation: codex-pop-in 0.16s var(--ease-apple);
+}
+
+:root[data-theme="dark"] .codex-pop {
+  --codex-tag-bg: #12314e;
+  --codex-tag-text: #80beff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .codex-pop {
+    --codex-tag-bg: #12314e;
+    --codex-tag-text: #80beff;
+  }
 }
 
 @keyframes codex-pop-in {
@@ -141,7 +155,49 @@
 }
 
 .codex-pop-head {
-  padding: 1px 4px 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 1px 0 10px 4px;
+}
+
+.codex-pop-heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.codex-pop-close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--bg-secondary, var(--bg));
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.codex-pop-close:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.codex-pop-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.codex-pop-close svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .codex-pop-title {
@@ -153,7 +209,7 @@
 .codex-pop-sub {
   margin-top: 3px;
   color: var(--text-3);
-  font-size: 10.5px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -167,12 +223,13 @@
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .codex-pop-label {
   padding: 0 4px 6px;
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -180,7 +237,7 @@
 
 .codex-pop-label-hint {
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .codex-model-list {
@@ -215,26 +272,29 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
 .codex-model-name {
-  font-size: 12.5px;
+  font-size: 14px;
   font-weight: 620;
+  overflow-wrap: anywhere;
 }
 
 .codex-model-tag {
   padding: 1px 6px;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
-  color: var(--accent-blue);
-  font-size: 9px;
+  background: var(--codex-tag-bg);
+  color: var(--codex-tag-text);
+  font-size: 11px;
   font-weight: 650;
 }
 
 .codex-model-desc {
   color: var(--text-3);
-  font-size: 10.5px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .codex-effort-grid {
@@ -267,22 +327,21 @@
 }
 
 .codex-effort-name {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 640;
 }
 
 .codex-effort-desc {
-  display: -webkit-box;
-  overflow: hidden;
+  display: block;
   color: var(--text-3);
-  font-size: 9.5px;
-  line-height: 1.3;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .codex-pop-foot {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 10px;
@@ -301,7 +360,7 @@
   background: transparent;
   color: var(--text-2);
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 580;
   cursor: pointer;
 }
@@ -328,7 +387,7 @@
 
 .codex-pop-source {
   color: var(--text-3);
-  font-size: 9.5px;
+  font-size: 12px;
   text-align: right;
 }
 
@@ -384,6 +443,17 @@
   .codex-foot {
     min-height: 44px;
     padding: 0 10px;
-    font-size: 11px;
+    font-size: 12px;
+  }
+}
+
+/* Touch input also exists on tablets wider than the phone breakpoint. */
+@media (pointer: coarse) {
+  .codex-pill,
+  .codex-pop-open,
+  .codex-model-choice,
+  .codex-effort-choice {
+    min-width: 44px;
+    min-height: 44px;
   }
 }

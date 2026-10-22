@@ -24,6 +24,13 @@
     currentId: null,
     conversation: null,
     conversationAt: 0,
+    contextVersion: 0,
+    refreshSequence: 0,
+    refreshPending: null,
+    patchSequence: 0,
+    savingSelection: null,
+    openingId: null,
+    createSequence: 0,
     popover: null,
     toastTimer: null,
     loading: false,
@@ -60,7 +67,7 @@
 
   function selection() {
     const conversation = state.conversation
-    const convIsCurrent = conversation && conversation.id === state.currentId
+    const convIsCurrent = conversation && conversation.id === currentConversationId()
     const storedModel = localStorage.getItem(MODEL_KEY)
     const storedEffort = localStorage.getItem(EFFORT_KEY)
     const modelId = (convIsCurrent && conversation.codexModel) || storedModel
@@ -89,7 +96,28 @@
   }
 
   function currentConversationId() {
-    return localStorage.getItem('dsh.current') || null
+    // localStorage is shared by tabs; only this tab's route identifies its chat.
+    const match = location.pathname.match(/^\/c\/([^/]+)\/?$/)
+    if (!match) return null
+    try { return decodeURIComponent(match[1]) } catch { return null }
+  }
+
+  function syncCurrentContext() {
+    const id = currentConversationId()
+    if (id !== state.currentId) {
+      state.currentId = id
+      state.conversation = null
+      state.conversationAt = 0
+      state.contextVersion += 1
+      state.refreshSequence += 1
+      state.refreshPending = null
+      closePopover()
+    }
+    return id
+  }
+
+  function isCurrentContext(id, version) {
+    return currentConversationId() === id && state.currentId === id && state.contextVersion === version
   }
 
   async function api(path, options = {}) {
@@ -149,45 +177,70 @@
   }
 
   async function refreshCurrent(force = false) {
-    const id = currentConversationId()
-    if (!id) {
-      state.currentId = null
-      state.conversation = null
-      render()
-      return
-    }
-    if (!force && id === state.currentId && Date.now() - state.conversationAt < 2500) {
-      render()
-      return
-    }
-    state.currentId = id
-    try {
-      const data = await api(`/api/conversations/${id}?summary=1`)
-      state.conversation = data.conversation
-    } catch {
-      state.conversation = null
-    }
-    state.conversationAt = Date.now()
-    render()
+    const id = syncCurrentContext()
+    if (!id) return render()
+    if (state.savingSelection?.id === id) return render()
+    if (state.refreshPending?.id === id) return state.refreshPending.promise
+    if (!force && Date.now() - state.conversationAt < 2500) return render()
+    const version = state.contextVersion
+    const sequence = ++state.refreshSequence
+    const patchSequence = state.patchSequence
+    const pending = { id, promise: null }
+    pending.promise = (async () => {
+      try {
+        const data = await api(`/api/conversations/${encodeURIComponent(id)}?summary=1`)
+        if (!isCurrentContext(id, version) || sequence !== state.refreshSequence || patchSequence !== state.patchSequence) return
+        if (data.conversation?.id !== id) throw new Error('对话设置暂未同步，请重新打开设置重试')
+        state.conversation = data.conversation
+        state.conversationAt = Date.now()
+      } catch (error) {
+        if (!isCurrentContext(id, version) || sequence !== state.refreshSequence) return
+        // Keep an already loaded selection when a transient refresh fails.
+        if (force) showMessage(error.message || '读取设置失败，请重新打开设置重试', 'error')
+      } finally {
+        if (state.refreshPending === pending) state.refreshPending = null
+        if (isCurrentContext(id, version)) render()
+      }
+    })()
+    state.refreshPending = pending
+    return pending.promise
   }
 
   async function patchSelection(modelId, effortValue) {
-    remember(modelId, effortValue)
-    if (!state.currentId || state.conversation?.engine !== 'codex') {
+    const id = syncCurrentContext()
+    if (!id) {
+      remember(modelId, effortValue)
       render()
       return
     }
+    if (state.conversation?.id !== id || state.conversation.engine !== 'codex') {
+      showMessage('正在读取这个对话的设置，请稍后重试')
+      void refreshCurrent(true)
+      return
+    }
+    remember(modelId, effortValue)
+    const version = state.contextVersion
+    const sequence = ++state.patchSequence
+    state.refreshSequence += 1
+    state.refreshPending = null
+    state.savingSelection = { id, sequence }
     try {
-      const data = await api(`/api/conversations/${state.currentId}`, {
+      const data = await api(`/api/conversations/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: JSON.stringify({ codexModel: modelId, codexEffort: effortValue }),
       })
+      if (!isCurrentContext(id, version) || sequence !== state.patchSequence) return
+      if (data.conversation?.id !== id) throw new Error('对话设置暂未同步，请重新选择重试')
       state.conversation = data.conversation
       state.conversationAt = Date.now()
     } catch (error) {
-      showMessage(error.message || '保存 Codex 设置失败', 'error')
+      if (isCurrentContext(id, version) && sequence === state.patchSequence) {
+        showMessage(error.message || '保存 Codex 设置失败，请重新选择重试', 'error')
+      }
+    } finally {
+      if (state.savingSelection?.sequence === sequence) state.savingSelection = null
+      if (isCurrentContext(id, version)) render()
     }
-    render()
   }
 
   /* ── controls ─────────────────────────────────────────────────────── */
@@ -253,6 +306,7 @@
   }
 
   function render() {
+    syncCurrentContext()
     if (state.popover && !state.popover.isConnected) state.popover = null
     ensureControls()
     const codex = codexContext()
@@ -289,9 +343,16 @@
   }
 
   function togglePopover(anchor) {
+    const id = syncCurrentContext()
+    if (id && state.conversation?.id !== id) {
+      void refreshCurrent(true).then(() => {
+        if (currentConversationId() === id && state.conversation?.id === id) openPopover(anchor)
+      })
+      return
+    }
     if (state.popover && !state.popover.isConnected) state.popover = null
     if (state.popover) {
-      closePopover()
+      closePopover({ restoreFocus: true })
       return
     }
     if (!state.catalog?.models?.length) {
@@ -302,46 +363,108 @@
     openPopover(anchor)
   }
 
-  function closePopover() {
+  function modalFocusables(dialog) {
+    return [...dialog.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]')]
+      .filter(node => node.tabIndex >= 0 && node.getClientRects().length && !node.closest('[inert]'))
+  }
+
+  function topModal() {
+    const dialogs = [...document.querySelectorAll('[role="dialog"][aria-modal="true"]')]
+      .filter(node => node.getClientRects().length && !node.closest('[hidden]'))
+    const layer = (node) => {
+      let value = 0
+      for (let current = node; current && current !== document.body; current = current.parentElement) {
+        value = Math.max(value, Number.parseInt(getComputedStyle(current).zIndex, 10) || 0)
+      }
+      return value
+    }
+    return dialogs.sort((a, b) => layer(a) - layer(b)).at(-1) || null
+  }
+
+  function closePopover({ restoreFocus = false } = {}) {
     const pop = state.popover
     if (!pop) return
+    const anchor = pop.__anchor
     pop.remove()
     state.popover = null
     document.removeEventListener('pointerdown', onOutside, true)
     document.removeEventListener('keydown', onKey, true)
+    document.removeEventListener('focusin', onModalFocus, true)
+    window.removeEventListener('resize', onPopoverResize)
     for (const id of ['codexSettingsBtn', 'codexFootBtn']) {
       $(`#${id}`)?.setAttribute('aria-expanded', 'false')
+    }
+    // The application derives inert from all visible overlays, including this one.
+    document.dispatchEvent(new CustomEvent('dsh:overlay-change'))
+    if (!restoreFocus) return
+    if (anchor?.isConnected && anchor.getClientRects().length && !anchor.closest('[inert]') && !anchor.disabled) {
+      anchor.focus({ preventScroll: true })
+    } else {
+      const remaining = topModal()
+      if (remaining) (modalFocusables(remaining)[0] || remaining).focus({ preventScroll: true })
     }
   }
 
   function onOutside(event) {
-    if (!state.popover) return
-    if (state.popover.contains(event.target)) return
+    const pop = state.popover
+    if (!pop || topModal() !== pop || pop.contains(event.target)) return
     if (event.target.closest('#codexSettingsBtn,#codexFootBtn')) return
+    // Suppress the matching click as well: removing inert must not activate a
+    // previously obscured control during the same pointer gesture.
+    event.preventDefault()
+    const stopClick = click => { click.preventDefault(); click.stopImmediatePropagation() }
+    document.addEventListener('click', stopClick, { capture: true, once: true })
+    setTimeout(() => document.removeEventListener('click', stopClick, true), 500)
     closePopover()
   }
 
   function onKey(event) {
+    const pop = state.popover
+    if (!pop || topModal() !== pop) return
     if (event.key === 'Escape') {
       event.preventDefault()
-      closePopover()
+      event.stopImmediatePropagation()
+      closePopover({ restoreFocus: true })
+    } else if (event.key === 'Tab') {
+      const focusables = modalFocusables(pop)
+      const at = focusables.indexOf(document.activeElement)
+      const next = at < 0 ? (event.shiftKey ? focusables.length - 1 : 0)
+        : (at + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      ;(focusables[next] || pop).focus({ preventScroll: true })
     }
+  }
+
+  function onModalFocus(event) {
+    const pop = state.popover
+    if (!pop || topModal() !== pop || pop.contains(event.target)) return
+    ;(pop.querySelector('.codex-model-choice.is-active') || modalFocusables(pop)[0] || pop).focus({ preventScroll: true })
+  }
+
+  function onPopoverResize() {
+    if (state.popover) positionPopover(state.popover, state.popover.__anchor)
   }
 
   function openPopover(anchor) {
     closePopover()
     const pop = el('div', 'codex-pop')
     pop.setAttribute('role', 'dialog')
+    pop.setAttribute('aria-modal', 'true')
     pop.setAttribute('aria-label', 'Codex 模型与思考强度')
+    pop.tabIndex = -1
     pop.__anchor = anchor
     document.body.appendChild(pop)
     state.popover = pop
     renderPopover(anchor)
     anchor.setAttribute('aria-expanded', 'true')
+    document.dispatchEvent(new CustomEvent('dsh:overlay-change'))
     document.addEventListener('pointerdown', onOutside, true)
     document.addEventListener('keydown', onKey, true)
+    document.addEventListener('focusin', onModalFocus, true)
+    window.addEventListener('resize', onPopoverResize)
     requestAnimationFrame(() => {
-      pop.querySelector('.codex-model-choice.is-active')?.focus({ preventScroll: true })
+      if (state.popover === pop) (pop.querySelector('.codex-model-choice.is-active') || modalFocusables(pop)[0] || pop).focus({ preventScroll: true })
     })
   }
 
@@ -361,12 +484,22 @@
       return
     }
     pop.__fingerprint = fingerprint
+    const focusedKey = pop.contains(document.activeElement) ? document.activeElement.dataset.focusKey : null
     pop.replaceChildren()
 
     const head = el('div', 'codex-pop-head')
     const title = el('div', 'codex-pop-title', 'Codex 运行设置')
     const sub = el('div', 'codex-pop-sub', '模型与思考强度会在下一条消息生效')
-    head.append(title, sub)
+    const heading = el('div', 'codex-pop-heading')
+    heading.append(title, sub)
+    const close = el('button', 'codex-pop-close')
+    close.type = 'button'
+    close.setAttribute('aria-label', '关闭 Codex 设置')
+    close.title = '关闭（Esc）'
+    close.dataset.focusKey = 'close'
+    close.innerHTML = '<svg aria-hidden="true"><use href="#i-close"></use></svg>'
+    close.addEventListener('click', () => closePopover({ restoreFocus: true }))
+    head.append(heading, close)
     pop.appendChild(head)
 
     const modelSection = el('div', 'codex-pop-section')
@@ -376,6 +509,7 @@
       const active = model?.id === item.id
       const choice = el('button', 'codex-model-choice' + (active ? ' is-active' : ''))
       choice.type = 'button'
+      choice.dataset.focusKey = `model:${item.id}`
       choice.setAttribute('aria-pressed', String(active))
       const top = el('span', 'codex-model-top')
       top.appendChild(el('span', 'codex-model-name', item.name))
@@ -385,9 +519,6 @@
       choice.addEventListener('click', () => {
         const nextEffort = effortOf(item, effort?.value) ? effort.value : item.defaultEffort
         void patchSelection(item.id, nextEffort)
-        requestAnimationFrame(() => {
-          pop.querySelector('.codex-model-choice.is-active')?.focus({ preventScroll: true })
-        })
       })
       modelList.appendChild(choice)
     }
@@ -404,6 +535,7 @@
       const active = effort?.value === option.value
       const choice = el('button', 'codex-effort-choice' + (active ? ' is-active' : ''))
       choice.type = 'button'
+      choice.dataset.focusKey = `effort:${option.value}`
       choice.setAttribute('aria-pressed', String(active))
       choice.appendChild(el('span', 'codex-effort-name', option.label))
       if (option.description) choice.appendChild(el('span', 'codex-effort-desc', option.description))
@@ -419,6 +551,7 @@
     const foot = el('div', 'codex-pop-foot')
     const open = el('button', 'codex-pop-open')
     open.type = 'button'
+    open.dataset.focusKey = 'open'
     open.innerHTML = '<svg aria-hidden="true"><use href="#i-external"></use></svg><span>在 Codex 中打开</span>'
     open.disabled = !state.conversation?.codexThreadId
     open.title = open.disabled ? '发送第一条消息后可用' : '在 Codex 桌面端打开这个对话'
@@ -433,13 +566,17 @@
     pop.appendChild(foot)
 
     positionPopover(pop, anchor)
+    if (focusedKey) {
+      const nextFocus = [...pop.querySelectorAll('[data-focus-key]')].find(node => node.dataset.focusKey === focusedKey && !node.disabled)
+      ;(nextFocus || pop.querySelector('.codex-model-choice.is-active') || close).focus({ preventScroll: true })
+    }
   }
 
   function positionPopover(pop, anchor) {
-    if (window.innerWidth < 641) {
-      pop.classList.add('is-sheet')
-      return
-    }
+    const sheet = window.innerWidth < 641
+    pop.classList.toggle('is-sheet', sheet)
+    for (const property of ['left', 'top', 'right', 'bottom']) pop.style.removeProperty(property)
+    if (sheet) return
     const rect = anchor.getBoundingClientRect()
     const width = pop.offsetWidth || 360
     const height = pop.offsetHeight || 420
@@ -452,23 +589,32 @@
   }
 
   async function openInCodex(fromPopover = false) {
-    if (!state.currentId) return
+    const id = syncCurrentContext()
+    if (!id || state.openingId === id) return
+    const version = state.contextVersion
+    state.openingId = id
     try {
-      let conv = state.conversation
+      let conv = state.conversation?.id === id ? state.conversation : null
       if (!conv?.codexThreadId) {
-        const data = await api(`/api/conversations/${state.currentId}`)
+        const data = await api(`/api/conversations/${encodeURIComponent(id)}`)
+        if (!isCurrentContext(id, version)) return
         conv = data.conversation
+        if (conv?.id !== id) return
         state.conversation = conv
       }
+      if (!isCurrentContext(id, version)) return
       if (!conv?.codexThreadId) {
         showMessage('先发送一条消息，Codex 会话创建后即可打开')
         return
       }
-      await api(`/api/conversations/${state.currentId}/open-codex`, { method: 'POST' })
+      await api(`/api/conversations/${encodeURIComponent(id)}/open-codex`, { method: 'POST' })
+      if (!isCurrentContext(id, version)) return
       showMessage('已在 Codex 桌面端打开')
       if (fromPopover) closePopover()
     } catch (error) {
-      showMessage(error.message || '打开 Codex 失败', 'error')
+      if (isCurrentContext(id, version)) showMessage(error.message || '打开 Codex 失败', 'error')
+    } finally {
+      if (state.openingId === id) state.openingId = null
     }
   }
 
@@ -498,16 +644,16 @@
       const rawUrl = typeof input === 'string' ? input : input?.url
       const url = new URL(rawUrl || '', location.href)
       if (url.pathname === '/api/conversations' && String(mutated?.method || 'GET').toUpperCase() === 'POST') {
+        const sequence = ++state.createSequence
         result.then((response) => {
           response
             .clone()
             .json()
             .then((data) => {
-              if (!data?.conversation) return
-              state.currentId = data.conversation.id
-              state.conversation = data.conversation
-              state.conversationAt = Date.now()
-              render()
+              if (!response.ok || !data?.conversation || sequence !== state.createSequence) return
+              // Creation is committed by the main router. It may have been
+              // abandoned while the response was in flight; never select it here.
+              if (currentConversationId() === data.conversation.id) void refreshCurrent(true)
             })
             .catch(() => {})
         })
@@ -560,6 +706,7 @@
         setTimeout(() => void refreshCurrent(true), 2200)
       }
     })
+    window.addEventListener('popstate', () => void refreshCurrent(true))
     setInterval(() => {
       if (!document.hidden && codexContext()) void refreshCurrent()
       render()
@@ -570,7 +717,7 @@
     if (document.querySelector('link[data-codex-css]')) return
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = '/css/codex.css?v=1'
+    link.href = '/css/codex.css?v=4'
     link.dataset.codexCss = '1'
     document.head.appendChild(link)
   }

@@ -1431,6 +1431,14 @@ mark.find-hit.active {
   flex: none;
 }
 
+.quick-input-wrap .quick-close {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+}
+
 .quick-list {
   max-height: 46vh;
   overflow: auto;

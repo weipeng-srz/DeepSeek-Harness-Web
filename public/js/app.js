@@ -8,6 +8,7 @@
 
   const BOOKMARK_KEY = 'dsh.bookmarks.v1'
   const PROMPT_KEY = 'dsh.prompts.v1'
+  const PREFS_KEY = 'dsh.prefs.v1'
   const PROMPT_DEFAULTS = [
     { id: 'p-weekly', name: '周报', text: '请把今天的工作整理成周报：本周完成 / 进行中 / 风险 / 下周计划。语气克制，先结论后细节。' },
     { id: 'p-review', name: '代码审查', text: '请审查这段代码：正确性、边界条件、性能、安全、可维护性。按严重程度排序，给出具体改法。' },
@@ -139,6 +140,7 @@
     findNext: $('#findNext'),
     findClose: $('#findClose'),
     quickSwitcher: $('#quickSwitcher'),
+    quickClose: $('#quickClose'),
     quickInput: $('#quickInput'),
     quickList: $('#quickList'),
     statsModal: $('#statsModal'),
@@ -175,6 +177,7 @@
     conversations: [],
     search: '',
     currentId: null,
+    navigationRequest: 0,
     messages: [],
     streaming: null,
     files: [],
@@ -223,6 +226,7 @@
     baseTitle: 'DSH Chat',
     prefs: loadPrefs(),
     findHits: [],
+    findResults: [],
     findIndex: -1,
     findQuery: '',
     selectMode: false,
@@ -241,6 +245,7 @@
     bookmarks: loadBookmarks(),
     prompts: loadPrompts(),
     threadWindow: 60,
+    threadEnd: null,
     commandIndex: 0,
     commandItems: [],
     shortcutsFocus: null,
@@ -255,12 +260,18 @@
     lastRenderedQuery: '',
   }
 
-  let overlayLocks = 0
-
-  function lockShell(lock) {
-    overlayLocks = Math.max(0, overlayLocks + (lock ? 1 : -1))
-    if (els.shell) els.shell.inert = overlayLocks > 0
+  function lockShell() {
+    // Derive the lock from visible layers: repeated opens cannot leak a lock,
+    // and dismissing a child still leaves its parent modal isolated.
+    const layers = [els.filesSheet, els.scenarioSheet, els.filePreview,
+      els.statsModal, els.confirmModal, els.palette, els.shortcutsSheet,
+      els.renameModal, els.settingsSheet, els.bookmarksSheet, els.promptSheet,
+      els.archiveSheet, els.quickSwitcher]
+    const codexModal = document.querySelector('.codex-pop[aria-modal="true"]')
+    if (els.shell) els.shell.inert = layers.some((layer) => layer && !layer.hidden) || Boolean(codexModal)
   }
+
+  document.addEventListener('dsh:overlay-change', lockShell)
 
   const TOOL_META = {
     bash: { label: '运行命令', icon: 'i-terminal' },
@@ -452,27 +463,51 @@
   }
 
   let mathPromise = null
+  let mathResourcesReady = false
   function ensureMath() {
-    if (window.katex && window.renderMathInElement) return Promise.resolve()
     if (mathPromise) return mathPromise
-    mathPromise = new Promise((resolve, reject) => {
-      const link = document.createElement('link')
-      link.rel = 'stylesheet'
-      link.href = '/vendor/katex/katex.min.css'
-      document.head.appendChild(link)
-      const katexScript = document.createElement('script')
-      katexScript.src = '/vendor/katex/katex.min.js'
-      katexScript.onload = () => {
-        const auto = document.createElement('script')
-        auto.src = '/vendor/katex/contrib/auto-render.min.js'
-        auto.onload = () => resolve()
-        auto.onerror = () => reject(new Error('公式渲染加载失败'))
-        document.head.appendChild(auto)
+    const loadScript = (src) => new Promise((resolve, reject) => {
+      const script = document.createElement('script')
+      script.src = src
+      script.onload = resolve
+      script.onerror = () => {
+        script.remove()
+        reject(new Error('公式渲染加载失败'))
       }
-      katexScript.onerror = () => reject(new Error('公式渲染加载失败'))
-      document.head.appendChild(katexScript)
+      document.head.appendChild(script)
     })
-    return mathPromise
+    const style = new Promise((resolve, reject) => {
+      let link = document.querySelector('link[href="/vendor/katex/katex.min.css"]')
+      if (link?.sheet) return resolve()
+      const created = !link
+      if (!link) {
+        link = document.createElement('link')
+        link.rel = 'stylesheet'
+        link.href = '/vendor/katex/katex.min.css'
+      }
+      link.addEventListener('load', resolve, { once: true })
+      link.addEventListener('error', () => {
+        link.remove()
+        reject(new Error('公式样式加载失败'))
+      }, { once: true })
+      if (created) document.head.appendChild(link)
+    })
+    const scripts = (async () => {
+      if (!window.katex) await loadScript('/vendor/katex/katex.min.js')
+      if (!window.renderMathInElement) await loadScript('/vendor/katex/contrib/auto-render.min.js')
+    })()
+    // Settle both resource branches before retrying so a failed stylesheet
+    // cannot leave a second attempt racing an unfinished script request.
+    const attempt = Promise.allSettled([style, scripts]).then((results) => {
+      const failed = results.find((result) => result.status === 'rejected')
+      if (failed) throw failed.reason
+      mathResourcesReady = true
+    })
+    mathPromise = attempt
+    attempt.catch(() => {
+      if (mathPromise === attempt) mathPromise = null
+    })
+    return attempt
   }
 
   function hasMathSyntax(text) {
@@ -887,18 +922,20 @@
     const scenario = SCENARIOS.find((item) => item.id === id)
     if (!scenario) return
     if (!els.scenarioSheet.hidden) closeScenarioSheet()
-    els.input.value = scenario.template
+    const prefix = els.input.value.trim() ? `${els.input.value}\n\n` : ''
+    els.input.value = prefix + scenario.template
     resizeInput()
+    updateComposerMeta()
+    saveDraftNow()
     els.input.focus({ preventScroll: true })
     const match = scenario.template.match(/\{\{[^}]+\}\}/)
     if (match) {
-      const start = scenario.template.indexOf(match[0])
+      const start = prefix.length + scenario.template.indexOf(match[0])
       els.input.setSelectionRange(start, start + match[0].length)
     } else {
-      const end = scenario.template.length
+      const end = els.input.value.length
       els.input.setSelectionRange(end, end)
     }
-    els.sendBtn.disabled = false
   }
 
   function openScenarioSheet() {
@@ -1180,7 +1217,18 @@
     return 'binary'
   }
 
+  let previewVersion = 0
+  let previewController = null
+
+  function invalidateFilePreview() {
+    previewVersion += 1
+    previewController?.abort()
+    previewController = null
+    return previewVersion
+  }
+
   function closeFilePreview() {
+    invalidateFilePreview()
     if (!els.filePreview || els.filePreview.hidden) return
     els.filePreview.hidden = true
     els.filePreviewBody.replaceChildren()
@@ -1192,6 +1240,9 @@
 
   async function openFilePreview(file) {
     if (!file || !els.filePreview) return
+    const version = invalidateFilePreview()
+    const current = () => version === previewVersion && !els.filePreview.hidden
+    const url = fileUrl(file.path)
     if (!els.filesSheet.hidden) closeFilesSheet()
     state.previewFile = file
     state.previewFocus = document.activeElement
@@ -1199,8 +1250,8 @@
     els.filePreviewTitle.textContent = file.name
     els.filePreviewMeta.textContent = `${file.path} · ${formatBytes(file.size)} · ${relativeTime(file.mtime)}`
     els.filePreviewIcon.innerHTML = icon(fileIcon(file.kind))
-    els.filePreviewOpen.href = fileUrl(file.path)
-    els.filePreviewDownload.href = fileUrl(file.path, true)
+    els.filePreviewOpen.href = url
+    els.filePreviewDownload.href = `${url}&download=1`
     els.filePreviewDownload.setAttribute('download', file.name)
     els.filePreviewBody.replaceChildren()
     const loading = document.createElement('div')
@@ -1209,14 +1260,17 @@
     els.filePreviewBody.appendChild(loading)
     els.filePreview.hidden = false
     lockShell(true)
-    requestAnimationFrame(() => els.filePreview.querySelector('.sheet-head [data-preview-close]')?.focus({ preventScroll: true }))
+    requestAnimationFrame(() => {
+      if (current()) els.filePreview.querySelector('.sheet-head [data-preview-close]')?.focus({ preventScroll: true })
+    })
 
     if (kind === 'image') {
       const image = document.createElement('img')
       image.alt = file.name
-      image.src = fileUrl(file.path)
-      image.addEventListener('load', () => loading.remove(), { once: true })
+      image.src = url
+      image.addEventListener('load', () => { if (current()) loading.remove() }, { once: true })
       image.addEventListener('error', () => {
+        if (!current()) return
         loading.className = 'file-preview-error'
         loading.textContent = '图片加载失败，可下载后查看。'
       }, { once: true })
@@ -1227,7 +1281,7 @@
       loading.remove()
       const frame = document.createElement('iframe')
       frame.title = `${file.name} 的 PDF 预览`
-      frame.src = fileUrl(file.path)
+      frame.src = url
       els.filePreviewBody.appendChild(frame)
       return
     }
@@ -1236,17 +1290,23 @@
       loading.textContent = '这种文件类型不支持在线预览。请下载后用本地应用打开。'
       return
     }
+    const controller = new AbortController()
+    previewController = controller
     try {
-      const response = await fetch(fileUrl(file.path), { credentials: 'same-origin' })
+      const response = await fetch(url, { credentials: 'same-origin', signal: controller.signal })
       if (!response.ok) throw new Error(`预览失败（${response.status}）`)
       const text = await response.text()
+      if (!current()) return
       loading.remove()
       const pre = document.createElement('pre')
       pre.textContent = text.length > 400_000 ? `${text.slice(0, 400_000)}\n\n…（内容过长，已截断）` : text
       els.filePreviewBody.appendChild(pre)
     } catch (error) {
+      if (!current() || error.name === 'AbortError') return
       loading.className = 'file-preview-error'
       loading.textContent = `${error.message || '预览失败'}。可下载后查看。`
+    } finally {
+      if (previewController === controller) previewController = null
     }
   }
 
@@ -1917,7 +1977,6 @@
     }
   }
 
-  const PREFS_KEY = 'dsh.prefs.v1'
 
   function loadPrefs() {
     const defaults = { density: 'comfortable', fontScale: 1, notify: false }
@@ -1950,16 +2009,45 @@
         `完成通知：${state.prefs.notify ? '已开启' : '已关闭'}`,
       )
     }
-    for (const button of document.querySelectorAll('[data-theme-option]')) {
+    for (const button of document.querySelectorAll('button[data-theme-option]')) {
       button.setAttribute('aria-checked', String(button.dataset.themeOption === state.theme))
     }
-    for (const button of document.querySelectorAll('[data-density]')) {
+    for (const button of document.querySelectorAll('button[data-density]')) {
       button.setAttribute('aria-checked', String(button.dataset.density === state.prefs.density))
     }
-    for (const button of document.querySelectorAll('[data-font]')) {
+    for (const button of document.querySelectorAll('button[data-font]')) {
       button.setAttribute('aria-checked', String(Number(button.dataset.font) === state.prefs.fontScale))
     }
+    syncRadioGroups()
   }
+
+  function syncRadioGroups() {
+    for (const group of document.querySelectorAll('[role="radiogroup"]')) {
+      const radios = [...group.querySelectorAll('[role="radio"]')]
+      const enabled = radios.filter((radio) => !radio.disabled && radio.getAttribute('aria-disabled') !== 'true')
+      const selected = enabled.find((radio) => radio.getAttribute('aria-checked') === 'true') || enabled[0]
+      for (const radio of radios) radio.tabIndex = radio === selected ? 0 : -1
+    }
+  }
+
+  document.addEventListener('keydown', (event) => {
+    if (event.altKey || event.metaKey || event.ctrlKey || event.isComposing) return
+    const radio = event.target.closest?.('[role="radio"]')
+    const group = radio?.closest('[role="radiogroup"]')
+    if (!group || !['ArrowRight', 'ArrowLeft', 'ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return
+    const radios = [...group.querySelectorAll('[role="radio"]')]
+      .filter((item) => !item.disabled && item.getAttribute('aria-disabled') !== 'true' && item.getClientRects().length)
+    if (!radios.length) return
+    event.preventDefault()
+    event.stopPropagation()
+    const current = radios.indexOf(radio)
+    const index = event.key === 'Home' ? 0 : event.key === 'End' ? radios.length - 1
+      : (current + (['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : -1) + radios.length) % radios.length
+    const next = radios[index]
+    next.click()
+    syncRadioGroups()
+    next.focus({ preventScroll: true })
+  })
 
   function syncThemeColor() {
     const meta = document.querySelector('meta[name="theme-color"]')
@@ -2107,6 +2195,7 @@
   /* ── auth ──────────────────────────────────────────────────────────── */
 
   function showLogin() {
+    state.navigationRequest += 1
     state.authed = false
     clearCache()
     const wasHidden = els.loginView.hidden
@@ -2120,6 +2209,7 @@
     els.loginView.hidden = true
     els.shell.hidden = false
     state.authed = true
+    els.logoutBtn.hidden = !state.authRequired
     document.body.classList.remove('sidebar-open')
     restoreSidebar()
     setModelLabels()
@@ -2241,6 +2331,7 @@
   function updateEngineBar() {
     if (!els.engineBar) return
     els.engineBar.hidden = state.messages.length > 0 || Boolean(state.streaming)
+    syncRadioGroups()
   }
 
   /* ── compact info popovers (title, engine, connection) ─────────────── */
@@ -2553,6 +2644,9 @@
     renderConversations()
     if (cache.current?.id) {
       state.currentId = cache.current.id
+      // Hydrate this conversation's input before authenticated navigation can
+      // save it; the initial empty textarea must not erase a persisted draft.
+      restoreDraft()
       state.messages = Array.isArray(cache.current.messages) ? cache.current.messages : []
       els.topbarName.textContent = cache.current.title || 'DSH Chat'
       setDocumentTitle(cache.current.title || 'DSH Chat')
@@ -2560,7 +2654,9 @@
       els.emptyState.hidden = true
       els.thread.hidden = false
     } else {
-      showEmptyChat()
+      // Cached paint is provisional: preserve an incoming deep link until the
+      // authenticated refresh has resolved it.
+      showEmptyChat({ updateRoute: false })
     }
     updateEngineBar()
     updatePermissionUI()
@@ -2625,6 +2721,7 @@
     }
 
     state.authRequired = !!me.authRequired
+    els.logoutBtn.hidden = !state.authRequired
     state.model = me.model || 'DeepSeek Harness'
     state.native = Boolean(me.native)
     state.nativeEnabled = me.nativeEnabled !== false
@@ -2687,10 +2784,19 @@
       }
       if (!state.currentId || state.streaming) return
       if (state.pendingSend && state.pendingSend.conversationId === state.currentId) return
-      const summary = state.conversations.find((conv) => conv.id === state.currentId)
+      let summary = state.conversations.find((conv) => conv.id === state.currentId)
       if (!summary) {
-        showEmptyChat()
-        return
+        // A search result can be outside the first page of the sidebar.
+        // Absence from that page is not evidence that it was deleted.
+        const id = state.currentId
+        try {
+          const data = await api(`/api/conversations/${id}?summary=1`)
+          if (state.currentId !== id) return
+          summary = data.conversation
+        } catch (error) {
+          if (error.status === 404 && state.currentId === id) showEmptyChat()
+          return
+        }
       }
       if (summary.running) {
         const data = await api(`/api/conversations/${state.currentId}`)
@@ -2732,6 +2838,7 @@
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error || '访问码不正确')
+      els.accessCode.value = ''
       await enterApp()
     } catch (err) {
       if (isNetworkError(err)) {
@@ -2749,10 +2856,17 @@
   })
 
   els.logoutBtn.addEventListener('click', async () => {
-    state.authed = false
-    clearCache()
-    await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }).catch(() => {})
-    location.reload()
+    els.logoutBtn.disabled = true
+    try {
+      const response = await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' })
+      if (!response.ok) throw new Error('退出失败，请重试')
+      state.authed = false
+      clearCache()
+      location.reload()
+    } catch {
+      showToast('未能退出登录，请检查连接后重试', { tone: 'error' })
+      els.logoutBtn.disabled = false
+    }
   })
 
   /* ── API ───────────────────────────────────────────────────────────── */
@@ -2780,19 +2894,52 @@
       throw new Error('登录已失效，请重新输入访问码')
     }
     const data = await res.json().catch(() => ({}))
-    if (!res.ok) throw new Error(data.error || `请求失败（${res.status}）`)
+    if (!res.ok) throw Object.assign(new Error(data.error || `请求失败（${res.status}）`), { status: res.status })
     state.lastSync = Date.now()
     setConnection('online')
     return data
   }
 
+  let conversationListVersion = 0
+  let conversationRefreshVersion = 0
+  let conversationSearchVersion = 0
+  let conversationSearchPending = false
+  let conversationPageRequest = null
+
+  function invalidateConversationPage() {
+    conversationListVersion += 1
+    conversationPageRequest?.controller.abort()
+    conversationPageRequest = null
+    els.convLoadMore.disabled = false
+  }
+
+  function invalidateConversationSearch() {
+    conversationSearchVersion += 1
+    conversationSearchPending = false
+    invalidateConversationPage()
+  }
+
+  // Empty queries do not reach scheduleSearch. Invalidate these transitions
+  // as well so A → empty → A cannot revive an earlier pagination response.
+  els.convSearch.addEventListener('input', () => {
+    if (!els.convSearch.value.trim()) invalidateConversationSearch()
+  }, true)
+  els.convSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && els.convSearch.value) invalidateConversationSearch()
+  }, true)
+  els.convSearchClear.addEventListener('click', invalidateConversationSearch, true)
+
   async function refreshConversations() {
+    const version = ++conversationRefreshVersion
+    invalidateConversationPage()
     const data = await api('/api/conversations?limit=60')
+    if (version !== conversationRefreshVersion) return
     const incoming = data.conversations || []
     state.conversations = incoming
     if (state.currentId && !incoming.some((conv) => conv.id === state.currentId)) {
       try {
         const probe = await fetch(`/api/conversations/${state.currentId}`, { credentials: 'same-origin' })
+        if (version !== conversationRefreshVersion) return
         if (probe.status === 404) {
           showEmptyChat()
           state.lastSync = Date.now()
@@ -2816,14 +2963,20 @@
   }
 
   async function loadMoreConversations() {
+    if (conversationPageRequest || conversationSearchPending) return
     const query = state.search.trim()
     const offset = query ? state.searchResults.length : state.conversations.length
+    const version = conversationListVersion
+    const request = { controller: new AbortController() }
+    conversationPageRequest = request
+    const current = () => conversationPageRequest === request && version === conversationListVersion && query === state.search.trim()
     els.convLoadMore.disabled = true
     try {
       const path = query
         ? `/api/conversations?q=${encodeURIComponent(query)}&limit=60&offset=${offset}`
         : `/api/conversations?limit=60&offset=${offset}`
-      const data = await api(path)
+      const data = await api(path, { signal: request.controller.signal })
+      if (!current()) return
       const incoming = data.conversations || []
       if (query) {
         const seen = new Set(state.searchResults.map((conv) => conv.id))
@@ -2838,13 +2991,18 @@
       }
       renderConversations()
     } catch (error) {
-      showToast(error.message || '加载失败', { tone: 'error' })
+      if (current() && error.name !== 'AbortError') showToast(error.message || '加载失败', { tone: 'error' })
     } finally {
-      els.convLoadMore.disabled = false
+      if (conversationPageRequest === request) {
+        conversationPageRequest = null
+        els.convLoadMore.disabled = false
+      }
     }
   }
 
   async function runSearch({ silent = false } = {}) {
+    invalidateConversationSearch()
+    const version = conversationSearchVersion
     const query = state.search.trim()
     if (!query) {
       state.searchResults = []
@@ -2853,19 +3011,29 @@
       renderConversations()
       return
     }
+    conversationSearchPending = true
+    els.convLoadMore.disabled = true
     try {
       const data = await api(`/api/conversations?q=${encodeURIComponent(query)}&limit=60`)
-      if (state.search.trim() !== query) return
+      if (state.search.trim() !== query || version !== conversationSearchVersion) return
       state.searchResults = data.conversations || []
       state.searchTotal = Number(data.total) || state.searchResults.length
       state.searchHasMore = Boolean(data.hasMore)
       renderConversations()
     } catch (error) {
-      if (!silent) showToast(error.message || '搜索失败', { tone: 'error' })
+      if (!silent && version === conversationSearchVersion && state.search.trim() === query) showToast(error.message || '搜索失败', { tone: 'error' })
+    } finally {
+      if (version === conversationSearchVersion) {
+        conversationSearchPending = false
+        if (!conversationPageRequest) els.convLoadMore.disabled = false
+      }
     }
   }
 
   function scheduleSearch() {
+    invalidateConversationSearch()
+    conversationSearchPending = true
+    els.convLoadMore.disabled = true
     clearTimeout(state.searchTimer)
     state.searchTimer = setTimeout(() => void runSearch(), 240)
   }
@@ -3620,6 +3788,7 @@
 
   function openPalette() {
     if (!els.palette || !els.shell || els.shell.hidden) return
+    if (!els.palette.hidden) return els.paletteInput.focus({ preventScroll: true })
     if (!els.filesSheet.hidden) closeFilesSheet()
     if (!els.scenarioSheet.hidden) closeScenarioSheet()
     if (!els.shortcutsSheet.hidden) closeShortcutsSheet()
@@ -4166,7 +4335,7 @@
       block.raw += text
       const paint = () => {
         block.scheduled = false
-        if (hasMathSyntax(block.raw) && !(window.katex && window.renderMathInElement)) {
+        if (hasMathSyntax(block.raw) && !mathResourcesReady) {
           if (!block.mathLoading) {
             block.mathLoading = true
             ensureMath()
@@ -4180,7 +4349,7 @@
           }
         }
         block.el.innerHTML = window.Markdown.render(block.raw)
-        if (window.katex) {
+        if (mathResourcesReady && window.katex) {
           for (const node of block.el.querySelectorAll('.math-display')) {
             try {
               window.katex.render(node.textContent, node, {
@@ -4192,7 +4361,7 @@
           }
         }
         decorateFileRefs(block.el)
-        if (window.renderMathInElement) {
+        if (mathResourcesReady && window.renderMathInElement) {
           try {
             window.renderMathInElement(block.el, {
               delimiters: [
@@ -4216,7 +4385,9 @@
         }
         if (state.stick) scrollToBottom()
       }
-      if (!block.scheduled) {
+      if (sealed && !view.streaming) {
+        paint()
+      } else if (!block.scheduled) {
         block.scheduled = true
         requestAnimationFrame(paint)
       }
@@ -4253,7 +4424,6 @@
 
       const badge = document.createElement('span')
       badge.className = 'tool-badge'
-      badge.textContent = '运行中'
 
       const chev = document.createElement('span')
       chev.className = 'tool-chev'
@@ -4279,15 +4449,42 @@
         detail,
         badge,
         head,
-        startedAt: Date.now(),
+        startedAt: view.streaming ? Date.now() : null,
         resultEl: null,
         renderedResult: false,
         resultRaw: '',
       }
       if (call.id) view.toolCards.set(call.id, entry)
       renderToolBody(entry, call)
+      renderToolStatus(entry, call.status || 'running')
       if (state.stick) scrollToBottom()
       return entry
+    }
+
+    function renderToolStatus(entry, status, { showDuration = false } = {}) {
+      entry.card.dataset.status = status
+      const failed = status === 'error' || status === 'failed'
+      const label = status === 'running' ? '运行中'
+        : status === 'completed' ? '完成'
+          : failed ? '失败'
+            : status === 'stopped' ? '已停止'
+              : status === 'interrupted' ? '已中断'
+                : '结果未确认'
+      // Historical tool records have no persisted duration. Only time live results.
+      const elapsed = showDuration && entry.startedAt !== null && (status === 'completed' || failed)
+        ? ` · ${Math.max(1, Math.round((Date.now() - entry.startedAt) / 1000))}s`
+        : ''
+      entry.badge.textContent = label + elapsed
+      if (failed) {
+        entry.card.classList.add('open')
+        entry.head.setAttribute('aria-expanded', 'true')
+      }
+      if (!entry.resultRaw) {
+        entry.resultText = status === 'running' ? '运行中…'
+          : status === 'completed' || failed ? '（无输出）' : '未收到执行结果'
+        const result = entry.body.querySelector('pre[data-kind="result"]')
+        if (result) result.textContent = entry.resultText
+      }
     }
 
     function renderToolBody(entry, call) {
@@ -4345,7 +4542,6 @@
     view.updateTool = (callId, patch) => {
       const entry = view.toolCards.get(callId)
       if (!entry) return
-      if (patch.status) entry.card.dataset.status = patch.status
       if (patch.result !== undefined) {
         entry.resultRaw =
           patch.result === null || patch.result === undefined || patch.result === ''
@@ -4371,14 +4567,7 @@
           entry.body.appendChild(copy)
         }
       }
-      if (patch.status && patch.status !== 'running') {
-        const seconds = Math.max(1, Math.round((Date.now() - entry.startedAt) / 1000))
-        entry.badge.textContent = patch.status === 'error' ? `失败 · ${seconds}s` : `完成 · ${seconds}s`
-        if (patch.status === 'error') {
-          entry.card.classList.add('open')
-          entry.head?.setAttribute('aria-expanded', 'true')
-        }
-      }
+      if (patch.status) renderToolStatus(entry, patch.status, { showDuration: true })
       if (state.stick) scrollToBottom()
     }
 
@@ -4447,6 +4636,13 @@
       view.clearAllLive()
       clearInterval(view.timer)
       view.statusEl.hidden = true
+      // A finished message cannot keep tools spinning. Missing results stay unknown.
+      for (const entry of view.toolCards.values()) {
+        if (entry.card.dataset.status !== 'running') continue
+        const toolStatus = status === 'interrupted' ? 'interrupted'
+          : stopped || status === 'stopped' ? 'stopped' : 'unknown'
+        renderToolStatus(entry, toolStatus)
+      }
       view.el.querySelectorAll('.stream-cursor').forEach((node) => node.remove())
       for (const block of view.thinkingBlocks) block.label.textContent = '思考过程'
       if (error) view.setError(error)
@@ -4645,7 +4841,8 @@
     { passive: true },
   )
 
-  function showEmptyChat() {
+  function showEmptyChat({ updateRoute = true } = {}) {
+    state.navigationRequest += 1
     saveScrollPosition()
     if (state.currentId || els.input.value) saveDraftNow()
     if (state.streaming) detachStreaming()
@@ -4657,12 +4854,15 @@
     state.currentEngine = state.engine
     state.permission = state.permissionCatalog?.default || 'workspace-write'
     state.messages = []
+    state.threadEnd = null
+    closeFind()
     els.thread.replaceChildren()
     els.thread.hidden = true
     els.emptyState.hidden = false
     els.topbarName.textContent = 'DSH Chat'
     setDocumentTitle('DSH Chat')
     localStorage.removeItem('dsh.current')
+    if (updateRoute) pushRoute(null)
     state.files = []
     state.filePaths.clear()
     clearStagedAttachments()
@@ -4721,9 +4921,19 @@
 
   function focusMessage(messageId, { smooth = false } = {}) {
     if (!messageId) return false
-    const node = [...els.thread.querySelectorAll('[data-message-id]')].find(
+    let node = [...els.thread.querySelectorAll('[data-message-id]')].find(
       (el) => el.dataset.messageId === messageId,
     )
+    if (!node && !state.streaming) {
+      const index = state.messages.findIndex((msg) => msg.id === messageId)
+      if (index < 0) return false
+      state.threadWindow = 60
+      state.threadEnd = Math.min(state.messages.length, index + 30)
+      renderMessages(state.messages, { restoreScroll: false })
+      node = [...els.thread.querySelectorAll('[data-message-id]')].find(
+        (el) => el.dataset.messageId === messageId,
+      )
+    }
     if (!node) return false
     node.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' })
     node.classList.remove('msg-flash')
@@ -4733,12 +4943,13 @@
     return true
   }
 
-  function renderMessages(messages) {
+  function renderMessages(messages, { restoreScroll = true } = {}) {
     for (const view of state.liveViews.values()) view.destroy?.()
     state.liveViews.clear()
     els.thread.replaceChildren()
     const total = messages.length
-    const start = Math.max(0, total - state.threadWindow)
+    const end = state.threadEnd == null ? total : Math.min(total, state.threadEnd)
+    const start = Math.max(0, end - state.threadWindow)
     if (start > 0) {
       const earlier = document.createElement('button')
       earlier.type = 'button'
@@ -4755,7 +4966,7 @@
       els.thread.appendChild(earlier)
     }
     let lastDay = ''
-    messages.slice(start).forEach((msg, index) => {
+    messages.slice(start, end).forEach((msg, index) => {
       try {
         const day = msg.createdAt ? new Date(msg.createdAt).toDateString() : ''
         if (day && day !== lastDay) {
@@ -4800,12 +5011,24 @@
         els.thread.appendChild(box)
       }
     })
+    if (end < total) {
+      const latest = document.createElement('button')
+      latest.type = 'button'
+      latest.className = 'load-earlier load-latest'
+      latest.textContent = `回到最近消息（后面还有 ${total - end} 条）`
+      latest.addEventListener('click', () => {
+        state.threadEnd = null
+        state.threadWindow = 60
+        renderMessages(state.messages)
+      })
+      els.thread.appendChild(latest)
+    }
     const hasMessages = messages.length > 0
     els.thread.hidden = !hasMessages
     els.emptyState.hidden = hasMessages
     state.stick = true
     requestAnimationFrame(() => {
-      restoreScrollPosition()
+      if (restoreScroll) restoreScrollPosition()
       updateReadProgress()
     })
   }
@@ -4881,7 +5104,7 @@
   }
 
   function pushRoute(id, { replace = false } = {}) {
-    if (state.routing) return
+    if (state.routing && !replace) return
     const url = id ? `/c/${encodeURIComponent(id)}` : '/'
     if (`${location.pathname}${location.search}` === url) return
     try {
@@ -4892,10 +5115,11 @@
 
   function routeHashMessage() {
     const match = location.hash.match(/^#m-(.+)$/)
-    return match ? decodeURIComponent(match[1]) : ''
+    try { return match ? decodeURIComponent(match[1]) : '' } catch { return '' }
   }
 
   async function openConversation(id, options = {}) {
+    const request = ++state.navigationRequest
     if (state.streaming) detachStreaming()
     saveScrollPosition()
     saveDraftNow()
@@ -4904,10 +5128,13 @@
     const switching = state.currentId !== id
     if (switching) {
       state.threadWindow = 60
+      state.threadEnd = null
+      closeFind()
       showThreadSkeleton()
     }
     try {
       const data = await api(`/api/conversations/${id}`)
+      if (request !== state.navigationRequest) return
       const conv = data.conversation
       state.currentId = conv.id
       markConversationRead(conv.id)
@@ -4922,9 +5149,10 @@
       renderMessages(state.messages)
       const hashMessage = options.messageId || routeHashMessage()
       if (hashMessage) {
-        setTimeout(() => focusMessage(hashMessage), 60)
+        setTimeout(() => { if (request === state.navigationRequest) focusMessage(hashMessage) }, 60)
       } else if (location.hash.startsWith('#q=')) {
-        setTimeout(() => openFind(decodeURIComponent(location.hash.slice(3))), 80)
+        const query = new URLSearchParams(location.hash.slice(1)).get('q') || ''
+        setTimeout(() => { if (request === state.navigationRequest) openFind(query) }, 80)
       }
       setModelLabels()
       updateEngineBar()
@@ -4943,6 +5171,12 @@
       if (!desktopQuery.matches) els.input.blur()
       if (!options.fromRoute) pushRoute(conv.id)
     } catch (err) {
+      if (request !== state.navigationRequest || !state.authed) return
+      // A failed navigation must not strand the previous conversation behind
+      // a permanent skeleton or leave an invalid deep link in the address bar.
+      if (state.currentId) renderMessages(state.messages)
+      else showEmptyChat()
+      if (err.status === 404) pushRoute(state.currentId, { replace: true })
       if (isNetworkError(err)) {
         setConnection('offline')
         scheduleConversationRetry(id)
@@ -5062,31 +5296,31 @@
       parent.normalize()
     }
     state.findHits = []
-    state.findIndex = -1
-    if (els.findCount) els.findCount.textContent = '0/0'
   }
 
-  function runFind(query) {
-    clearFindMarks()
-    state.findQuery = query
-    if (!query) {
-      els.findCount.textContent = '0/0'
-      return
+  function findTextNodes(root) {
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+    const nodes = []
+    while (walker.nextNode()) {
+      const node = walker.currentNode
+      if (!node.parentElement?.closest('button, .code-bar, [aria-hidden="true"]')) nodes.push(node)
     }
+    return nodes
+  }
+
+  function markVisibleFindHits(query) {
+    clearFindMarks()
     const needle = query.toLowerCase()
-    const roots = [...els.thread.querySelectorAll('.md, .bubble-text')]
+    if (!needle) return []
     const hits = []
-    for (const root of roots) {
-      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
-      const nodes = []
-      while (walker.nextNode()) nodes.push(walker.currentNode)
-      for (const node of nodes) {
-        if (!node.nodeValue || !node.nodeValue.toLowerCase().includes(needle)) continue
-        if (node.parentElement?.closest('mark.find-hit')) continue
-        const text = node.nodeValue
+    for (const root of els.thread.querySelectorAll('.md, .bubble-text')) {
+      for (const node of findTextNodes(root)) {
+        const text = node.nodeValue || ''
+        const lower = text.toLowerCase()
+        if (!lower.includes(needle)) continue
         const fragment = document.createDocumentFragment()
         let cursor = 0
-        let at = text.toLowerCase().indexOf(needle)
+        let at = lower.indexOf(needle)
         while (at >= 0) {
           if (at > cursor) fragment.appendChild(document.createTextNode(text.slice(cursor, at)))
           const mark = document.createElement('mark')
@@ -5095,30 +5329,84 @@
           fragment.appendChild(mark)
           hits.push(mark)
           cursor = at + needle.length
-          at = text.toLowerCase().indexOf(needle, cursor)
+          at = lower.indexOf(needle, cursor)
         }
         if (cursor < text.length) fragment.appendChild(document.createTextNode(text.slice(cursor)))
         node.parentNode.replaceChild(fragment, node)
       }
     }
     state.findHits = hits
-    state.findIndex = hits.length ? 0 : -1
-    setFindActive(state.findIndex)
+    return hits
   }
 
-  function setFindActive(index) {
-    const hits = state.findHits
-    if (!hits.length) {
+  function runFind(query) {
+    clearFindMarks()
+    state.findQuery = query
+    state.findResults = []
+    state.findIndex = -1
+    if (!query) {
       els.findCount.textContent = '0/0'
       return
     }
-    for (const mark of hits) mark.classList.remove('active')
-    const next = ((index % hits.length) + hits.length) % hits.length
+    // Never rebuild a live streaming view while searching it.
+    if (state.streaming) {
+      state.findResults = null
+      markVisibleFindHits(query)
+      setFindActive(0)
+      return
+    }
+    const needle = query.toLowerCase()
+    for (const msg of state.messages) {
+      if (msg.internal) continue
+      let ordinal = 0
+      const sources = msg.role === 'user' ? [msg.text || '']
+        : msg.blocks?.length ? msg.blocks.filter(block => block.type === 'text').map(block => block.text || '')
+        : [msg.text || '']
+      for (const source of sources) {
+        // This renderer escapes source HTML. A detached template gives the
+        // same text nodes as the answer without mounting the entire history.
+        const template = document.createElement('template')
+        if (msg.role === 'user') template.content.appendChild(document.createTextNode(source))
+        else template.innerHTML = window.Markdown.render(source)
+        for (const node of findTextNodes(template.content)) {
+          const text = (node.nodeValue || '').toLowerCase()
+          let at = text.indexOf(needle)
+          while (at >= 0) {
+            state.findResults.push({ messageId: msg.id, ordinal: ordinal++ })
+            at = text.indexOf(needle, at + needle.length)
+          }
+        }
+      }
+    }
+    setFindActive(0)
+  }
+
+  function setFindActive(index) {
+    const results = state.findResults
+    const count = results ? results.length : state.findHits.length
+    if (!count) {
+      els.findCount.textContent = '0/0'
+      return
+    }
+    const next = ((index % count) + count) % count
     state.findIndex = next
-    const mark = hits[next]
-    mark.classList.add('active')
-    mark.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    els.findCount.textContent = `${next + 1}/${hits.length}`
+    let mark
+    if (results) {
+      const hit = results[next]
+      focusMessage(hit.messageId)
+      markVisibleFindHits(state.findQuery)
+      const message = [...els.thread.querySelectorAll('[data-message-id]')]
+        .find(node => node.dataset.messageId === hit.messageId)
+      mark = message?.querySelectorAll('mark.find-hit')[hit.ordinal]
+    } else {
+      for (const node of state.findHits) node.classList.remove('active')
+      mark = state.findHits[next]
+    }
+    if (mark) {
+      mark.classList.add('active')
+      mark.scrollIntoView({ block: 'center', behavior: 'auto' })
+    }
+    els.findCount.textContent = `${next + 1}/${count}`
   }
 
   function syncFindHash(query) {
@@ -5135,11 +5423,7 @@
       return
     }
     els.findBar.hidden = false
-    if (state.messages.length > state.threadWindow) {
-      els.findInput.placeholder = `仅搜索最近 ${state.threadWindow} 条`
-    } else {
-      els.findInput.placeholder = '在对话中查找'
-    }
+    els.findInput.placeholder = state.streaming ? '生成中：查找已加载内容' : '查找全部消息正文'
     if (initial) els.findInput.value = initial
     els.findInput.focus()
     els.findInput.select()
@@ -5153,8 +5437,17 @@
   function closeFind() {
     if (!els.findBar || els.findBar.hidden) return
     els.findBar.hidden = true
+    clearTimeout(findTimer)
     els.findInput.value = ''
     clearFindMarks()
+    state.findResults = []
+    state.findIndex = -1
+    els.findCount.textContent = '0/0'
+    if (state.threadEnd != null && !state.streaming) {
+      state.threadEnd = null
+      state.threadWindow = 60
+      renderMessages(state.messages)
+    }
     syncFindHash('')
     els.input.focus({ preventScroll: true })
   }
@@ -5418,20 +5711,20 @@
   els.settingsSheet?.addEventListener('click', (event) => {
     if (event.target.closest('[data-settings-close]')) closeSettings()
   })
-  document.querySelectorAll('[data-theme-option]').forEach((button) => {
+  document.querySelectorAll('button[data-theme-option]').forEach((button) => {
     button.addEventListener('click', () => {
       applyTheme(button.dataset.themeOption)
       applyPrefs()
     })
   })
-  document.querySelectorAll('[data-density]').forEach((button) => {
+  document.querySelectorAll('button[data-density]').forEach((button) => {
     button.addEventListener('click', () => {
       state.prefs.density = button.dataset.density === 'compact' ? 'compact' : 'comfortable'
       savePrefs()
       applyPrefs()
     })
   })
-  document.querySelectorAll('[data-font]').forEach((button) => {
+  document.querySelectorAll('button[data-font]').forEach((button) => {
     button.addEventListener('click', () => {
       state.prefs.fontScale = Number(button.dataset.font) || 1
       savePrefs()
@@ -5576,22 +5869,44 @@
       insert.type = 'button'
       insert.className = 'insert'
       insert.textContent = '插入'
+      insert.setAttribute('aria-label', `插入提示词：${prompt.name}`)
       insert.addEventListener('click', () => {
         closePrompts()
-        els.input.value = prompt.text
+        const draft = els.input.value
+        els.input.value = draft.trim() ? `${draft}\n\n${prompt.text}` : prompt.text
         resizeInput()
         updateComposerMeta()
         els.input.focus()
-        els.input.setSelectionRange(0, 0)
-        scheduleDraftSave()
+        els.input.setSelectionRange(els.input.value.length, els.input.value.length)
+        saveDraftNow()
+        if (draft.trim()) showToast('提示词已追加，原草稿已保留')
       })
       const remove = document.createElement('button')
       remove.type = 'button'
       remove.textContent = '删除'
+      remove.setAttribute('aria-label', `删除提示词：${prompt.name}`)
       remove.addEventListener('click', () => {
+        const position = state.prompts.indexOf(prompt)
         state.prompts = state.prompts.filter((entry) => entry !== prompt)
         savePrompts()
         renderPrompts()
+        const focusRow = Math.min(position, state.prompts.length - 1)
+        const focusTarget = els.promptList.children[focusRow]?.querySelector('button') || els.promptName
+        focusTarget?.focus({ preventScroll: true })
+        showToast(`已删除「${prompt.name}」`, {
+          actionLabel: '撤销',
+          onAction: () => {
+            if (!state.prompts.some((entry) => entry.id === prompt.id)) {
+              state.prompts.splice(Math.max(0, Math.min(position, state.prompts.length)), 0, prompt)
+              savePrompts()
+            }
+            if (!els.promptSheet.hidden) {
+              renderPrompts()
+              const restoredIndex = state.prompts.findIndex((entry) => entry.id === prompt.id)
+              els.promptList.children[restoredIndex]?.querySelector('button')?.focus({ preventScroll: true })
+            } else els.input.focus({ preventScroll: true })
+          },
+        })
       })
       actions.append(insert, remove)
       card.append(copy, actions)
@@ -5838,59 +6153,100 @@
     updateBatchBar()
   }
 
-  async function batchArchive() {
-    const ids = [...state.selected]
-    if (!ids.length) return
-    for (const id of ids) {
-      await api(`/api/conversations/${id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ archived: true }),
-      }).catch(() => {})
-    }
-    setSelectMode(false)
-    await refreshConversations()
-    showToast(`已归档 ${ids.length} 段对话`, {
-      icon: 'i-archive',
-      actionLabel: '撤销',
-      duration: 6500,
-      onAction: async () => {
-        for (const id of ids) {
-          await api(`/api/conversations/${id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ archived: false }),
-          }).catch(() => {})
+  async function runConversationBatch(ids, mutate, { removeFromList = false, deleting = false } = {}) {
+    if (!ids.length || state.batchBusy) return null
+    state.batchBusy = true
+    const controls = [els.manageBtn, els.batchCancel, els.batchArchive, els.batchDelete]
+    controls.forEach((button) => { if (button) button.disabled = true })
+    els.batchBar?.setAttribute('aria-busy', 'true')
+    // Keep the selection stable while requests and the following list refresh run.
+    els.convList.inert = true
+    const result = { succeeded: [], failed: [], refreshFailed: false }
+    try {
+      for (const id of ids) {
+        try {
+          await mutate(id)
+          result.succeeded.push(id)
+        } catch {
+          result.failed.push(id)
         }
+      }
+      if (removeFromList) {
+        const succeeded = new Set(result.succeeded)
+        state.conversations = state.conversations.filter((conv) => !succeeded.has(conv.id))
+        state.searchResults = state.searchResults.filter((conv) => !succeeded.has(conv.id))
+        if (deleting && succeeded.has(state.currentId)) showEmptyChat()
+        if (result.failed.length) {
+          state.selected = new Set(result.failed)
+          updateBatchBar()
+          renderConversations()
+        } else {
+          setSelectMode(false)
+        }
+      }
+      controls.forEach((button) => { if (button) button.disabled = true })
+      try {
         await refreshConversations()
-        showToast('已恢复归档')
-      },
+      } catch {
+        // A failed read must not erase the known mutation outcome.
+        result.refreshFailed = true
+      }
+      return result
+    } finally {
+      state.batchBusy = false
+      els.convList.inert = false
+      els.batchBar?.removeAttribute('aria-busy')
+      if (els.manageBtn) els.manageBtn.disabled = false
+      if (els.batchCancel) els.batchCancel.disabled = false
+      updateBatchBar()
+    }
+  }
+
+  function reportConversationBatch(result, label, undo) {
+    if (!result) return
+    const completed = result.succeeded.length
+    const failed = result.failed.length
+    let message = completed ? `已${label} ${completed} 段对话` : `${label}失败，${failed} 段对话未更改`
+    if (completed && failed) message += `，${failed} 段失败，可重试`
+    if (result.refreshFailed) message += '；列表刷新失败，请刷新页面'
+    showToast(message, {
+      tone: failed || result.refreshFailed ? 'error' : 'normal',
+      actionLabel: completed && undo ? '撤销' : '',
+      onAction: completed && undo ? () => undo(result.succeeded) : null,
+      duration: completed && undo ? 6500 : failed || result.refreshFailed ? 6500 : 2800,
+    })
+  }
+
+  async function batchArchive() {
+    const result = await runConversationBatch([...state.selected], (id) => api(`/api/conversations/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived: true }),
+    }), { removeFromList: true })
+    reportConversationBatch(result, '归档', async (ids) => {
+      const restored = await runConversationBatch(ids, (id) => api(`/api/conversations/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived: false }),
+      }))
+      reportConversationBatch(restored, '恢复')
     })
   }
 
   async function batchDelete() {
     const ids = [...state.selected]
-    if (!ids.length) return
+    if (!ids.length || state.batchBusy || !els.confirmModal.hidden) return
     askConfirm({
       title: `删除选中的 ${ids.length} 段对话？`,
       body: '删除后可在 8 秒内从最近一次操作撤销；批量删除建议先归档。',
       okLabel: '删除',
       onOk: async () => {
-        for (const id of ids) {
-          await api(`/api/conversations/${id}`, { method: 'DELETE' }).catch(() => {})
-        }
-        if (ids.includes(state.currentId)) showEmptyChat()
-        setSelectMode(false)
-        await refreshConversations()
-        showToast(`已删除 ${ids.length} 段对话`, {
-          icon: 'i-trash',
-          actionLabel: '撤销',
-          duration: 6500,
-          onAction: async () => {
-            for (const id of ids) {
-              await api(`/api/conversations/${id}/restore`, { method: 'POST' }).catch(() => {})
-            }
-            await refreshConversations()
-            showToast('已恢复对话')
-          },
+        const result = await runConversationBatch(ids, (id) => api(`/api/conversations/${id}`, {
+          method: 'DELETE',
+        }), { removeFromList: true, deleting: true })
+        reportConversationBatch(result, '删除', async (deletedIds) => {
+          const restored = await runConversationBatch(deletedIds, (id) => api(`/api/conversations/${id}/restore`, {
+            method: 'POST',
+          }))
+          reportConversationBatch(restored, '恢复')
         })
       },
     })
@@ -5901,46 +6257,124 @@
   els.batchArchive?.addEventListener('click', () => void batchArchive())
   els.batchDelete?.addEventListener('click', () => void batchDelete())
 
+  let quickSearchTimer = null
+  let quickSearchVersion = 0
+  let quickSearchController = null
+
+  function invalidateQuickSearch() {
+    clearTimeout(quickSearchTimer)
+    quickSearchTimer = null
+    quickSearchVersion += 1
+    quickSearchController?.abort()
+    quickSearchController = null
+    return quickSearchVersion
+  }
+
   function openQuickSwitcher() {
     if (!els.quickSwitcher) return
+    if (!els.quickSwitcher.hidden) return els.quickInput.focus({ preventScroll: true })
     els.quickSwitcher.hidden = false
     state.lastQuickFocus = document.activeElement
     lockShell(true)
     els.quickInput.value = ''
-    renderQuickList('')
+    els.quickInput.setAttribute('aria-expanded', 'true')
+    state.quickIndex = 0
+    scheduleQuickSearch({ immediate: true })
     requestAnimationFrame(() => els.quickInput.focus())
   }
 
   function closeQuickSwitcher() {
     if (!els.quickSwitcher || els.quickSwitcher.hidden) return
+    invalidateQuickSearch()
     els.quickSwitcher.hidden = true
+    els.quickInput.setAttribute('aria-expanded', 'false')
+    els.quickInput.removeAttribute('aria-activedescendant')
+    els.quickList.removeAttribute('aria-busy')
     lockShell(false)
     if (state.lastQuickFocus?.isConnected) state.lastQuickFocus.focus({ preventScroll: true })
   }
 
-  function renderQuickList(query) {
+  function setQuickStatus(message, { loading = false, retry = false } = {}) {
+    const status = $('#quickStatus')
+    state.quickItems = []
+    els.quickList.replaceChildren()
+    els.quickList.setAttribute('aria-busy', String(loading))
+    els.quickInput.removeAttribute('aria-activedescendant')
+    status.replaceChildren(document.createTextNode(message))
+    status.hidden = false
+    if (retry) {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.className = 'ghost-btn'
+      button.textContent = '重试搜索'
+      button.addEventListener('click', () => {
+        els.quickInput.focus({ preventScroll: true })
+        scheduleQuickSearch({ immediate: true })
+      })
+      status.append(' ', button)
+    }
+  }
+
+  function scheduleQuickSearch({ immediate = false } = {}) {
+    const version = invalidateQuickSearch()
+    const query = els.quickInput.value.trim()
+    setQuickStatus('正在搜索全部对话…', { loading: true })
+    const run = async () => {
+      if (els.quickSwitcher.hidden || version !== quickSearchVersion) return
+      const controller = new AbortController()
+      quickSearchController = controller
+      try {
+        const data = await api(`/api/conversations?q=${encodeURIComponent(query)}&limit=12`, {
+          signal: controller.signal,
+          retry: false,
+        })
+        if (els.quickSwitcher.hidden || version !== quickSearchVersion) return
+        renderQuickList(query, data.conversations || [], Number(data.total) || 0)
+      } catch (error) {
+        if (els.quickSwitcher.hidden || version !== quickSearchVersion || error.name === 'AbortError') return
+        setQuickStatus('搜索暂时不可用，请重试。', { retry: true })
+      } finally {
+        if (quickSearchController === controller) quickSearchController = null
+      }
+    }
+    if (immediate) void run()
+    else quickSearchTimer = setTimeout(() => void run(), 200)
+  }
+
+  function syncQuickSelection() {
+    let active = null
+    for (const [index, button] of [...els.quickList.querySelectorAll('.quick-item')].entries()) {
+      const selected = index === state.quickIndex
+      button.classList.toggle('active', selected)
+      button.setAttribute('aria-selected', String(selected))
+      if (selected) active = button
+    }
+    if (active) els.quickInput.setAttribute('aria-activedescendant', active.id)
+    else els.quickInput.removeAttribute('aria-activedescendant')
+  }
+
+  function renderQuickList(query, items, total) {
     const needle = query.trim().toLowerCase()
-    const source = state.conversations.filter((conv) => !conv.archived)
-    const items = (needle
-      ? source.filter((conv) =>
-          `${conv.title || ''} ${conv.preview || ''}`.toLowerCase().includes(needle),
-        )
-      : source
-    ).slice(0, 12)
     state.quickItems = items
     state.quickIndex = Math.min(state.quickIndex, Math.max(0, items.length - 1))
     els.quickList.replaceChildren()
+    els.quickList.setAttribute('aria-busy', 'false')
+    const status = $('#quickStatus')
+    status.replaceChildren()
+    status.hidden = true
     if (!items.length) {
-      const empty = document.createElement('p')
-      empty.className = 'archive-empty'
-      empty.textContent = '没有匹配的对话'
-      els.quickList.appendChild(empty)
+      setQuickStatus(query ? '没有匹配的对话，试试其他关键词。' : '还没有对话，开始一个新对话吧。')
       return
+    }
+    if (total > items.length) {
+      status.textContent = `找到 ${total} 段对话，显示前 ${items.length} 段。可继续输入缩小范围。`
+      status.hidden = false
     }
     items.forEach((conv, index) => {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'quick-item' + (index === state.quickIndex ? ' active' : '')
+      button.id = `quick-option-${conv.id}`
       button.setAttribute('role', 'option')
       button.setAttribute('aria-selected', String(index === state.quickIndex))
       const main = document.createElement('span')
@@ -5951,12 +6385,15 @@
       else title.textContent = conv.title || '新对话'
       const meta = document.createElement('span')
       meta.className = 'quick-item-meta'
-      meta.textContent = `${conv.engine === 'codex' ? 'Codex · ' : ''}${relativeTime(conv.updatedAt)}${conv.preview ? ` · ${conv.preview}` : ''}`
+      const preview = conv.snippet || conv.preview || ''
+      meta.append(document.createTextNode(`${conv.engine === 'codex' ? 'Codex · ' : ''}${relativeTime(conv.updatedAt)}${preview ? ' · ' : ''}`))
+      if (needle && conv.snippet) appendHighlighted(meta, preview, query.trim())
+      else meta.append(document.createTextNode(preview))
       main.append(title, meta)
       button.appendChild(main)
       button.addEventListener('mouseenter', () => {
         state.quickIndex = index
-        renderQuickList(query)
+        syncQuickSelection()
       })
       button.addEventListener('click', () => {
         closeQuickSwitcher()
@@ -5964,19 +6401,21 @@
       })
       els.quickList.appendChild(button)
     })
+    syncQuickSelection()
   }
 
   els.quickInput?.addEventListener('input', () => {
     state.quickIndex = 0
-    renderQuickList(els.quickInput.value)
+    scheduleQuickSearch()
   })
   els.quickInput?.addEventListener('keydown', (event) => {
+    if (event.isComposing) return
     if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
       event.preventDefault()
       const count = state.quickItems.length
       if (!count) return
       state.quickIndex = (state.quickIndex + (event.key === 'ArrowDown' ? 1 : -1) + count) % count
-      renderQuickList(els.quickInput.value)
+      syncQuickSelection()
       els.quickList.querySelector('.quick-item.active')?.scrollIntoView({ block: 'nearest' })
       return
     }
@@ -5996,6 +6435,7 @@
   els.quickSwitcher?.addEventListener('click', (event) => {
     if (event.target === els.quickSwitcher) closeQuickSwitcher()
   })
+  els.quickClose?.addEventListener('click', closeQuickSwitcher)
 
   function activeOverlay() {
     for (const overlay of [
@@ -6050,24 +6490,18 @@
       const focusables = [...panel.querySelectorAll(
         'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
       )].filter((node) => node.tabIndex >= 0 && node.getClientRects().length > 0)
+      const toastAction = !els.toast.hidden && els.toast.classList.contains('show')
+        ? els.toast.querySelector('.toast-action') : null
+      if (toastAction) focusables.push(toastAction)
       if (!focusables.length) {
         event.preventDefault()
         return
       }
-      const first = focusables[0]
-      const last = focusables[focusables.length - 1]
-      if (!panel.contains(document.activeElement)) {
-        event.preventDefault()
-        first.focus()
-        return
-      }
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault()
-        last.focus()
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault()
-        first.focus()
-      }
+      const index = focusables.indexOf(document.activeElement)
+      const next = index < 0 ? (event.shiftKey ? focusables.length - 1 : 0)
+        : (index + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length
+      event.preventDefault()
+      focusables[next].focus({ preventScroll: true })
       return
     }
 
@@ -6150,7 +6584,7 @@
     els.input.value = value
     resizeInput()
     updateComposerMeta()
-    els.sendBtn.disabled = state.streaming ? false : !value.trim() && !state.stagedFiles.length
+    els.sendBtn.disabled = state.streaming ? false : (!value.trim() && !state.stagedFiles.length) || [...value].length > 24000
   }
 
   function clearDraft(id = state.currentId) {
@@ -6393,6 +6827,7 @@
     localStorage.setItem('dsh.engine', state.currentEngine)
     state.conversations.unshift(conv)
     els.topbarName.textContent = conv.title
+    pushRoute(conv.id)
     setModelLabels()
     updatePermissionUI()
     renderConversations()
@@ -6401,6 +6836,12 @@
 
   async function sendMessage(text, options = {}) {
     clearQuestions()
+    closeFind()
+    if (state.threadEnd != null && !state.streaming) {
+      state.threadEnd = null
+      state.threadWindow = 60
+      renderMessages(state.messages)
+    }
     let conversationId = options.conversationId || null
     if (!conversationId) {
       try {

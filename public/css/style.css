@@ -785,6 +785,7 @@ body.sidebar-open .scrim {
 
 .md th,
 .md td {
+  min-width: 6.5rem;
   padding: 8px 11px;
   border-bottom: 1px solid var(--border);
 }
@@ -1464,7 +1465,7 @@ body.sidebar-open .scrim {
   position: fixed;
   left: 50%;
   bottom: calc(96px + env(safe-area-inset-bottom));
-  z-index: 90;
+  z-index: 400;
   transform: translate(-50%, 8px);
   max-width: min(86vw, 420px);
   padding: 9px 15px;

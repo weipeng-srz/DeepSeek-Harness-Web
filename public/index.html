@@ -17,7 +17,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
-    <link rel="stylesheet" href="/css/bundle.css?v=47" />
+    <link rel="stylesheet" href="/css/bundle.css?v=51" />
   </head>
   <body>
     <a class="skip-link" href="#input">跳到输入框</a>
@@ -574,11 +574,12 @@
         <h2 id="quickTitle" class="sr-only">快速切换对话</h2>
         <div class="quick-input-wrap">
           <svg aria-hidden="true"><use href="#i-search" /></svg>
-          <input id="quickInput" type="search" placeholder="搜索对话标题或内容…" autocomplete="off" aria-label="快速切换对话" />
-          <kbd>Esc</kbd>
+          <input id="quickInput" type="search" placeholder="搜索全部对话标题或内容…" autocomplete="off" role="combobox" aria-autocomplete="list" aria-controls="quickList" aria-expanded="false" aria-label="快速切换对话" />
+          <button id="quickClose" class="icon-btn quick-close" type="button" aria-label="关闭快速切换" title="关闭（Esc）"><svg aria-hidden="true"><use href="#i-close" /></svg></button>
         </div>
         <div id="quickList" class="quick-list" role="listbox" aria-label="对话列表"></div>
-        <p class="quick-foot">↑ ↓ 选择 · Enter 打开</p>
+        <p id="quickStatus" class="archive-empty" role="status" hidden></p>
+        <p class="quick-foot">↑ ↓ 选择 · Enter 打开 · Esc 关闭</p>
       </div>
     </div>
 
@@ -778,7 +779,7 @@
 
     <noscript><p class="noscript">请启用 JavaScript 后使用 DSH Chat。</p></noscript>
     <script defer src="/js/markdown.js?v=33"></script>
-    <script defer src="/js/app.js?v=53"></script>
-    <script defer src="/js/codex.js?v=1"></script>
+    <script defer src="/js/app.js?v=58"></script>
+    <script defer src="/js/codex.js?v=4"></script>
   </body>
 </html>
