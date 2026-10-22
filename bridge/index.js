@@ -473,7 +473,13 @@ export function apply(ctx, config = {}) {
             ? params.permission
             : permissionBySession.get(sessionId) || 'workspace-write'
         applyPermission(sessionId, requestedPermission)
-        agent.followup({ content: blocks, source: { kind: 'user' } })
+        // followup expects a complete UserMessage; it does not add role or id.
+        agent.followup({
+          id: crypto.randomUUID(),
+          role: 'user',
+          content: blocks,
+          source: { kind: 'user' },
+        })
         return { accepted: true }
       }
       case 'session/wait': {
