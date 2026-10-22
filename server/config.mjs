@@ -38,6 +38,12 @@ function defaultConfig() {
     dshHome: '~/.dsh',
     desktopProfile: 'desktop',
     appBinary: '/Applications/DeepSeek Harness.app/Contents/MacOS/DeepSeek Harness',
+    // Optional public origin used in copy/share links, e.g. https://chat.example.com.
+    // Empty means: use the request host, or the first LAN address for localhost.
+    publicBaseUrl: '',
+    // Optional TLS. Set both to an absolute cert/key path to serve HTTPS.
+    tlsCert: '',
+    tlsKey: '',
     // Outbound notifications. iMessage is the only channel for now and is
     // driven through osascript, so it only works on macOS with Messages
     // signed in. Empty channels keep the feature off.

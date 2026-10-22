@@ -44,10 +44,18 @@ const projectRes = await sandbox.api('/api/projects', {
 })
 const project = projectRes.body.project
 await sandbox.api(`/api/conversations/${conv.id}`, { method: 'PATCH', body: JSON.stringify({ projectId: project.id }) })
+const csvRows = ['name,score', ...Array.from({ length: 350 }, (_, index) => `User${index + 1},${index}`)].join('\n')
 await sandbox.api(`/api/conversations/${conv.id}/upload?name=table.csv`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/octet-stream' },
-  body: 'name,score\nAlice,98\nBob,91\n',
+  body: csvRows,
+})
+// GBK bytes for: 姓名,分数 / 张三,90
+const gbk = Buffer.from('d0d5c3fb2cb7d6cafd0ad5c5c8fd2c3930', 'hex')
+await sandbox.api(`/api/conversations/${conv.id}/upload?name=gbk.csv`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/octet-stream' },
+  body: gbk,
 })
 
 let browser
@@ -112,9 +120,21 @@ try {
   // CSV preview.
   await page.locator('#filesSheet .file-row-name').filter({ hasText: 'table.csv' }).first().click()
   await page.waitForTimeout(700)
-  const csvRows = await page.locator('#filePreviewBody .csv-preview tbody tr').count()
-  record('CSV preview renders a real table', csvRows === 2, String(csvRows))
+  const renderedRows = await page.locator('#filePreviewBody .csv-preview tbody tr').count()
+  record('CSV preview renders a real table', renderedRows > 250 && renderedRows <= 299, String(renderedRows))
   record('CSV preview has TSV copy', await page.locator('#filePreviewBody .table-copy').count() === 1)
+  await page.locator('#filePreviewBody .table-copy').click()
+  await page.waitForTimeout(250)
+  const csvClipboard = await page.evaluate(() => navigator.clipboard.readText())
+  record('CSV copy contains the full table, not just the preview', csvClipboard.split('\n').length >= 351, String(csvClipboard.split('\n').length))
+  await page.locator('#filePreview .file-preview-head [data-preview-close]').click()
+  await page.waitForTimeout(250)
+  await page.locator('#filesBtn').click()
+  await page.waitForTimeout(300)
+  await page.locator('#filesList .file-row-name').filter({ hasText: 'gbk.csv' }).first().click()
+  await page.waitForTimeout(700)
+  const gbkBody = await page.locator('#filePreviewBody').innerText()
+  record('GBK CSV decodes without mojibake', gbkBody.includes('姓名') && gbkBody.includes('张三'), gbkBody.replace(/\s+/g, ' ').slice(0, 60))
   await page.locator('#filePreview .file-preview-head [data-preview-close]').click()
   await page.waitForTimeout(300)
 

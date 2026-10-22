@@ -35,6 +35,14 @@ function snippetAround(text, query, radius = 42) {
   return `${start > 0 ? '…' : ''}${clean.slice(start, end)}${end < clean.length ? '…' : ''}`
 }
 
+function importSignature(raw) {
+  const messages = Array.isArray(raw?.messages) ? raw.messages : []
+  const firstUser = messages.find((msg) => msg?.role === 'user' && msg.text)?.text || ''
+  const second = messages.find((msg) => msg?.role === 'assistant' && msg.text)?.text || ''
+  const seed = raw?.id ? `id:${raw.id}` : `txt:${raw?.title || ''}|${String(firstUser).slice(0, 160)}|${String(second).slice(0, 80)}`
+  return crypto.createHash('sha256').update(seed).digest('hex').slice(0, 24)
+}
+
 export class ConversationStore {
   constructor() {
     this.data = { version: 1, conversations: [] }
@@ -113,8 +121,17 @@ export class ConversationStore {
       const payload = JSON.stringify(this.data)
       const tmp = `${STORE_PATH}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
       try {
-        await fs.promises.writeFile(tmp, payload, { encoding: 'utf8', mode: 0o600 })
+        const handle = await fs.promises.open(tmp, 'w', 0o600)
+        try {
+          await handle.writeFile(payload, 'utf8')
+          // A rename after a buffered write can survive the process but lose
+          // the tail on a sudden power loss; fsync makes the rename durable.
+          await handle.sync()
+        } finally {
+          await handle.close()
+        }
         await fs.promises.rename(tmp, STORE_PATH)
+        await this.rotateBackup()
       } catch (error) {
         try {
           await fs.promises.rm(tmp, { force: true })
@@ -128,6 +145,27 @@ export class ConversationStore {
     await current.finally(() => {
       if (this.writing === current) this.writing = null
     })
+  }
+
+  async rotateBackup() {
+    try {
+      const backupDir = path.join(DATA_DIR, 'backups')
+      const stamp = new Date().toISOString().slice(0, 10)
+      const target = path.join(backupDir, `conversations-${stamp}.json`)
+      await fs.promises.mkdir(backupDir, { recursive: true, mode: 0o700 })
+      try {
+        await fs.promises.access(target)
+      } catch {
+        await fs.promises.copyFile(STORE_PATH, target)
+        await fs.promises.chmod(target, 0o600)
+        const files = (await fs.promises.readdir(backupDir)).filter((name) => /^conversations-\d{4}-\d{2}-\d{2}\.json$/.test(name)).sort()
+        for (const name of files.slice(0, Math.max(0, files.length - 5))) {
+          await fs.promises.rm(path.join(backupDir, name), { force: true })
+        }
+      }
+    } catch (error) {
+      console.error('[store] 日备份失败:', error.message)
+    }
   }
 
   setOwner(owner) {
@@ -154,7 +192,12 @@ export class ConversationStore {
     )
     if (!expired.length) return false
     this.data.conversations = this.data.conversations.filter((conv) => !expired.includes(conv))
-    for (const conv of expired) this.removeWorkspace(conv)
+    for (const conv of expired) {
+      this.removeWorkspace(conv)
+      try {
+        this.onPurge?.(conv)
+      } catch {}
+    }
     this.scheduleSave()
     return true
   }
@@ -278,6 +321,7 @@ export class ConversationStore {
         pinned: Boolean(conv.pinned),
         archived: Boolean(conv.archivedAt),
         projectId: conv.projectId || null,
+        forkedFrom: conv.forkedFrom || null,
       }
       if (query) item.snippet = conv.__snippet || ''
       return item
@@ -409,25 +453,80 @@ export class ConversationStore {
     return copy
   }
 
+  fork(owner, id, targetMessageId) {
+    const source = this.get(id)
+    if (!source || source.owner !== owner || source.deletedAt) return null
+    const index = (source.messages || []).findIndex((msg) => msg.id === targetMessageId)
+    if (index < 0) return null
+    const target = source.messages[index]
+    let cut = index
+    if (target.role !== 'assistant' && target.role !== 'user') return null
+    this.assertCapacity()
+    const copy = this.makeConversation(owner, {
+      engine: source.engine,
+      permission: source.permission,
+      projectId: source.projectId,
+    })
+    copy.mode = source.mode
+    copy.codexModel = source.codexModel || null
+    copy.codexEffort = source.codexEffort || null
+    copy.title = `${String(source.title || '对话').slice(0, 40)} · 分支`
+    copy.forkedFrom = {
+      conversationId: source.id,
+      messageId: target.id,
+      title: source.title,
+      at: now(),
+    }
+    copy.messages = source.messages.slice(0, cut + 1).map((msg) => {
+      const cloned = JSON.parse(JSON.stringify(msg))
+      cloned.id = messageId()
+      if (cloned.blocks) {
+        for (const block of cloned.blocks) {
+          if (block && typeof block === 'object' && block.type === 'tool') block.id = messageId()
+        }
+      }
+      cloned.status = cloned.status === 'running' ? 'interrupted' : cloned.status
+      return cloned
+    })
+    const targetRoot = copy.mode === 'headless'
+      ? path.join(WORKSPACE_ROOT, copy.id)
+      : path.join(SHARED_WORKSPACE, 'chats', copy.id)
+    copy.workspace = targetRoot
+    if (copy.mode === 'native') copy.nativeCwd = targetRoot
+    fs.mkdirSync(targetRoot, { recursive: true })
+    this.data.conversations.unshift(copy)
+    this.scheduleSave()
+    return copy
+  }
+
   import(owner, payload, options = {}) {
     const invalid = (message) => Object.assign(new Error(message), { status: 400 })
     const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value)
     if (!isObject(payload) || !Array.isArray(payload.conversations)) throw invalid('备份格式不正确')
     if (payload.version !== undefined && payload.version !== 1) throw invalid('不支持这个备份版本')
     const list = payload.conversations
-    if (!list.length) return { imported: 0 }
+    if (!list.length) return { imported: 0, skipped: 0 }
     this.assertCapacity(list.length)
+    const seen = new Set(this.data.conversations.map((conv) => conv.importKey).filter(Boolean))
+    let skipped = 0
     // Build the complete import in isolation. No schedule, insertion, or pruning
     // may happen until every conversation and message has been validated.
-    const imported = list.map((raw, conversationIndex) => {
+    const built = list.map((raw, conversationIndex) => {
       const label = `第 ${conversationIndex + 1} 个会话`
       if (!isObject(raw) || (raw.messages !== undefined && !Array.isArray(raw.messages))) {
         throw invalid(`${label}格式不正确`)
       }
+      const signature = importSignature(raw)
+      if (seen.has(signature)) {
+        skipped += 1
+        return null
+      }
+      seen.add(signature)
       const conv = this.makeConversation(owner, {
         engine: raw.engine === 'codex' ? 'codex' : 'dsr',
         permission: raw.permission,
       })
+      conv.importKey = signature
       const projectId = typeof raw.projectId === 'string' ? raw.projectId : ''
       conv.projectId = projectId && options.projectMap?.get(projectId)
         ? options.projectMap.get(projectId)
@@ -436,6 +535,15 @@ export class ConversationStore {
       conv.createdAt = Number(raw.createdAt) || Date.now()
       conv.updatedAt = Number(raw.updatedAt) || Date.now()
       conv.pinned = raw.pinned === true
+      conv.noMemory = raw.noMemory === true
+      if (raw.forkedFrom && typeof raw.forkedFrom === 'object') {
+        conv.forkedFrom = {
+          conversationId: String(raw.forkedFrom.conversationId || ''),
+          messageId: String(raw.forkedFrom.messageId || ''),
+          title: String(raw.forkedFrom.title || '').slice(0, 120),
+          at: Number(raw.forkedFrom.at) || Date.now(),
+        }
+      }
       if (Number(raw.archivedAt) > 0) conv.archivedAt = Number(raw.archivedAt)
       conv.codexModel = typeof raw.codexModel === 'string' ? raw.codexModel : null
       conv.codexEffort = typeof raw.codexEffort === 'string' ? raw.codexEffort : null
@@ -448,6 +556,14 @@ export class ConversationStore {
           role: msg.role === 'assistant' ? 'assistant' : 'user',
           text: String(msg.text || ''),
           createdAt: Number(msg.createdAt) || Date.now(),
+        }
+        if (Array.isArray(msg.attachments)) {
+          cloned.attachments = msg.attachments.slice(0, 5).map((file) => ({
+            path: String(file?.path || '').slice(0, 400),
+            name: String(file?.name || '').slice(0, 160),
+            size: Number(file?.size) || 0,
+            kind: String(file?.kind || 'other').slice(0, 30),
+          })).filter((file) => file.path)
         }
         if (Array.isArray(msg.blocks)) {
           cloned.blocks = msg.blocks.map((block) => {
@@ -476,14 +592,26 @@ export class ConversationStore {
           cloned.usage = msg.usage || null
           cloned.model = msg.model || null
           cloned.completedAt = Number(msg.completedAt) || null
+          cloned.files = Array.isArray(msg.files) ? JSON.parse(JSON.stringify(msg.files)).slice(0, 100) : []
+          if (Array.isArray(msg.versions)) {
+            cloned.versions = msg.versions.slice(-10).map((version) => {
+              if (!isObject(version)) throw invalid(`${label}的消息版本格式不正确`)
+              const copy = JSON.parse(JSON.stringify(version))
+              copy.id = typeof copy.id === 'string' ? copy.id : messageId()
+              copy.text = String(copy.text || '')
+              copy.blocks = Array.isArray(copy.blocks) ? copy.blocks : []
+              return copy
+            })
+          }
         }
         return cloned
       })
       return conv
     })
+    const imported = built.filter(Boolean)
     this.data.conversations.unshift(...imported.reverse())
     this.scheduleSave()
-    return { imported: imported.length }
+    return { imported: imported.length, skipped }
   }
 
   backup(owner) {

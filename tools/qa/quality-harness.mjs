@@ -16,7 +16,7 @@ export const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
 
 // A full source copy with fresh storage prevents tests from reading or mutating
 // the user's conversations, workspaces, auth token, or model credentials.
-export async function createSandbox({ port = 8797, label = 'baseline', seedConversations = [] } = {}) {
+export async function createSandbox({ port = 8797, label = 'baseline', seedConversations = [], appBinary = '' } = {}) {
   // Refuse occupied ports before any API call: accidentally connecting to a
   // different QA server would invalidate fixture ownership and the evidence.
   await new Promise((resolve, reject) => {
@@ -42,7 +42,7 @@ export async function createSandbox({ port = 8797, label = 'baseline', seedConve
     }) }), { mode: 0o600 })
   }
   const code = 'QUALITY-LOCAL-ONLY'
-  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port, accessCode: code, title: 'DSH Quality Lab', singleUser: true, nativeEnabled: false, codexPrewarm: false, dshHome: path.join(dir, 'dsh-home') }), { mode: 0o600 })
+  fs.writeFileSync(path.join(dir, 'config.json'), JSON.stringify({ host: '127.0.0.1', port, accessCode: code, title: 'DSH Quality Lab', singleUser: true, nativeEnabled: false, codexPrewarm: false, dshHome: path.join(dir, 'dsh-home'), ...(appBinary ? { appBinary } : {}) }), { mode: 0o600 })
   const log = fs.openSync(path.join(dir, 'server.log'), 'a')
   const child = spawn(process.execPath, ['server/index.mjs'], { cwd: dir, env: { ...process.env, CODEX_HOME: path.join(dir, 'codex-home') }, stdio: ['ignore', log, log] })
   const base = `http://127.0.0.1:${port}`

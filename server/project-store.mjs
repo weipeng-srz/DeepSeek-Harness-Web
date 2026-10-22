@@ -1,6 +1,6 @@
-import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import fs from 'node:fs'
 import { DATA_DIR } from './config.mjs'
 
 const STORE_PATH = path.join(DATA_DIR, 'projects.json')
@@ -70,6 +70,7 @@ export class ProjectStore {
       instructions: text(input.instructions, INSTRUCTIONS_MAX),
       notes: text(input.notes, NOTES_MAX),
       pinned: input.pinned === true,
+      memoryOff: input.memoryOff === true,
     }
     return base
   }
@@ -154,15 +155,42 @@ export class ProjectStore {
     if (patch.instructions !== undefined) project.instructions = text(patch.instructions, INSTRUCTIONS_MAX)
     if (patch.notes !== undefined) project.notes = text(patch.notes, NOTES_MAX)
     if (patch.pinned !== undefined) project.pinned = patch.pinned === true
+    if (patch.memoryOff !== undefined) project.memoryOff = patch.memoryOff === true
     project.updatedAt = now()
     this.scheduleSave()
     return project
+  }
+
+  fileRoot(id) {
+    return path.join(DATA_DIR, 'projects', id, 'files')
+  }
+
+  listFiles(id) {
+    const root = this.fileRoot(id)
+    let entries = []
+    try {
+      entries = fs.readdirSync(root, { withFileTypes: true })
+    } catch {
+      return []
+    }
+    const out = []
+    for (const entry of entries) {
+      if (!entry.isFile() || entry.name.startsWith('.')) continue
+      try {
+        const stat = fs.statSync(path.join(root, entry.name))
+        out.push({ name: entry.name, size: stat.size, mtime: stat.mtimeMs })
+      } catch {}
+    }
+    return out.sort((left, right) => right.mtime - left.mtime)
   }
 
   remove(id) {
     const index = this.data.projects.findIndex((project) => project.id === id)
     if (index < 0) return null
     const [project] = this.data.projects.splice(index, 1)
+    try {
+      fs.rmSync(path.join(DATA_DIR, 'projects', id), { recursive: true, force: true })
+    } catch {}
     this.scheduleSave()
     return project
   }

@@ -45,6 +45,8 @@
     chatInfoModel: $('#chatInfoModel'),
     chatInfoMode: $('#chatInfoMode'),
     chatInfoPermission: $('#chatInfoPermission'),
+    chatInfoContextWrap: $('#chatInfoContextWrap'),
+    chatInfoContextBody: $('#chatInfoContextBody'),
     statusBtn: $('#statusBtn'),
     connectionDetail: $('#connectionDetail'),
     detailConnection: $('#detailConnection'),
@@ -64,6 +66,12 @@
     composer: $('#composer'),
     input: $('#input'),
     sendBtn: $('#sendBtn'),
+    micBtn: $('#micBtn'),
+    templateModal: $('#templateModal'),
+    templateForm: $('#templateForm'),
+    templateFields: $('#templateFields'),
+    templateError: $('#templateError'),
+    templateCancel: $('#templateCancel'),
     toast: $('#toast'),
     confirmModal: $('#confirmModal'),
     confirmCancel: $('#confirmCancel'),
@@ -166,6 +174,10 @@
     projectName: $('#projectName'),
     projectInstructions: $('#projectInstructions'),
     projectNotes: $('#projectNotes'),
+    projectMemoryOff: $('#projectMemoryOff'),
+    projectFileUploadBtn: $('#projectFileUploadBtn'),
+    projectFileInput: $('#projectFileInput'),
+    projectFileList: $('#projectFileList'),
     projectInstructionsCount: $('#projectInstructionsCount'),
     projectNotesCount: $('#projectNotesCount'),
     projectBudget: $('#projectBudget'),
@@ -174,6 +186,29 @@
     projectSaveBtn: $('#projectSaveBtn'),
     projectDeleteBtn: $('#projectDeleteBtn'),
     moveSheet: $('#moveSheet'),
+    shareSheet: $('#shareSheet'),
+    shareIncludeTools: $('#shareIncludeTools'),
+    shareIncludeThinking: $('#shareIncludeThinking'),
+    shareCreate: $('#shareCreate'),
+    shareResult: $('#shareResult'),
+    shareUrl: $('#shareUrl'),
+    shareCopy: $('#shareCopy'),
+    shareSystem: $('#shareSystem'),
+    sharePreview: $('#sharePreview'),
+    shareResultHint: $('#shareResultHint'),
+    shareList: $('#shareList'),
+    versionsSheet: $('#versionsSheet'),
+    versionsList: $('#versionsList'),
+    exportSheet: $('#exportSheet'),
+    exportTools: $('#exportTools'),
+    exportThinking: $('#exportThinking'),
+    exportMeta: $('#exportMeta'),
+    exportStart: $('#exportStart'),
+    exportPanel: $('#exportSheet'),
+    versionsCompareBtn: $('#versionsCompareBtn'),
+    versionsCompare: $('#versionsCompare'),
+    versionsCompareA: $('#versionsCompareA'),
+    versionsCompareB: $('#versionsCompareB'),
     moveList: $('#moveList'),
     emptyProject: $('#emptyProject'),
     emptyProjectEmoji: $('#emptyProjectEmoji'),
@@ -218,6 +253,14 @@
     backupInput: $('#backupInput'),
     markAllReadBtn: $('#markAllReadBtn'),
     storageInfo: $('#storageInfo'),
+    libraryState: $('#libraryState'),
+    shareBaseInput: $('#shareBaseInput'),
+    shareBaseSave: $('#shareBaseSave'),
+    shareBaseState: $('#shareBaseState'),
+    auditWrap: $('#auditWrap'),
+    auditList: $('#auditList'),
+    shareManageWrap: $('#shareManageWrap'),
+    shareManageList: $('#shareManageList'),
   }
 
   const state = {
@@ -233,6 +276,25 @@
     projectsFocus: null,
     editingProjectId: null,
     moveTargets: [],
+    baseUrl: location.origin,
+    shareFocus: null,
+    shareExpiry: 7,
+    shareItems: [],
+    projectFiles: [],
+    versionTarget: null,
+    versionsFocus: null,
+    exportConversationId: null,
+    exportFormat: 'md',
+    exportFocus: null,
+    libraryUpdatedAt: 0,
+    libraryReady: false,
+    libraryTimer: null,
+    templateValues: loadTemplateValues(),
+    templateOnFill: null,
+    templateFocus: null,
+    voice: null,
+    voiceBase: '',
+    voiceTranscript: '',
     moveFocus: null,
     search: '',
     currentId: null,
@@ -328,7 +390,7 @@
     const layers = [els.filesSheet, els.scenarioSheet, els.filePreview,
       els.statsModal, els.confirmModal, els.palette, els.shortcutsSheet,
       els.renameModal, els.settingsSheet, els.bookmarksSheet, els.promptSheet,
-      els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet]
+      els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet, els.shareSheet, els.versionsSheet, els.templateModal, els.exportSheet]
     const codexModal = document.querySelector('.codex-pop[aria-modal="true"]')
     if (els.shell) els.shell.inert = layers.some((layer) => layer && !layer.hidden) || Boolean(codexModal)
   }
@@ -536,6 +598,8 @@
   }
 
   function tableToTSV(table) {
+    const wrap = table.closest('.table-wrap')
+    if (wrap?.dataset.tsv) return wrap.dataset.tsv
     return [...table.querySelectorAll('tr')]
       .map((row) =>
         [...row.children]
@@ -1187,6 +1251,9 @@
     els.sendBtn.disabled = state.streaming ? false : false
     els.input.focus({ preventScroll: true })
     if (source === '粘贴') showToast(`已添加 ${accepted.length} 个粘贴的附件`)
+    if (accepted.some((file) => /\.pdf$/i.test(file.name))) {
+      showToast('PDF 需要文本层；扫描件可能读不到，发送后可让 Agent 先说明', { duration: 5200 })
+    }
   }
 
   function renderAttachmentTray() {
@@ -1426,6 +1493,10 @@
     const maxCols = 60
     const wrap = document.createElement('div')
     wrap.className = 'table-wrap csv-preview'
+    // Copy the complete table, not just the visually truncated preview.
+    wrap.dataset.tsv = rows
+      .map((row) => row.map((cell) => cell.replace(/\s+/g, ' ').trim().replace(/\t/g, ' ')).join('\t'))
+      .join('\n')
     const table = document.createElement('table')
     const thead = document.createElement('thead')
     const headRow = document.createElement('tr')
@@ -1454,6 +1525,23 @@
     holder.className = 'csv-preview-wrap'
     holder.append(wrap, note)
     return holder
+  }
+
+  function decodeTextBuffer(buffer) {
+    const bytes = new Uint8Array(buffer)
+    if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+      return new TextDecoder('utf-8').decode(bytes.subarray(3))
+    }
+    try {
+      return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+    } catch {
+      for (const encoding of ['gb18030', 'gbk', 'big5']) {
+        try {
+          return new TextDecoder(encoding, { fatal: true }).decode(bytes)
+        } catch {}
+      }
+      return new TextDecoder('utf-8').decode(bytes)
+    }
   }
 
   let previewVersion = 0
@@ -1537,7 +1625,7 @@
     try {
       const response = await fetch(url, { credentials: 'same-origin', signal: controller.signal })
       if (!response.ok) throw new Error(`预览失败（${response.status}）`)
-      const text = await response.text()
+      const text = decodeTextBuffer(await response.arrayBuffer())
       if (!current()) return
       loading.remove()
       const ext = String(file.name || '').split('.').pop().toLowerCase()
@@ -1546,12 +1634,14 @@
         if (table) {
           els.filePreviewBody.appendChild(table)
           decorateTables(els.filePreviewBody)
+          announce(`表格预览已加载：${ext === 'tsv' ? 'TSV' : 'CSV'}`)
           return
         }
       }
       const pre = document.createElement('pre')
       pre.textContent = text.length > 400_000 ? `${text.slice(0, 400_000)}\n\n…（内容过长，已截断）` : text
       els.filePreviewBody.appendChild(pre)
+      announce(`文件预览已加载：${file.name}`)
     } catch (error) {
       if (!current() || error.name === 'AbortError') return
       loading.className = 'file-preview-error'
@@ -1772,6 +1862,7 @@
 
   function showApproval(event) {
     if (!event || typeof event.requestId !== 'string' || !state.currentId) return
+    announce('需要你的授权才能继续：' + (approvalText(event.displayReason) || approvalText(event.reason) || event.toolName || '工具操作'))
     const container = els.permissionInline
     if (!container) return
     const conversationId = state.currentId
@@ -1840,6 +1931,8 @@
     foot.append(metaWrap, actions)
     container.append(main, foot)
     container.hidden = false
+    container.setAttribute('role', 'alert')
+    container.setAttribute('aria-label', '工具授权请求')
 
     let busy = false
     const setBusy = (value, decision = '') => {
@@ -1889,7 +1982,14 @@
     }
 
     allow.addEventListener('click', () => void submit('allow'))
-    always.addEventListener('click', () => void submit('allow-always'))
+    always.addEventListener('click', () => {
+      askConfirm({
+        title: '把当前对话切为完全权限？',
+        body: '同意后，本对话后续的工具调用不再逐次询问，Agent 可以读写工作区外的文件或执行外部命令。只在你完全信任当前任务时使用。',
+        okLabel: '仍要切换',
+        onOk: () => void submit('allow-always'),
+      })
+    })
     reject.addEventListener('click', () => void submit('reject'))
 
     state.approvals.set(event.requestId, {
@@ -2166,6 +2266,15 @@
     return value.length > max ? value.slice(0, max) + '\n…（内容过长，已截断）' : value
   }
 
+  function clipResult(text, max = 14_000) {
+    const value = String(text ?? '')
+    if (value.length <= max) return value
+    // Build/test logs put the actionable error at the end. Keep both ends.
+    const head = Math.floor(max * 0.3)
+    const tail = max - head
+    return `${value.slice(0, head)}\n…（中间省略 ${value.length - max} 字）…\n${value.slice(-tail)}`
+  }
+
   /* ── theme + sidebar ───────────────────────────────────────────────── */
 
   function loadBookmarks() {
@@ -2183,6 +2292,7 @@
     try {
       localStorage.setItem(BOOKMARK_KEY, JSON.stringify(state.bookmarks.slice(-200)))
     } catch {}
+    scheduleLibrarySync()
   }
 
   function loadPrompts() {
@@ -2197,6 +2307,87 @@
     try {
       localStorage.setItem(PROMPT_KEY, JSON.stringify(state.prompts))
     } catch {}
+    scheduleLibrarySync()
+  }
+
+  function bookmarkKey(item) {
+    return `${item.conversationId}:${item.messageId}`
+  }
+
+  function mergeBookmarks(local, remote) {
+    const map = new Map()
+    for (const item of [...(local || []), ...(remote || [])]) {
+      if (!item?.conversationId || !item?.messageId) continue
+      const key = bookmarkKey(item)
+      const existing = map.get(key)
+      if (!existing || (Number(item.at) || 0) > (Number(existing.at) || 0)) map.set(key, item)
+    }
+    return [...map.values()].sort((a, b) => (Number(b.at) || 0) - (Number(a.at) || 0)).slice(0, 500)
+  }
+
+  function mergePrompts(local, remote) {
+    const map = new Map()
+    for (const item of [...(local || []), ...(remote || [])]) {
+      if (!item?.name || !item?.text) continue
+      const key = item.id || item.name
+      if (!map.has(key)) map.set(key, item)
+    }
+    return [...map.values()].slice(0, 200)
+  }
+
+  function setLibraryState(text, tone = '') {
+    if (!els.libraryState) return
+    els.libraryState.textContent = text
+    els.libraryState.dataset.tone = tone
+  }
+
+  function scheduleLibrarySync(delay = 800) {
+    if (!state.libraryReady || !state.authed) return
+    clearTimeout(state.libraryTimer)
+    state.libraryTimer = setTimeout(() => void syncLibrary(), delay)
+  }
+
+  async function syncLibrary() {
+    if (!state.libraryReady || !state.authed) return
+    setLibraryState('同步中…')
+    try {
+      const data = await api('/api/library', {
+        method: 'PUT',
+        body: JSON.stringify({ bookmarks: state.bookmarks, prompts: state.prompts }),
+      })
+      state.libraryUpdatedAt = data.updatedAt || Date.now()
+      setLibraryState('已同步')
+    } catch (error) {
+      setLibraryState('仅本机（同步失败）', 'error')
+    }
+  }
+
+  async function loadLibrary() {
+    try {
+      const data = await api('/api/library')
+      const mergedBookmarks = mergeBookmarks(state.bookmarks, data.bookmarks)
+      const mergedPrompts = mergePrompts(state.prompts, data.prompts)
+      const changed =
+        JSON.stringify(mergedBookmarks) !== JSON.stringify(state.bookmarks) ||
+        JSON.stringify(mergedPrompts) !== JSON.stringify(state.prompts)
+      state.bookmarks = mergedBookmarks
+      state.prompts = mergedPrompts
+      state.libraryUpdatedAt = data.updatedAt || 0
+      state.libraryReady = true
+      saveBookmarks()
+      savePrompts()
+      if (changed || !data.updatedAt) {
+        setLibraryState('正在上传本机内容…')
+        await syncLibrary()
+      } else {
+        setLibraryState('已同步')
+      }
+      return true
+    } catch {
+      state.libraryReady = false
+      setLibraryState('仅本机', 'error')
+      return false
+    }
   }
 
   function isBookmarked(messageId) {
@@ -2252,6 +2443,7 @@
   function applyPrefs() {
     document.documentElement.dataset.density = state.prefs.density
     document.documentElement.style.setProperty('--reading-scale', String(state.prefs.fontScale))
+    document.body.classList.toggle('text-large', Number(state.prefs.fontScale) >= 1.2)
     if (els.notifyToggle) {
       els.notifyToggle.setAttribute('aria-checked', String(state.prefs.notify))
       if (els.notifyState) els.notifyState.textContent = state.prefs.notify ? '已开启' : '已关闭'
@@ -2469,6 +2661,7 @@
 
     try {
       await loadProjects({ silent: true })
+      void loadLibrary()
       await refreshConversations()
       setConnection('online')
     } catch (error) {
@@ -2593,6 +2786,29 @@
     els.chatInfo.hidden = true
     els.chatInfoBtn?.setAttribute('aria-expanded', 'false')
     if (restoreFocus) els.chatInfoBtn?.focus({ preventScroll: true })
+  }
+
+  async function loadChatContextInfo() {
+    if (!state.currentId) {
+      if (els.chatInfoContextBody) els.chatInfoContextBody.textContent = '先打开一段对话。'
+      return
+    }
+    try {
+      const data = await api(`/api/conversations/${state.currentId}/context`)
+      if (!els.chatInfoContextBody) return
+      const lines = []
+      lines.push(`项目：${data.project ? `${data.project.emoji || '📁'} ${data.project.name}` : '未归入项目'}`)
+      lines.push(`长期记忆：${data.memoryDisabled ? '已关闭（不注入、不记录）' : `开启（${data.memoryCount} 条可用）`}`)
+      lines.push('')
+      lines.push(`项目上下文（${data.limits.projectPromptChars} 字）`)
+      lines.push(data.projectBlock || '（无）')
+      lines.push('')
+      lines.push(`长期记忆（${data.limits.memoryPromptChars} 字）`)
+      lines.push(data.memoryBlock || '（无）')
+      els.chatInfoContextBody.textContent = lines.join('\n')
+    } catch (error) {
+      if (els.chatInfoContextBody) els.chatInfoContextBody.textContent = error.message || '加载失败'
+    }
   }
 
   function openChatInfo() {
@@ -2979,6 +3195,7 @@
     state.nativeEnabled = me.nativeEnabled !== false
     state.codexAvailable = Boolean(me.codex)
     state.shared = Boolean(me.shared)
+    if (typeof me.baseUrl === 'string' && /^https?:\/\//.test(me.baseUrl)) state.baseUrl = me.baseUrl.replace(/\/+$/, '')
     applyMemorySummary(me.memory)
     if (!me.authenticated) {
       showLogin()
@@ -2986,6 +3203,10 @@
     }
 
     state.authed = true
+    if (!window.isSecureContext && !sessionStorage.getItem('dsh.http-notice')) {
+      sessionStorage.setItem('dsh.http-notice', '1')
+      showToast('当前是 HTTP 内网地址：安装 PWA、系统通知、语音输入会不可用；用 localhost 或 HTTPS 可解除。', { duration: 7000 })
+    }
     if (!state.currentId && typeof me.permission === 'string') state.permission = me.permission
     setModelLabels()
     updateEngineBar()
@@ -2995,6 +3216,7 @@
     state.initRetryTimer = null
     setConnection('online')
     if (!state.projectsLoaded) await loadProjects({ silent: true })
+    if (!state.libraryReady) void loadLibrary()
     if (!els.shell.hidden) {
       setConnection('online')
       await resumeConnection()
@@ -3358,7 +3580,7 @@
 
     const meta = document.createElement('span')
     meta.className = 'conv-meta'
-    const engineLabel = conv.engine === 'codex' ? 'Codex · ' : ''
+    const engineLabel = conv.forkedFrom ? '分支 · ' : conv.engine === 'codex' ? 'Codex · ' : ''
     const count = Number(conv.messageCount) || 0
     meta.textContent = conv.running
       ? `${engineLabel}正在生成…`
@@ -3771,6 +3993,11 @@
     els.projectName.value = project?.name || ''
     els.projectInstructions.value = project?.instructions || ''
     els.projectNotes.value = project?.notes || ''
+    els.projectMemoryOff.checked = Boolean(project?.memoryOff)
+    state.projectFiles = []
+    renderProjectFiles()
+    els.projectFileUploadBtn.disabled = !project
+    if (project) void loadProjectFiles(project.id)
     els.projectDeleteBtn.hidden = !project
     els.projectSaveBtn.textContent = project ? '保存项目' : '创建项目'
     els.projectColors.replaceChildren()
@@ -3809,6 +4036,88 @@
     }
   }
 
+  function renderProjectFiles() {
+    if (!els.projectFileList) return
+    els.projectFileList.replaceChildren()
+    if (!state.projectFiles.length) {
+      const empty = document.createElement('span')
+      empty.className = 'project-file-empty'
+      empty.textContent = state.editingProjectId ? '还没有文件。上传后会在每次提问时复制到工作区 project/ 目录。' : '先保存项目，再上传文件。'
+      els.projectFileList.appendChild(empty)
+      return
+    }
+    for (const file of state.projectFiles) {
+      const row = document.createElement('div')
+      row.className = 'project-file-row'
+      const link = document.createElement('a')
+      link.href = `/api/projects/${state.editingProjectId}/file?name=${encodeURIComponent(file.name)}`
+      link.target = '_blank'
+      link.rel = 'noopener noreferrer'
+      link.textContent = `${file.name} · ${formatBytes(file.size)}`
+      const remove = document.createElement('button')
+      remove.type = 'button'
+      remove.textContent = '删除'
+      remove.addEventListener('click', () => {
+        askConfirm({
+          title: `删除项目文件「${file.name}」？`,
+          body: '删除后，下一次提问不会再把它复制到工作区；已经复制到旧对话的文件不受影响。',
+          okLabel: '删除文件',
+          onOk: async () => {
+            try {
+              await api(`/api/projects/${state.editingProjectId}/files`, {
+                method: 'DELETE',
+                body: JSON.stringify({ name: file.name }),
+              })
+              await loadProjectFiles(state.editingProjectId)
+            } catch (error) {
+              showToast(error.message || '删除失败', { tone: 'error' })
+            }
+          },
+        })
+      })
+      row.append(link, remove)
+      els.projectFileList.appendChild(row)
+    }
+  }
+
+  async function loadProjectFiles(projectId) {
+    if (!projectId) return
+    try {
+      const data = await api(`/api/projects/${projectId}/files`)
+      state.projectFiles = data.files || []
+      renderProjectFiles()
+    } catch (error) {
+      showToast(error.message || '项目文件加载失败', { tone: 'error' })
+    }
+  }
+
+  async function uploadProjectFiles(fileList) {
+    const files = [...(fileList || [])]
+    if (!files.length || !state.editingProjectId) return
+    for (const file of files.slice(0, 20)) {
+      if (file.size > 25 * 1024 * 1024) {
+        showToast(`${file.name} 超过 25MB，已跳过`, { tone: 'error' })
+        continue
+      }
+      try {
+        const response = await fetch(`/api/projects/${state.editingProjectId}/files?name=${encodeURIComponent(file.name)}`, {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/octet-stream' },
+          body: file,
+        })
+        const data = await response.json().catch(() => ({}))
+        if (!response.ok) throw new Error(data.error || `上传失败（${response.status}）`)
+      } catch (error) {
+        showToast(error.message || '上传失败', { tone: 'error' })
+        break
+      }
+    }
+    els.projectFileInput.value = ''
+    await loadProjectFiles(state.editingProjectId)
+    showToast('项目文件已更新')
+  }
+
   function projectEditorValues() {
     const color = els.projectColors.querySelector('.project-color[aria-checked="true"]')?.dataset.color || 'blue'
     return {
@@ -3817,6 +4126,7 @@
       color,
       instructions: els.projectInstructions.value.trim(),
       notes: els.projectNotes.value.trim(),
+      memoryOff: els.projectMemoryOff.checked,
     }
   }
 
@@ -3998,6 +4308,462 @@
     }
   }
 
+  /* ── read-only share links ─────────────────────────────────────────── */
+
+  function setExportFormat(format) {
+    state.exportFormat = format === 'html' ? 'html' : 'md'
+    for (const button of els.exportSheet.querySelectorAll('[data-export-format]')) {
+      button.setAttribute('aria-checked', String(button.dataset.exportFormat === state.exportFormat))
+    }
+  }
+
+  function openExportSheet(conversationId = state.currentId) {
+    if (!conversationId) return showToast('先打开一段对话再导出', { tone: 'error' })
+    state.exportConversationId = conversationId
+    state.exportFocus = document.activeElement
+    els.exportTools.checked = false
+    els.exportThinking.checked = false
+    els.exportMeta.checked = false
+    setExportFormat('md')
+    els.exportSheet.hidden = false
+    lockShell()
+    requestAnimationFrame(() => els.exportStart.focus({ preventScroll: true }))
+  }
+
+  function closeExportSheet({ restoreFocus = true } = {}) {
+    if (!els.exportSheet || els.exportSheet.hidden) return
+    els.exportSheet.hidden = true
+    lockShell()
+    if (restoreFocus) {
+      const target = state.exportFocus
+      state.exportFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  function runExport() {
+    const id = state.exportConversationId
+    if (!id) return
+    const options = {
+      includeTools: els.exportTools.checked,
+      includeThinking: els.exportThinking.checked,
+      includeMeta: els.exportMeta.checked,
+    }
+    const format = state.exportFormat
+    closeExportSheet()
+    if (format === 'html') void exportConversationHtml(id, options)
+    else void exportConversation(id, options)
+  }
+
+  function shareLinkFor(share) {
+    return share?.token ? `${state.baseUrl}/s/${share.token}` : ''
+  }
+
+  function formatShareDate(ts) {
+    if (!ts) return '长期有效'
+    try {
+      return new Intl.DateTimeFormat('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }).format(new Date(ts))
+    } catch {
+      return ''
+    }
+  }
+
+  function setShareExpiry(days) {
+    state.shareExpiry = Number(days) || 0
+    for (const button of els.shareSheet.querySelectorAll('[data-share-expiry]')) {
+      button.setAttribute('aria-checked', String(Number(button.dataset.shareExpiry) === state.shareExpiry))
+    }
+  }
+
+  function openShareSheet(conversationId = state.currentId, messageId = '') {
+    if (!conversationId) {
+      showToast('先打开一段对话再分享', { tone: 'error' })
+      return
+    }
+    state.shareFocus = document.activeElement
+    state.shareConversationId = conversationId
+    state.shareMessageId = messageId
+    const localOnly = /^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(state.baseUrl)
+    els.shareSheet.querySelector('.share-lead').textContent =
+      (messageId
+        ? '只分享这一条回答及其提问。其他轮次、侧栏、记忆都不会出现。'
+        : '生成一段只读快照。对方无需访问码，也不会看到你的侧栏、记忆或其他对话。') +
+      (localOnly
+        ? ' 当前链接基于本机地址生成，只能在这台电脑打开；要给手机/同事看，请先用内网或 Tailscale 地址打开本站再生成。'
+        : ` 链接将基于 ${state.baseUrl} 生成，只有能访问这个地址的人才能打开。`)
+    els.shareSheet.hidden = false
+    document.body.classList.add('sheet-open')
+    lockShell()
+    els.shareResult.hidden = true
+    els.shareUrl.value = ''
+    els.shareIncludeTools.checked = false
+    els.shareIncludeThinking.checked = false
+    setShareExpiry(7)
+    void loadShareItems()
+    requestAnimationFrame(() => els.shareCreate.focus({ preventScroll: true }))
+  }
+
+  async function updateSharePreview(conversationId, messageId) {
+    if (!els.sharePreview) return
+    els.sharePreview.textContent = '正在统计将分享的内容…'
+    try {
+      let messages = conversationId === state.currentId && Array.isArray(state.messages) && state.messages.length
+        ? state.messages
+        : null
+      if (!messages) {
+        const data = await api(`/api/conversations/${conversationId}`)
+        messages = data.conversation.messages || []
+      }
+      const visible = messages.filter((msg) => (msg.role === 'user' || msg.role === 'assistant') && !msg.internal)
+      let count = visible.length
+      let attachments = visible.reduce((sum, msg) => sum + (Array.isArray(msg.attachments) ? msg.attachments.length : 0), 0)
+      if (messageId) {
+        count = 0
+        attachments = 0
+        const index = messages.findIndex((msg) => msg.id === messageId)
+        if (index >= 0) {
+          const user = messages[index - 1]?.role === 'user' ? messages[index - 1] : null
+          count = user ? 2 : 1
+          attachments = (user?.attachments?.length || 0) + (messages[index].attachments?.length || 0)
+        }
+      }
+      const hidden = []
+      if (!els.shareIncludeTools.checked) hidden.push('工具')
+      if (!els.shareIncludeThinking.checked) hidden.push('思考')
+      const text = visible
+        .map((msg) => [msg.text || '', ...(msg.blocks || []).filter((block) => block.type === 'text').map((block) => block.text || '')].join('\n'))
+        .join('\n')
+      const sensitiveHits =
+        (text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) || []).length +
+        (text.match(/\b1[3-9]\d{9}\b/g) || []).length +
+        (text.match(/\b\d{17}[\dXx]\b/g) || []).length +
+        (text.match(/\b(sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g) || []).length
+      els.sharePreview.textContent = `将分享 ${count} 条消息${attachments ? `、${attachments} 个附件文件名` : ''}；${hidden.length ? `默认不含${hidden.join('与')}，` : ''}不包含文件内容、记忆与其他对话。${sensitiveHits ? ` 检测到 ${sensitiveHits} 处可能的手机号/邮箱/证件/密钥，请确认后再分享。` : ''}`
+      els.sharePreview.classList.toggle('warn', sensitiveHits > 0)
+    } catch (error) {
+      els.sharePreview.textContent = '无法读取这段对话的消息数量'
+    }
+  }
+
+  function updateSharePreviewOptions() {
+    if (!els.sharePreview || els.shareSheet.hidden) return
+    void updateSharePreview(state.shareConversationId, state.shareMessageId)
+  }
+
+  function closeShareSheet({ restoreFocus = true } = {}) {
+    state.shareMessageId = ''
+    if (!els.shareSheet || els.shareSheet.hidden) return
+    els.shareSheet.hidden = true
+    document.body.classList.remove('sheet-open')
+    lockShell()
+    if (restoreFocus) {
+      const target = state.shareFocus
+      state.shareFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  async function loadShareItems() {
+    els.shareList.replaceChildren()
+    const loading = document.createElement('p')
+    loading.className = 'share-empty'
+    loading.textContent = '正在加载…'
+    els.shareList.appendChild(loading)
+    try {
+      const data = await api('/api/shares')
+      if (data.baseUrl) state.baseUrl = data.baseUrl.replace(/\/+$/, '')
+      state.shareItems = (data.shares || []).filter((share) => share.conversationId === state.shareConversationId)
+      renderShareItems()
+    } catch (error) {
+      loading.textContent = error.message || '分享列表加载失败'
+    }
+  }
+
+  function renderShareItems() {
+    els.shareList.replaceChildren()
+    if (!state.shareItems.length) {
+      const empty = document.createElement('p')
+      empty.className = 'share-empty'
+      empty.textContent = '还没有分享链接。生成后可以随时撤销。'
+      els.shareList.appendChild(empty)
+      return
+    }
+    for (const share of state.shareItems) {
+      const row = document.createElement('div')
+      row.className = 'share-row'
+      const main = document.createElement('div')
+      main.className = 'share-row-main'
+      const title = document.createElement('span')
+      title.className = 'share-row-title'
+      title.textContent = share.expired ? '已过期' : share.revokedAt ? '已撤销' : '只读链接'
+      const meta = document.createElement('span')
+      meta.className = 'share-row-meta'
+      meta.textContent = `${formatShareDate(share.expiresAt)} · ${share.messageCount || 0} 条消息 · ${share.viewCount || 0} 次查看`
+      main.append(title, meta)
+      row.appendChild(main)
+      if (share.token && !share.expired && !share.revokedAt) {
+        const copy = document.createElement('button')
+        copy.type = 'button'
+        copy.textContent = '复制'
+        copy.addEventListener('click', async () => {
+          const ok = await copyText(shareLinkFor(share))
+          showToast(ok ? '链接已复制' : '复制失败', ok ? undefined : { tone: 'error' })
+        })
+        row.appendChild(copy)
+      }
+      if (!share.revokedAt) {
+        const revoke = document.createElement('button')
+        revoke.type = 'button'
+        revoke.className = 'danger'
+        revoke.textContent = '撤销'
+        revoke.addEventListener('click', () => void revokeShare(share))
+        row.appendChild(revoke)
+      }
+      els.shareList.appendChild(row)
+    }
+  }
+
+  async function createShare() {
+    const id = state.shareConversationId || state.currentId
+    if (!id) return showToast('先打开一段对话', { tone: 'error' })
+    els.shareCreate.disabled = true
+    els.shareCreate.textContent = '正在生成…'
+    try {
+      const data = await api(`/api/conversations/${id}/share`, {
+        method: 'POST',
+        body: JSON.stringify({
+          expiresInDays: state.shareExpiry,
+          includeTools: els.shareIncludeTools.checked,
+          includeThinking: els.shareIncludeThinking.checked,
+          messageIds: state.shareMessageId ? [state.shareMessageId] : [],
+        }),
+      })
+      const url = data.url || shareLinkFor(data.share)
+      els.shareResult.hidden = false
+      els.shareUrl.value = url
+      if (els.shareSystem) els.shareSystem.hidden = !navigator.share
+      els.shareResultHint.textContent = data.share?.expiresAt
+        ? `有效期至 ${formatShareDate(data.share.expiresAt)}。撤销后链接立即失效。`
+        : '长期有效。撤销后链接立即失效。'
+      showToast('只读链接已生成')
+      const listed = await api('/api/shares').catch(() => null)
+      if (listed) state.shareItems = (listed.shares || []).filter((share) => share.conversationId === id)
+      renderShareItems()
+      requestAnimationFrame(() => els.shareUrl.select())
+    } catch (error) {
+      showToast(error.message || '生成分享失败', { tone: 'error' })
+    } finally {
+      els.shareCreate.disabled = false
+      els.shareCreate.textContent = '生成只读链接'
+    }
+  }
+
+  async function revokeShare(share) {
+    askConfirm({
+      title: '撤销这个分享链接？',
+      body: '撤销后，任何已经拿到链接的人都将立即无法打开。已缓存或截图的内容不受影响。',
+      okLabel: '撤销链接',
+      onOk: async () => {
+        try {
+          await api(`/api/shares/${share.id}`, { method: 'DELETE' })
+          state.shareItems = state.shareItems.filter((item) => item.id !== share.id)
+          renderShareItems()
+          if (els.shareResult && !els.shareResult.hidden && els.shareUrl.value === shareLinkFor(share)) {
+            els.shareResult.hidden = true
+          }
+          showToast('分享链接已撤销')
+        } catch (error) {
+          showToast(error.message || '撤销失败', { tone: 'error' })
+        }
+      },
+    })
+  }
+
+  async function exportConversationHtml(id = state.currentId, options = {}) {
+    if (!id) return
+    const includeTools = options.includeTools === true
+    const includeThinking = options.includeThinking === true
+    const includeMeta = options.includeMeta === true
+    try {
+      const data = await api(`/api/conversations/${id}`)
+      const conv = data.conversation
+      const project = conv.projectId ? projectById(conv.projectId) : null
+      const escape = window.Markdown.escapeHtml
+      const parts = []
+      parts.push('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">')
+      parts.push('<meta name="viewport" content="width=device-width, initial-scale=1">')
+      parts.push(`<title>${escape(conv.title || '对话')} · DSH Chat</title>`)
+      parts.push('<style>:root{color-scheme:light dark;--bg:#fff;--text:#111;--muted:#666;--line:#e5e5e7;--code:#f5f5f7}@media(prefers-color-scheme:dark){:root{--bg:#1b1b1d;--text:#f0f0f2;--muted:#aaa;--line:#333;--code:#151517}}body{margin:0;background:var(--bg);color:var(--text);font:16px/1.7 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif}main{max-width:760px;margin:0 auto;padding:36px 18px 64px}h1{font-size:26px;line-height:1.25;margin:0 0 6px}p.meta{color:var(--muted);font-size:12px;margin:0 0 26px;padding-bottom:18px;border-bottom:1px solid var(--line)}article{padding:20px 0;border-bottom:1px solid var(--line)}.role{color:var(--muted);font-size:11px;font-weight:700;letter-spacing:.06em;margin-bottom:6px}.user{white-space:pre-wrap}.md pre{overflow:auto;padding:12px;background:var(--code);border-radius:8px;font-size:12.5px}.md table{border-collapse:collapse;width:100%;font-size:13px}.md th,.md td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:left}.md code{background:var(--code);padding:.1em .3em;border-radius:4px}.md blockquote{border-left:3px solid var(--line);margin-left:0;padding-left:12px;color:var(--muted)}details{margin-top:8px;color:var(--muted);font-size:12px}summary{cursor:pointer}pre.tool{max-height:260px;overflow:auto;background:var(--code);padding:10px;border-radius:8px}footer{margin-top:28px;color:var(--muted);font-size:11px}</style></head><body><main>')
+      parts.push(`<h1>${escape(conv.title || '对话')}</h1>`)
+      parts.push(`<p class="meta">${escape(new Date(conv.createdAt || Date.now()).toLocaleString('zh-CN', { hour12: false }))}${includeMeta && project ? ` · 项目：${escape(project.name)}` : ''}${includeMeta ? ` · 权限：${escape(permissionEntry(conv.permission).label)} · ID：${escape(conv.id)}` : ''} · 由 DSH Chat 导出</p>`)
+      for (const msg of conv.messages || []) {
+        if (msg.role !== 'user' && msg.role !== 'assistant') continue
+        parts.push('<article>')
+        parts.push(`<div class="role">${msg.role === 'user' ? '提问' : '回答'}</div>`)
+        const blocks = Array.isArray(msg.blocks) && msg.blocks.length ? msg.blocks : null
+        if (msg.role === 'user') {
+          parts.push(`<div class="user">${escape(msg.text || '')}</div>`)
+        } else if (blocks) {
+          for (const block of blocks) {
+            if (block.type === 'text') parts.push(`<div class="md">${window.Markdown.render(block.text || '')}</div>`)
+            else if (block.type === 'thinking' && includeThinking) parts.push(`<details><summary>思考过程</summary><div class="md">${window.Markdown.render(block.text || '')}</div></details>`)
+            else if (block.type === 'tool' && includeTools) {
+              parts.push(`<details><summary>工具 · ${escape(block.tool || 'tool')} · ${escape(block.status || '')}</summary><pre class="tool">${escape(JSON.stringify({ input: block.input ?? null, result: block.result ?? null }, null, 2))}</pre></details>`)
+            }
+          }
+        } else {
+          parts.push(`<div class="md">${window.Markdown.render(msg.text || '')}</div>`)
+        }
+        parts.push('</article>')
+      }
+      parts.push('<footer>只读导出 · DSH Chat</footer></main></body></html>')
+      const stamp = new Date().toISOString().slice(0, 10)
+      downloadText(`${safeFileStem(conv.title || '对话')}-${stamp}.html`, parts.join(''), 'text/html;charset=utf-8')
+      showToast('已导出离线 HTML')
+    } catch (error) {
+      showToast(error.message || '导出失败', { tone: 'error' })
+    }
+  }
+
+  function versionText(version) {
+    const blocks = Array.isArray(version.blocks) ? version.blocks : []
+    const text = blocks.filter((block) => block.type === 'text').map((block) => block.text).join('\n\n')
+    return text || version.text || ''
+  }
+
+  function addVersionBar(view, msg) {
+    if (!msg.versions?.length) return
+    const bar = document.createElement('div')
+    bar.className = 'msg-version-bar'
+    const label = document.createElement('span')
+    label.className = 'msg-version-label'
+    label.textContent = `v${msg.versions.length + 1}`
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'msg-version-btn'
+    button.textContent = `版本历史 · ${msg.versions.length + 1}`
+    button.addEventListener('click', () => openVersions(msg.id))
+    bar.append(label, button)
+    view.appendChild(bar)
+  }
+
+  function openVersions(messageId) {
+    const msg = state.messages.find((item) => item.id === messageId)
+    if (!msg || !Array.isArray(msg.versions) || !msg.versions.length) return
+    state.versionTarget = { conversationId: state.currentId, messageId, message: msg }
+    state.versionsFocus = document.activeElement
+    els.versionsSheet.hidden = false
+    els.versionsCompare.hidden = true
+    els.versionsCompareBtn.setAttribute('aria-pressed', 'false')
+    lockShell()
+    renderVersions()
+    requestAnimationFrame(() => els.versionsList.querySelector('.version-actions button')?.focus({ preventScroll: true }))
+  }
+
+  function closeVersions({ restoreFocus = true } = {}) {
+    if (!els.versionsSheet || els.versionsSheet.hidden) return
+    els.versionsSheet.hidden = true
+    lockShell()
+    state.versionTarget = null
+    if (restoreFocus) {
+      const target = state.versionsFocus
+      state.versionsFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  function renderVersions() {
+    const target = state.versionTarget
+    if (!target) return
+    els.versionsList.replaceChildren()
+    const current = target.message
+    const entries = [
+      { key: 'current', label: `v${(current.versions?.length || 0) + 1} · 当前`, version: current, active: true },
+      ...(current.versions || []).map((version, index) => ({
+        key: version.id,
+        label: `v${index + 1}`,
+        version,
+        active: false,
+      })).reverse(),
+    ]
+    for (const entry of entries) {
+      const row = document.createElement('div')
+      row.className = 'version-row' + (entry.active ? ' active' : '')
+      const head = document.createElement('div')
+      head.className = 'version-head'
+      const label = document.createElement('span')
+      label.className = 'version-label'
+      label.textContent = entry.label
+      const meta = document.createElement('span')
+      meta.className = 'version-meta'
+      const when = entry.version.createdAt ? new Date(entry.version.createdAt).toLocaleString('zh-CN', { hour12: false }) : ''
+      const text = versionText(entry.version)
+      meta.textContent = `${when}${entry.version.model ? ` · ${entry.version.model}` : ''} · ${text.length} 字`
+      const actions = document.createElement('div')
+      actions.className = 'version-actions'
+      const preview = document.createElement('button')
+      preview.type = 'button'
+      preview.textContent = '预览'
+      const body = document.createElement('div')
+      body.className = 'version-preview'
+      body.hidden = true
+      body.innerHTML = window.Markdown.render(text || '（无文本内容）')
+      preview.addEventListener('click', () => {
+        body.hidden = !body.hidden
+        preview.textContent = body.hidden ? '预览' : '收起'
+      })
+      actions.appendChild(preview)
+      if (!entry.active) {
+        const adopt = document.createElement('button')
+        adopt.type = 'button'
+        adopt.className = 'primary'
+        adopt.textContent = '采用'
+        adopt.addEventListener('click', () => void activateVersion(entry.key))
+        actions.appendChild(adopt)
+      }
+      head.append(label, meta, actions)
+      row.append(head, body)
+      els.versionsList.appendChild(row)
+    }
+  }
+
+  async function activateVersion(versionId) {
+    const target = state.versionTarget
+    if (!target || !versionId || versionId === 'current') return
+    try {
+      await api(`/api/conversations/${target.conversationId}/messages/${target.messageId}/versions/${encodeURIComponent(versionId)}/activate`, {
+        method: 'POST',
+      })
+      closeVersions()
+      const data = await api(`/api/conversations/${target.conversationId}`)
+      if (state.currentId === target.conversationId) {
+        state.messages = data.conversation.messages || []
+        renderMessages(state.messages, { restoreScroll: false })
+        scrollToBottom()
+      }
+      showToast('已采用这个版本')
+    } catch (error) {
+      showToast(error.message || '切换版本失败', { tone: 'error' })
+    }
+  }
+
+  async function forkFromMessage(messageId) {
+    if (!state.currentId || !messageId) return
+    try {
+      const data = await api(`/api/conversations/${state.currentId}/fork`, {
+        method: 'POST',
+        body: JSON.stringify({ messageId }),
+      })
+      const conv = data.conversation
+      await refreshConversations()
+      await loadProjects({ silent: true })
+      showToast('已从这里分叉，新对话保留到此处的上下文')
+      await openConversation(conv.id)
+    } catch (error) {
+      showToast(error.message || '分叉失败', { tone: 'error' })
+    }
+  }
+
   async function patchConversation(id, patch) {
     const conv = state.conversations.find((item) => item.id === id) ||
       state.searchResults.find((item) => item.id === id)
@@ -4087,7 +4853,7 @@
 
   async function copyConversationLink(id = state.currentId) {
     if (!id) return
-    const url = `${location.origin}/c/${id}`
+    const url = `${state.baseUrl}/c/${id}`
     const ok = await copyText(url)
     if (!ok) return showToast('复制失败', { tone: 'error' })
     showToast('对话链接已复制')
@@ -4095,7 +4861,7 @@
 
   async function copyMessageLink(messageId) {
     if (!messageId || !state.currentId) return
-    const url = `${location.origin}/c/${state.currentId}#m-${messageId}`
+    const url = `${state.baseUrl}/c/${state.currentId}#m-${messageId}`
     const ok = await copyText(url)
     if (!ok) return showToast('复制失败', { tone: 'error' })
     showToast('消息链接已复制')
@@ -4196,7 +4962,16 @@
       ['rename', 'i-edit', '重命名', () => openRename(id)],
       ['pin', 'i-pin', conv.pinned ? '取消置顶' : '置顶对话', () => void patchConversation(id, { pinned: !conv.pinned })],
       ['move', 'i-folder', conv.projectId ? '移动到其他项目' : '移动到项目', () => openMoveSheet([id])],
-      ['export', 'i-share', '导出 Markdown', () => void exportConversation(id)],
+      ...(conv.forkedFrom ? [['source', 'i-external', '回到来源对话', () => openConversation(conv.forkedFrom.conversationId)]] : []),
+      ['memory', 'i-memory', conv.noMemory ? '恢复长期记忆' : '不使用长期记忆', () => {
+        const disable = !conv.noMemory
+        void patchConversation(id, { noMemory: disable }).then(() => {
+          showToast(disable ? '这个对话不再注入或记录长期记忆' : '已恢复长期记忆')
+        })
+      }],
+      ['share', 'i-share', '分享只读链接', () => openShareSheet(id)],
+      ['export', 'i-download', '导出…', () => openExportSheet(id)],
+      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); setTimeout(() => window.print(), 60) }],
       ['link', 'i-external', '复制对话链接', () => void copyConversationLink(id)],
       ['duplicate', 'i-copy', '创建副本', () => void duplicateConversation(id)],
       ['stats', 'i-info', '对话统计', () => void openStats(id)],
@@ -4263,25 +5038,51 @@
     return String(text || 'DSH-Chat').replace(/[\\/:*?"<>|\s]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'DSH-Chat'
   }
 
-  async function exportConversation(id) {
+  async function exportConversation(id, options = {}) {
+    const includeTools = options.includeTools === true
+    const includeThinking = options.includeThinking === true
+    const includeMeta = options.includeMeta === true
     try {
       const data = await api(`/api/conversations/${id}`)
       const conv = data.conversation
       const lines = [`# ${conv.title || 'DSH Chat'}`, '']
       lines.push(`> 导出时间：${new Date().toLocaleString('zh-CN', { hour12: false })}`)
-      lines.push(`> 引擎：${conv.engine === 'codex' ? 'Codex' : 'DSH'} · 权限：${permissionEntry(conv.permission).label}`, '')
+      if (includeMeta) {
+        const project = conv.projectId ? projectById(conv.projectId) : null
+        lines.push(`> 引擎：${conv.engine === 'codex' ? 'Codex' : 'DSH'} · 权限：${permissionEntry(conv.permission).label}`)
+        if (project) lines.push(`> 项目：${project.emoji || '📁'} ${project.name}`)
+        if (conv.noMemory) lines.push('> 长期记忆：这个对话已关闭')
+        lines.push(`> 消息：${(conv.messages || []).length} 条 · 会话 ID：\`${conv.id}\``)
+      }
+      lines.push('')
       for (const msg of conv.messages || []) {
         if (msg.role === 'user' && msg.internal) continue
         if (msg.role === 'user') {
           lines.push('## 我', '', msg.text || '', '')
           if (msg.attachments?.length) {
-            lines.push(`附件：${msg.attachments.map((file) => file.path).join('、')}`, '')
+            lines.push(`附件：${msg.attachments.map((file) => (includeMeta ? `\`${file.path}\`` : file.name)).join('、')}`, '')
           }
         } else if (msg.text || msg.blocks?.length) {
           lines.push('## 助手', '')
-          const text = msg.text || (msg.blocks || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n\n')
+          const blocks = Array.isArray(msg.blocks) && msg.blocks.length ? msg.blocks : null
+          const text = blocks ? blocks.filter((b) => b.type === 'text').map((b) => b.text).join('\n\n') : msg.text
           lines.push(text || '')
-          if (msg.usage?.totalTokens) lines.push(`_用量：${formatTokens(msg.usage.totalTokens)} tokens_`)
+          if (includeThinking) {
+            const thinking = blocks ? blocks.filter((b) => b.type === 'thinking').map((b) => b.text).join('\n\n') : ''
+            if (thinking) lines.push('', '<details><summary>思考过程</summary>', '', thinking, '', '</details>')
+          }
+          if (includeTools) {
+            const tools = blocks ? blocks.filter((b) => b.type === 'tool') : []
+            for (const tool of tools) {
+              const payload = JSON.stringify({ input: tool.input ?? null, result: tool.result ?? null }, null, 2)
+              const fence = payload.includes('```') ? '~~~~' : '```'
+              lines.push('', `<details><summary>工具：${tool.tool || 'tool'} · ${tool.status || ''}</summary>`, '', `${fence}json`, payload, fence, '', '</details>')
+            }
+          }
+          if (Array.isArray(msg.files) && msg.files.length) {
+            lines.push('', `产出文件：${msg.files.map((file) => `\`${file.path || file.name}\``).join('、')}`)
+          }
+          if (includeMeta && msg.usage?.totalTokens) lines.push('', `_用量：${formatTokens(msg.usage.totalTokens)} tokens_`)
           lines.push('')
         }
       }
@@ -4310,7 +5111,7 @@
       return
     }
     closeConvMenu({ restoreFocus: false })
-    openConversation(item.dataset.id)
+    openConversation(item.dataset.id, { find: state.search.trim() || undefined })
   })
 
   async function undoLastDelete() {
@@ -4725,6 +5526,7 @@
   function userBubble(text, ts, attachments = null) {
     const wrap = document.createElement('article')
     wrap.className = 'msg user'
+    wrap.setAttribute('aria-label', '你的提问')
     const bubble = document.createElement('div')
     bubble.className = 'bubble'
     const body = document.createElement('span')
@@ -5162,7 +5964,9 @@
         paint()
       } else if (!block.scheduled) {
         block.scheduled = true
-        requestAnimationFrame(paint)
+        // Same adaptive cadence as addDelta: a long answer must not re-parse
+        // the whole Markdown tree on every animation frame.
+        setTimeout(paint, Math.min(280, 60 + Math.floor(block.raw.length / 2500) * 30))
       }
       if (sealed) {
         block.sealed = true
@@ -5278,7 +6082,7 @@
           : ''
       entry.resultText =
         entry.resultRaw
-          ? clip(entry.resultRaw)
+          ? clipResult(entry.resultRaw)
           : call.status === 'running'
             ? '运行中…'
             : '（无输出）'
@@ -5297,6 +6101,46 @@
         })
         entry.body.appendChild(copy)
       }
+    }
+
+    function lineDiffOps(before, after) {
+      const a = String(before).split('\n')
+      const b = String(after).split('\n')
+      if (a.length * b.length > 1_200_000) {
+        return [
+          ...a.map((text) => ({ kind: 'del', text })),
+          ...b.map((text) => ({ kind: 'add', text })),
+        ]
+      }
+      const rows = a.length
+      const cols = b.length
+      const dp = Array.from({ length: rows + 1 }, () => new Uint16Array(cols + 1))
+      for (let i = rows - 1; i >= 0; i -= 1) {
+        for (let j = cols - 1; j >= 0; j -= 1) {
+          dp[i][j] = a[i] === b[j]
+            ? dp[i + 1][j + 1] + 1
+            : Math.max(dp[i + 1][j], dp[i][j + 1])
+        }
+      }
+      const ops = []
+      let i = 0
+      let j = 0
+      while (i < rows && j < cols) {
+        if (a[i] === b[j]) {
+          ops.push({ kind: 'ctx', text: a[i] })
+          i += 1
+          j += 1
+        } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+          ops.push({ kind: 'del', text: a[i] })
+          i += 1
+        } else {
+          ops.push({ kind: 'add', text: b[j] })
+          j += 1
+        }
+      }
+      while (i < rows) ops.push({ kind: 'del', text: a[i++] })
+      while (j < cols) ops.push({ kind: 'add', text: b[j++] })
+      return ops
     }
 
     function renderToolDiff(entry, call) {
@@ -5330,26 +6174,51 @@
       diff.className = 'tool-diff'
       diff.setAttribute('role', 'group')
       diff.setAttribute('aria-label', path ? `${path} 的改动` : '文件改动')
-      const addLine = (kind, text, sign) => {
+      let oldLine = 1
+      let newLine = 1
+      const addLine = (kind, text, no) => {
         const line = document.createElement('div')
         line.className = `diff-line diff-${kind}`
+        const number = document.createElement('span')
+        number.className = 'diff-lineno'
+        number.textContent = String(no)
         const marker = document.createElement('span')
         marker.className = 'diff-marker'
-        marker.textContent = sign
+        marker.textContent = kind === 'add' ? '+' : kind === 'del' ? '−' : ' '
         const code = document.createElement('span')
         code.className = 'diff-code'
         code.textContent = text || ' '
-        line.append(marker, code)
+        line.append(number, marker, code)
         diff.appendChild(line)
       }
       if (mode === 'patch') {
         for (const line of after.split('\n')) {
           const kind = line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : 'ctx'
-          addLine(kind, line.slice(1), line[0] || ' ')
+          addLine(kind, line.slice(1), kind === 'del' ? oldLine++ : newLine++)
+        }
+      } else if (mode === 'change') {
+        const ops = lineDiffOps(before, after)
+        let unchangedRun = 0
+        for (const op of ops) {
+          if (op.kind === 'ctx') {
+            unchangedRun += 1
+            addLine('ctx', op.text, newLine++)
+            oldLine += 1
+            continue
+          }
+          unchangedRun = 0
+          addLine(op.kind, op.text, op.kind === 'del' ? oldLine++ : newLine++)
+        }
+        if (!ops.some((op) => op.kind !== 'ctx')) {
+          diff.replaceChildren()
+          addLine('ctx', '（内容相同）', 1)
+        }
+        if (unchangedRun > 0) {
+          // Nothing needed; the trailing context is useful for orientation.
         }
       } else {
-        for (const line of before.split('\n')) addLine('del', line, '−')
-        for (const line of after.split('\n')) addLine('add', line, '+')
+        for (const line of before.split('\n')) addLine('del', line, oldLine++)
+        for (const line of after.split('\n')) addLine('add', line, newLine++)
       }
       section.append(label, diff)
       entry.body.appendChild(section)
@@ -5377,7 +6246,7 @@
           patch.result === null || patch.result === undefined || patch.result === ''
             ? ''
             : String(patch.result)
-        const text = entry.resultRaw ? clip(entry.resultRaw) : '（无输出）'
+        const text = entry.resultRaw ? clipResult(entry.resultRaw) : '（无输出）'
         entry.resultText = text
         let resultPre = entry.body.querySelector('pre[data-kind="result"]')
         if (!resultPre) resultPre = appendSection(entry.body, '结果', text, 'result')
@@ -5461,6 +6330,13 @@
 
     view.finish = ({ status, durationMs, usage, error, stopped, files, createdAt, canRegenerate, messageId } = {}) => {
       if (view.finished) return
+      // A stopped/cancelled run may never receive a final `text` event. Commit
+      // whatever is still live before clearAllLive, otherwise the answer that
+      // the user can already see disappears when the run is stopped.
+      const liveText = view.liveBlocks.get('text')
+      if (liveText?.raw) view.addText(liveText.raw, true)
+      const liveThinking = view.liveBlocks.get('thinking')
+      if (liveThinking?.raw) view.addThinking(liveThinking.raw, true)
       view.finished = true
       view.streaming = false
       view.clearAllLive()
@@ -5497,12 +6373,25 @@
         })
         actions.appendChild(copy)
 
+        const shareAnswer = document.createElement('button')
+        shareAnswer.type = 'button'
+        shareAnswer.className = 'icon-btn'
+        shareAnswer.title = '分享这条回答（只读链接）'
+        shareAnswer.setAttribute('aria-label', '分享这条回答')
+        shareAnswer.innerHTML = icon('i-share')
+        shareAnswer.addEventListener('click', () => {
+          const id = messageId || view.el.dataset.messageId
+          if (!id || !state.currentId) return showToast('暂时无法分享这条回答', { tone: 'error' })
+          openShareSheet(state.currentId, id)
+        })
+        actions.appendChild(shareAnswer)
+
         const share = document.createElement('button')
         share.type = 'button'
         share.className = 'icon-btn'
         share.title = '导出为 Markdown'
         share.setAttribute('aria-label', '导出这条回答')
-        share.innerHTML = icon('i-share')
+        share.innerHTML = icon('i-download')
         share.addEventListener('click', () => {
           const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
           downloadText(`DSH-回答-${stamp}.md`, `# DSH Chat 回答\n\n> ${new Date().toLocaleString('zh-CN', { hour12: false })}\n\n${text}\n`)
@@ -5518,6 +6407,15 @@
         link.innerHTML = icon('i-external')
         link.addEventListener('click', () => void copyMessageLink(messageId || view.el.dataset.messageId))
         actions.appendChild(link)
+
+        const fork = document.createElement('button')
+        fork.type = 'button'
+        fork.className = 'icon-btn'
+        fork.title = '从这里分叉（保留到此处的上下文）'
+        fork.setAttribute('aria-label', '从这里分叉')
+        fork.innerHTML = icon('i-edit')
+        fork.addEventListener('click', () => void forkFromMessage(messageId || view.el.dataset.messageId))
+        actions.appendChild(fork)
 
         const star = document.createElement('button')
         star.type = 'button'
@@ -5867,6 +6765,7 @@
 
   function renderAssistantMessage(msg, options = {}) {
     const view = createAssistantView()
+    view.el.setAttribute('aria-label', '助手的回答')
     view.streaming = false
     view.el.classList.add('stored')
     view.el.dataset.messageId = msg.id
@@ -5907,6 +6806,7 @@
         canRegenerate: Boolean(options.isLast) && msg.status !== 'running',
       })
     }
+    if (Array.isArray(msg.versions) && msg.versions.length) addVersionBar(view.el, msg)
     return view.el
   }
 
@@ -5985,6 +6885,8 @@
       } else if (location.hash.startsWith('#q=')) {
         const query = new URLSearchParams(location.hash.slice(1)).get('q') || ''
         setTimeout(() => { if (request === state.navigationRequest) openFind(query) }, 80)
+      } else if (options.find) {
+        setTimeout(() => { if (request === state.navigationRequest) openFind(options.find) }, 80)
       }
       setModelLabels()
       updateEngineBar()
@@ -6040,6 +6942,8 @@
     requestAnimationFrame(() => els.projectsList.querySelector('.project-row-main')?.focus({ preventScroll: true }))
   })
   els.projectForm?.addEventListener('submit', submitProject)
+  els.projectFileUploadBtn?.addEventListener('click', () => els.projectFileInput?.click())
+  els.projectFileInput?.addEventListener('change', () => void uploadProjectFiles(els.projectFileInput.files))
   els.projectInstructions?.addEventListener('input', updateProjectBudget)
   els.projectNotes?.addEventListener('input', updateProjectBudget)
   els.projectDeleteBtn?.addEventListener('click', () => void deleteEditingProject())
@@ -6055,6 +6959,47 @@
   els.moveSheet?.addEventListener('click', (event) => {
     if (event.target.closest('[data-move-close]')) closeMoveSheet()
   })
+  els.shareSheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-share-close]')) closeShareSheet()
+    const expiry = event.target.closest('[data-share-expiry]')
+    if (expiry) setShareExpiry(expiry.dataset.shareExpiry)
+  })
+  els.shareCreate?.addEventListener('click', () => void createShare())
+  els.shareIncludeTools?.addEventListener('change', updateSharePreviewOptions)
+  els.shareIncludeThinking?.addEventListener('change', updateSharePreviewOptions)
+  els.versionsSheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-versions-close]')) closeVersions()
+  })
+  els.versionsCompareBtn?.addEventListener('click', () => {
+    const target = state.versionTarget
+    if (!target) return
+    const show = els.versionsCompare.hidden
+    els.versionsCompare.hidden = !show
+    els.versionsCompareBtn.setAttribute('aria-pressed', String(show))
+    els.versionsCompareBtn.textContent = show ? '关闭对比' : '并排对比'
+    if (!show) return
+    const current = versionText(target.message)
+    const previous = target.message.versions?.length ? versionText(target.message.versions[target.message.versions.length - 1]) : ''
+    els.versionsCompareA.innerHTML = window.Markdown.render(current || '（无内容）')
+    els.versionsCompareB.innerHTML = window.Markdown.render(previous || '（还没有上一版本）')
+  })
+  els.exportSheet?.addEventListener('click', (event) => {
+    if (event.target.closest('[data-export-close]')) closeExportSheet()
+    const format = event.target.closest('[data-export-format]')
+    if (format) setExportFormat(format.dataset.exportFormat)
+  })
+  els.exportStart?.addEventListener('click', runExport)
+  els.shareSystem?.addEventListener('click', async () => {
+    if (!navigator.share || !els.shareUrl.value) return
+    try {
+      await navigator.share({ title: 'DSH Chat 只读分享', url: els.shareUrl.value })
+    } catch {}
+  })
+  els.shareCopy?.addEventListener('click', async () => {
+    if (!els.shareUrl.value) return
+    const ok = await copyText(els.shareUrl.value)
+    showToast(ok ? '链接已复制' : '复制失败', ok ? undefined : { tone: 'error' })
+  })
   els.emptyProjectEdit?.addEventListener('click', () => {
     if (!state.activeProjectId) return
     openProjects()
@@ -6065,6 +7010,9 @@
     else closeChatInfo({ restoreFocus: true })
   })
   els.chatInfoClose?.addEventListener('click', () => closeChatInfo({ restoreFocus: true }))
+  els.chatInfoContextWrap?.addEventListener('toggle', () => {
+    if (els.chatInfoContextWrap.open) void loadChatContextInfo()
+  })
   els.chatInfo?.addEventListener('click', (event) => {
     if (event.target === els.chatInfo) closeChatInfo()
   })
@@ -6152,6 +7100,10 @@
     if (els.memorySheet && !els.memorySheet.hidden) return closeMemory()
     if (els.projectsSheet && !els.projectsSheet.hidden) return closeProjects()
     if (els.moveSheet && !els.moveSheet.hidden) return closeMoveSheet()
+    if (els.shareSheet && !els.shareSheet.hidden) return closeShareSheet()
+    if (els.versionsSheet && !els.versionsSheet.hidden) return closeVersions()
+    if (els.templateModal && !els.templateModal.hidden) return closeTemplateModal()
+    if (els.exportSheet && !els.exportSheet.hidden) return closeExportSheet()
     if (els.palette && !els.palette.hidden) return closePalette()
     if (els.commandMenu && !els.commandMenu.hidden) return closeCommandMenu()
     if (els.filePreview && !els.filePreview.hidden) return closeFilePreview()
@@ -6409,6 +7361,8 @@
     { id: 'new-project', label: '新建项目', desc: '建立长期主题空间', icon: 'i-plus', run: () => { openProjects(); openProjectEditor('') } },
     { id: 'all-projects', label: '查看全部对话', desc: '清除项目筛选', icon: 'i-menu', run: () => void setProjectFilter('', { close: false }) },
     { id: 'move-project', label: '移动到项目', desc: '把当前对话归入项目', icon: 'i-folder', run: () => { if (state.currentId) openMoveSheet([state.currentId]); else showToast('先打开一段对话', { tone: 'error' }) } },
+    { id: 'share', label: '分享只读链接', desc: '生成无需访问码的只读快照', icon: 'i-share', run: () => openShareSheet() },
+    { id: 'export', label: '导出对话…', desc: 'Markdown / 离线 HTML，可选是否带工具与思考', icon: 'i-download', run: () => openExportSheet() },
     { id: 'scenario', label: '浏览场景', desc: '网页总结 / 股票 / 日报', icon: 'i-spark', run: () => openScenarioSheet() },
     { id: 'files', label: '对话文件', desc: '查看本轮与历史文件', icon: 'i-paperclip', run: () => openFilesSheet() },
     { id: 'permission', label: '切换权限', desc: '只读 / 标准 / 完全权限', icon: 'i-shield', run: () => openPermissionMenu() },
@@ -6528,6 +7482,7 @@
   })
 
   function openSettings() {
+    void loadShareBase()
     if (!els.settingsSheet) return
     state.lastSettingsFocus = document.activeElement
     els.settingsSheet.hidden = false
@@ -7006,6 +7961,144 @@
     } catch {}
   }
 
+  async function loadAllShares() {
+    if (!els.shareManageList) return
+    els.shareManageList.textContent = '正在加载…'
+    try {
+      const data = await api('/api/shares')
+      if (data.baseUrl) state.baseUrl = data.baseUrl.replace(/\/+$/, '')
+      const items = data.shares || []
+      if (!items.length) {
+        els.shareManageList.textContent = '还没有分享链接。'
+        return
+      }
+      els.shareManageList.replaceChildren()
+      for (const share of items) {
+        const row = document.createElement('div')
+        row.className = 'audit-row'
+        const info = document.createElement('span')
+        info.className = 'audit-copy'
+        const title = document.createElement('strong')
+        title.textContent = share.title || '未命名对话'
+        const meta = document.createElement('span')
+        meta.textContent = `${share.expired ? '已过期' : formatShareDate(share.expiresAt)} · ${share.viewCount || 0} 次查看`
+        info.append(title, meta)
+        row.appendChild(info)
+        if (share.token && !share.expired && !share.revokedAt) {
+          const copy = document.createElement('button')
+          copy.type = 'button'
+          copy.className = 'sidebar-tool'
+          copy.textContent = '复制'
+          copy.addEventListener('click', async () => {
+            const ok = await copyText(`${state.baseUrl}/s/${share.token}`)
+            showToast(ok ? '链接已复制' : '复制失败', ok ? undefined : { tone: 'error' })
+          })
+          row.appendChild(copy)
+        }
+        if (!share.revokedAt) {
+          const revoke = document.createElement('button')
+          revoke.type = 'button'
+          revoke.className = 'sidebar-tool'
+          revoke.textContent = '撤销'
+          revoke.addEventListener('click', async () => {
+            try {
+              await api(`/api/shares/${share.id}`, { method: 'DELETE' })
+              showToast('分享链接已撤销')
+              await loadAllShares()
+            } catch (error) {
+              showToast(error.message || '撤销失败', { tone: 'error' })
+            }
+          })
+          row.appendChild(revoke)
+        }
+        els.shareManageList.appendChild(row)
+      }
+    } catch (error) {
+      els.shareManageList.textContent = error.message || '加载失败'
+    }
+  }
+
+  els.shareManageWrap?.addEventListener('toggle', () => {
+    if (els.shareManageWrap.open) void loadAllShares()
+  })
+
+  async function loadAudit() {
+    if (!els.auditList) return
+    els.auditList.textContent = '正在加载…'
+    try {
+      const data = await api('/api/audit?limit=50')
+      const labels = {
+        'permission.change': '权限变更',
+        'approval.decision': '授权决定',
+        'conversation.delete': '删除对话',
+        'conversation.restore': '恢复对话',
+        'project.delete': '删除项目',
+        'share.create': '创建分享',
+        'share.revoke': '撤销分享',
+        'backup.import': '导入备份',
+      }
+      if (!data.entries?.length) {
+        els.auditList.textContent = '还没有操作记录。'
+        return
+      }
+      els.auditList.replaceChildren()
+      for (const entry of data.entries) {
+        const row = document.createElement('div')
+        row.className = 'audit-row'
+        const when = new Date(entry.at).toLocaleString('zh-CN', { hour12: false })
+        const time = document.createElement('span')
+        time.className = 'audit-time'
+        time.textContent = when
+        const copy = document.createElement('span')
+        copy.className = 'audit-copy'
+        const kind = document.createElement('strong')
+        kind.textContent = labels[entry.type] || entry.type
+        const text = document.createElement('span')
+        text.textContent = entry.summary
+        copy.append(kind, text)
+        row.append(time, copy)
+        els.auditList.appendChild(row)
+      }
+    } catch (error) {
+      els.auditList.textContent = error.message || '操作记录加载失败'
+    }
+  }
+
+  els.auditWrap?.addEventListener('toggle', () => {
+    if (els.auditWrap.open) void loadAudit()
+  })
+
+  async function loadShareBase() {
+    if (!els.shareBaseInput) return
+    try {
+      const data = await api('/api/settings')
+      els.shareBaseInput.value = data.publicBaseUrl || ''
+      els.shareBaseState.textContent = `当前生效：${data.effectiveBaseUrl} · ${data.tlsEnabled ? 'HTTPS' : 'HTTP'} · 监听 ${data.bindHost || '默认'}`
+    } catch (error) {
+      els.shareBaseState.textContent = error.message || '读取失败'
+    }
+  }
+
+  async function saveShareBase() {
+    if (!els.shareBaseInput) return
+    els.shareBaseSave.disabled = true
+    try {
+      const data = await api('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ publicBaseUrl: els.shareBaseInput.value.trim() }),
+      })
+      state.baseUrl = data.effectiveBaseUrl || state.baseUrl
+      els.shareBaseState.textContent = `当前生效：${data.effectiveBaseUrl} · ${data.tlsEnabled ? 'HTTPS' : 'HTTP'}`
+      showToast('对外地址已保存，新生成的分享链接会使用它')
+    } catch (error) {
+      showToast(error.message || '保存失败', { tone: 'error' })
+    } finally {
+      els.shareBaseSave.disabled = false
+    }
+  }
+
+  els.shareBaseSave?.addEventListener('click', () => void saveShareBase())
+
   async function backupAll() {
     els.backupBtn.disabled = true
     els.backupBtn.textContent = '导出中…'
@@ -7190,6 +8283,105 @@
     }
   }
 
+  function loadTemplateValues() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('dsh.templateValues.v1') || '{}')
+      return parsed && typeof parsed === 'object' ? parsed : {}
+    } catch {
+      return {}
+    }
+  }
+
+  function saveTemplateValues() {
+    try {
+      localStorage.setItem('dsh.templateValues.v1', JSON.stringify(state.templateValues))
+    } catch {}
+  }
+
+  function insertIntoComposer(text) {
+    const draft = els.input.value
+    els.input.value = draft.trim() ? `${draft}\n\n${text}` : text
+    resizeInput()
+    updateComposerMeta()
+    els.input.focus()
+    els.input.setSelectionRange(els.input.value.length, els.input.value.length)
+    saveDraftNow()
+    if (draft.trim()) showToast('提示词已追加，原草稿已保留')
+  }
+
+  function insertPromptText(text) {
+    const names = [...new Set([...String(text).matchAll(/\{\{\s*([^{}]+?)\s*\}\}/g)].map((match) => match[1].trim()))].filter(Boolean)
+    if (!names.length) {
+      insertIntoComposer(text)
+      return
+    }
+    openTemplateModal(names, (values) => {
+      const filled = String(text).replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (all, name) => {
+        const value = values[String(name).trim()]
+        return value ? value : all
+      })
+      insertIntoComposer(filled)
+    })
+  }
+
+  function openTemplateModal(names, onFill) {
+    state.templateFocus = document.activeElement
+    state.templateOnFill = onFill
+    els.templateFields.replaceChildren()
+    els.templateError.hidden = true
+    for (const name of names) {
+      const label = document.createElement('label')
+      label.className = 'template-field'
+      const text = document.createElement('span')
+      text.textContent = name
+      const input = document.createElement('input')
+      input.type = 'text'
+      input.name = name
+      input.value = state.templateValues[name] || ''
+      input.autocomplete = 'off'
+      input.placeholder = `填写${name}`
+      label.append(text, input)
+      els.templateFields.appendChild(label)
+    }
+    els.templateModal.hidden = false
+    lockShell()
+    requestAnimationFrame(() => els.templateFields.querySelector('input')?.focus({ preventScroll: true }))
+  }
+
+  function closeTemplateModal({ restoreFocus = true } = {}) {
+    if (!els.templateModal || els.templateModal.hidden) return
+    els.templateModal.hidden = true
+    state.templateOnFill = null
+    lockShell()
+    if (restoreFocus) {
+      const target = state.templateFocus
+      state.templateFocus = null
+      if (target && document.contains(target)) target.focus({ preventScroll: true })
+    }
+  }
+
+  function submitTemplateForm(event) {
+    event.preventDefault()
+    const values = {}
+    let missing = ''
+    for (const input of els.templateFields.querySelectorAll('input')) {
+      const value = input.value.trim()
+      if (!value && !missing) missing = input.name
+      values[input.name] = value
+    }
+    if (missing) {
+      els.templateError.textContent = `请填写「${missing}」`
+      els.templateError.hidden = false
+      els.templateFields.querySelector(`input[name="${CSS.escape(missing)}"]`)?.focus()
+      return
+    }
+    for (const [name, value] of Object.entries(values)) state.templateValues[name] = value
+    saveTemplateValues()
+    const onFill = state.templateOnFill
+    closeTemplateModal({ restoreFocus: false })
+    onFill?.(values)
+  }
+
   function renderPrompts() {
     els.promptList.replaceChildren()
     for (const prompt of state.prompts) {
@@ -7213,14 +8405,7 @@
       insert.setAttribute('aria-label', `插入提示词：${prompt.name}`)
       insert.addEventListener('click', () => {
         closePrompts()
-        const draft = els.input.value
-        els.input.value = draft.trim() ? `${draft}\n\n${prompt.text}` : prompt.text
-        resizeInput()
-        updateComposerMeta()
-        els.input.focus()
-        els.input.setSelectionRange(els.input.value.length, els.input.value.length)
-        saveDraftNow()
-        if (draft.trim()) showToast('提示词已追加，原草稿已保留')
+        insertPromptText(prompt.text)
       })
       const remove = document.createElement('button')
       remove.type = 'button'
@@ -7254,6 +8439,12 @@
       els.promptList.appendChild(card)
     }
   }
+
+  els.templateForm?.addEventListener('submit', submitTemplateForm)
+  els.templateCancel?.addEventListener('click', () => closeTemplateModal())
+  els.templateModal?.addEventListener('click', (event) => {
+    if (event.target === els.templateModal) closeTemplateModal()
+  })
 
   els.promptForm?.addEventListener('submit', (event) => {
     event.preventDefault()
@@ -7332,8 +8523,8 @@
       })
       const data = await response.json().catch(() => ({}))
       if (!response.ok) throw new Error(data.error || `导入失败（${response.status}）`)
-      await Promise.all([loadProjects({ silent: true }), refreshConversations()])
-      showToast(`已导入 ${data.imported || 0} 段对话${data.projects ? `、${data.projects} 个项目` : ''}`)
+      await Promise.all([loadProjects({ silent: true }), refreshConversations(), loadLibrary()])
+      showToast(`已导入 ${data.imported || 0} 段对话${data.skipped ? `，跳过 ${data.skipped} 段重复内容` : ''}${data.projects ? `、${data.projects} 个项目` : ''}`)
     } catch (error) {
       showToast(error.message || '导入失败', { tone: 'error' })
     } finally {
@@ -7785,6 +8976,13 @@
   function activeOverlay() {
     for (const overlay of [
       els.permissionMenu,
+      els.confirmModal,
+      els.templateModal,
+      els.exportSheet,
+      els.versionsSheet,
+      els.shareSheet,
+      els.moveSheet,
+      els.projectsSheet,
       els.palette,
       els.filePreview,
       els.renameModal,
@@ -7795,12 +8993,9 @@
       els.bookmarksSheet,
       els.promptSheet,
       els.memorySheet,
-      els.confirmModal,
       els.filesSheet,
       els.scenarioSheet,
       els.shortcutsSheet,
-      els.projectsSheet,
-      els.moveSheet,
     ]) {
       if (overlay && !overlay.hidden) return overlay
     }
@@ -7893,7 +9088,6 @@
 
   function setComposerStreaming(streaming) {
     const wasStreaming = els.sendBtn.classList.contains('stop')
-    els.thread?.setAttribute('aria-busy', String(Boolean(streaming)))
     if (streaming && !wasStreaming) announce('正在生成回答')
     if (wasStreaming && !streaming) announce('回答已生成')
     els.sendBtn.classList.toggle('stop', streaming)
@@ -7971,6 +9165,86 @@
       els.sendBtn.disabled = (!els.input.value.trim() && !state.stagedFiles.length) || [...els.input.value].length > 24000
     }
   })
+
+  const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition
+  if (SpeechRecognitionCtor && els.micBtn) {
+    els.micBtn.hidden = false
+    els.micBtn.addEventListener('click', () => {
+      if (state.voice) stopVoice()
+      else startVoice()
+    })
+  }
+
+  function setVoiceUi(recording) {
+    if (!els.micBtn) return
+    els.micBtn.classList.toggle('recording', recording)
+    els.micBtn.setAttribute('aria-pressed', String(recording))
+    els.micBtn.setAttribute('aria-label', recording ? '停止语音输入' : '语音输入')
+    els.micBtn.title = recording ? '停止语音输入' : '语音输入'
+  }
+
+  function startVoice() {
+    if (!SpeechRecognitionCtor) return
+    if (!window.isSecureContext) {
+      showToast('语音输入需要安全上下文（localhost 或 HTTPS）', { tone: 'error' })
+      return
+    }
+    try {
+      const recognition = new SpeechRecognitionCtor()
+      recognition.lang = 'zh-CN'
+      recognition.interimResults = true
+      recognition.continuous = false
+      recognition.maxAlternatives = 1
+      state.voice = recognition
+      state.voiceBase = els.input.value.trim() ? `${els.input.value.trim()} ` : ''
+      state.voiceTranscript = ''
+      let finalText = ''
+      recognition.onresult = (event) => {
+        let interim = ''
+        for (let i = event.resultIndex; i < event.results.length; i += 1) {
+          const result = event.results[i]
+          const text = result[0]?.transcript || ''
+          if (result.isFinal) finalText += text
+          else interim += text
+        }
+        state.voiceTranscript = finalText
+        els.input.value = `${state.voiceBase}${finalText}${interim}`
+        resizeInput()
+        updateComposerMeta()
+      }
+      recognition.onerror = (event) => {
+        const messages = {
+          'not-allowed': '麦克风权限被拒绝，请在浏览器设置里允许',
+          'service-not-allowed': '当前浏览器不允许语音服务',
+          'no-speech': '没有听到语音，请再说一次',
+          network: '语音服务网络不可用',
+          aborted: '',
+        }
+        const message = messages[event.error]
+        if (message) showToast(message, { tone: 'error' })
+      }
+      recognition.onend = () => {
+        state.voice = null
+        setVoiceUi(false)
+        saveDraftNow()
+        updateComposerMeta()
+      }
+      recognition.start()
+      setVoiceUi(true)
+      announce('正在听写，说完后会自动填入输入框')
+    } catch (error) {
+      state.voice = null
+      setVoiceUi(false)
+      showToast(error.message || '无法启动语音输入', { tone: 'error' })
+    }
+  }
+
+  function stopVoice() {
+    if (!state.voice) return
+    try {
+      state.voice.stop()
+    } catch {}
+  }
 
   els.input.addEventListener('keydown', (event) => {
     if (!els.commandMenu.hidden) {
@@ -8352,7 +9626,12 @@
       scheduleCacheSave()
       void refreshConversations().catch(() => {})
       void refreshFiles(conversationId)
-      void syncConversation(conversationId)
+      void syncConversation(conversationId).then(() => {
+        if (options.retryOf && !failed && state.currentId === conversationId && !state.streaming) {
+          renderMessages(state.messages, { restoreScroll: false })
+          scrollToBottom()
+        }
+      })
     }
   }
 
@@ -8720,7 +9999,12 @@
           scheduleCacheSave()
           void refreshConversations().catch(() => {})
           void refreshFiles(conversationId)
-          void syncConversation(conversationId)
+          void syncConversation(conversationId).then(() => {
+        if (options.retryOf && !failed && state.currentId === conversationId && !state.streaming) {
+          renderMessages(state.messages, { restoreScroll: false })
+          scrollToBottom()
+        }
+      })
         }
       }
 
@@ -8787,6 +10071,29 @@
       button.textContent = '复制'
       button.classList.remove('copied')
     }, 1500)
+  })
+
+  let printState = null
+  window.addEventListener('beforeprint', () => {
+    if (!state.currentId || !state.messages.length) return
+    printState = { end: state.threadEnd, stick: state.stick }
+    state.threadEnd = null
+    state.stick = false
+    renderMessages(state.messages, { restoreScroll: false })
+    const project = activeProject()
+    const titleEl = $('#printTitle')
+    const metaEl = $('#printMeta')
+    if (titleEl) titleEl.textContent = els.topbarName.textContent || 'DSH Chat'
+    if (metaEl) {
+      metaEl.textContent = `${new Date().toLocaleString('zh-CN', { hour12: false })}${project ? ` · ${project.name}` : ''}`
+    }
+  })
+  window.addEventListener('afterprint', () => {
+    if (!printState) return
+    state.threadEnd = printState.end
+    state.stick = printState.stick
+    printState = null
+    if (state.currentId) renderMessages(state.messages, { restoreScroll: false })
   })
 
   /* ── boot ──────────────────────────────────────────────────────────── */

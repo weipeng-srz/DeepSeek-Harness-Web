@@ -1,4 +1,5 @@
 import http from 'node:http'
+import https from 'node:https'
 import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -23,6 +24,9 @@ import {
 import { writeHeadlessPatch } from './profile.mjs'
 import { ConversationStore } from './store.mjs'
 import { ProjectStore } from './project-store.mjs'
+import { ShareStore } from './share-store.mjs'
+import { LibraryStore } from './library-store.mjs'
+import { AuditLog } from './audit.mjs'
 import { MemoryStore } from './memory-store.mjs'
 import { startDshRun } from './dsh.mjs'
 import { nativeBridge } from './native.mjs'
@@ -30,11 +34,32 @@ import { codexBridge, effortLabel } from './codex-bridge.mjs'
 import { codexAvailable, ensureCodexHttpProvider, readCodexDefaults } from './codex.mjs'
 import { Notifier } from './notify.mjs'
 
-const VERSION = '3.1.0'
+const VERSION = '5.0.0'
 const SERVER_EPOCH = Date.now()
 const AUTH_COOKIE = 'dsh_access'
 const CLIENT_COOKIE = 'dsh_cid'
-const AUTH_TOKEN = crypto.createHmac('sha256', SECRET).update(ACCESS_CODE).digest('hex')
+const AUTH_EPOCH_PATH = path.join(DATA_DIR, 'auth-epoch')
+function readAuthEpoch() {
+  try {
+    const value = Number(fs.readFileSync(AUTH_EPOCH_PATH, 'utf8').trim())
+    return Number.isFinite(value) && value >= 0 ? value : 0
+  } catch {
+    return 0
+  }
+}
+let authEpoch = readAuthEpoch()
+function authToken() {
+  return crypto.createHmac('sha256', SECRET).update(`${ACCESS_CODE}:${authEpoch}`).digest('hex')
+}
+function bumpAuthEpoch() {
+  authEpoch += 1
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true })
+    fs.writeFileSync(AUTH_EPOCH_PATH, String(authEpoch), { mode: 0o600 })
+  } catch (error) {
+    console.error('[auth] 写入会话纪元失败:', error.message)
+  }
+}
 const MAX_BODY = 64 * 1024
 const MAX_UPLOAD = 25 * 1024 * 1024
 const MAX_PROMPT = 24_000
@@ -44,6 +69,7 @@ const MAX_ATTACHMENTS = 5
 const STATIC_CACHE = new Map()
 const chatRate = new Map()
 const idempotency = new Map()
+const shareViewRate = new Map()
 const startingRuns = new Set()
 
 const DEFAULT_PERMISSION = 'workspace-write'
@@ -79,6 +105,13 @@ const SINGLE_USER = config.singleUser !== false
 const SHARED_OWNER = 'single-user-owner'
 const store = new ConversationStore()
 const projects = new ProjectStore()
+const shares = new ShareStore()
+const library = new LibraryStore()
+const audit = new AuditLog()
+store.onPurge = (conv) => {
+  const revoked = shares.revokeAllForConversation(conv.id)
+  if (revoked) audit.add('share.revoke', `对话删除后撤销 ${revoked} 个分享`, { conversationId: conv.id })
+}
 const memory = new MemoryStore()
 const notifier = new Notifier({
   settings: config.notify,
@@ -139,7 +172,7 @@ function timingSafeEqual(a, b) {
 function isAuthed(req) {
   if (!AUTH_ENABLED) return true
   const cookies = parseCookies(req)
-  return timingSafeEqual(cookies[AUTH_COOKIE] || '', AUTH_TOKEN)
+  return timingSafeEqual(cookies[AUTH_COOKIE] || '', authToken())
 }
 
 function clientId(req, res) {
@@ -192,7 +225,14 @@ async function readJsonBody(req, maxBytes = MAX_BODY) {
   }
 }
 
+function isSecureRequest(req) {
+  return Boolean(req?.socket?.encrypted) || String(req?.headers?.['x-forwarded-proto'] || '').toLowerCase() === 'https'
+}
+
 function securityHeaders(res) {
+  if (res.req && isSecureRequest(res.req)) {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000')
+  }
   res.setHeader('X-Content-Type-Options', 'nosniff')
   res.setHeader('Referrer-Policy', 'no-referrer')
   res.setHeader('X-Frame-Options', 'DENY')
@@ -200,6 +240,20 @@ function securityHeaders(res) {
     'Content-Security-Policy',
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   )
+}
+
+function publicBaseUrl(req = null) {
+  const configured = String(config.publicBaseUrl || config.notify?.baseUrl || '').trim().replace(/\/+$/, '')
+  if (configured) return configured
+  const scheme = tlsOptions ? 'https' : 'http'
+  const host = String(req?.headers?.host || '').trim()
+  if (host && !/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i.test(host)) return `${scheme}://${host}`
+  // A localhost-bound server is not reachable via a LAN address. Only fall
+  // back to the LAN IP when the server actually listens on all interfaces.
+  const bind = String(config.host || '').trim()
+  if (bind && bind !== '0.0.0.0' && bind !== '::') return `${scheme}://127.0.0.1:${config.port}`
+  const lan = lanAddresses()[0]
+  return `${scheme}://${lan || '127.0.0.1'}:${config.port}`
 }
 
 function lanAddresses() {
@@ -451,6 +505,8 @@ function convSummary(conv) {
     pinned: Boolean(conv.pinned),
     archived: Boolean(conv.archivedAt),
     projectId: conv.projectId || null,
+    noMemory: Boolean(conv.noMemory),
+    forkedFrom: conv.forkedFrom || null,
     running: activeRuns.has(conv.id),
   }
 }
@@ -460,6 +516,7 @@ function projectSummary(project, counts) {
     ...project,
     conversationCount: counts?.count || 0,
     lastActiveAt: counts?.lastActiveAt || project.updatedAt || 0,
+    fileCount: projects.listFiles(project.id).length,
   }
 }
 
@@ -740,6 +797,36 @@ async function ensureUploadWorkspace(conv) {
   return conv.mode === 'native' ? conv.nativeCwd : conv.workspace
 }
 
+async function syncProjectFilesToWorkspace(conv, project) {
+  const files = projects.listFiles(project.id)
+  if (!files.length) return []
+  let root
+  try {
+    root = await ensureUploadWorkspace(conv)
+  } catch {
+    return []
+  }
+  const destination = path.join(root, 'project')
+  try {
+    fs.mkdirSync(destination, { recursive: true })
+  } catch {
+    return []
+  }
+  const linked = []
+  for (const file of files.slice(0, 20)) {
+    const source = path.join(projects.fileRoot(project.id), file.name)
+    const target = path.join(destination, file.name)
+    try {
+      const stat = fs.existsSync(target) ? fs.statSync(target) : null
+      if (!stat || stat.size !== file.size || Math.round(stat.mtimeMs) !== Math.round(file.mtime)) {
+        fs.copyFileSync(source, target)
+      }
+      linked.push({ name: file.name, size: file.size, relative: `project/${file.name}` })
+    } catch {}
+  }
+  return linked
+}
+
 function sanitizeUploadName(raw) {
   let name = String(raw || '').split(/[\\/]/).pop() || 'file'
   name = name.replace(/[\u0000-\u001f<>:"|?*]/g, '_').replace(/\s+/g, ' ').trim()
@@ -866,6 +953,37 @@ function projectPromptBlock(conv) {
   return block.length > 12000 ? block.slice(0, 12000) + '\n…（项目上下文已截断）' : block
 }
 
+function versionSnapshot(message) {
+  return {
+    id: 'v_' + crypto.randomBytes(5).toString('hex'),
+    text: String(message.text || ''),
+    blocks: JSON.parse(JSON.stringify(message.blocks || [])),
+    thinking: String(message.thinking || ''),
+    status: message.status || 'done',
+    error: message.error || null,
+    createdAt: Number(message.createdAt) || Date.now(),
+    completedAt: Number(message.completedAt) || null,
+    usage: message.usage ? JSON.parse(JSON.stringify(message.usage)) : null,
+    durationMs: Number(message.durationMs) || null,
+    model: message.model || null,
+    files: Array.isArray(message.files) ? JSON.parse(JSON.stringify(message.files)) : [],
+  }
+}
+
+function restoreVersion(message, snapshot) {
+  message.text = snapshot.text || ''
+  message.blocks = JSON.parse(JSON.stringify(snapshot.blocks || []))
+  message.thinking = snapshot.thinking || ''
+  message.status = snapshot.status || 'done'
+  message.error = snapshot.error || null
+  message.createdAt = Number(snapshot.createdAt) || message.createdAt
+  message.completedAt = Number(snapshot.completedAt) || null
+  message.usage = snapshot.usage || null
+  message.durationMs = Number(snapshot.durationMs) || null
+  message.model = snapshot.model || message.model
+  message.files = Array.isArray(snapshot.files) ? snapshot.files : []
+}
+
 function transcriptFor(conv, excludeId) {
   const lines = []
   for (const msg of conv.messages) {
@@ -960,14 +1078,20 @@ async function handleChat(req, res, owner, restId) {
 
   const now = Date.now()
   let userMessage
+  let previousVersions = []
   if (retryOf) {
     const index = conv.messages.findIndex((msg) => msg.id === retryOf && msg.role === 'assistant')
     if (index < 0) return sendJson(res, 404, { error: '要重新生成的回答不存在' })
+    if (index !== conv.messages.length - 1) {
+      return sendJson(res, 409, { error: '只能重新生成最后一条回答；更早的回答请用「从这里分叉」保留后文。' })
+    }
+    const old = conv.messages[index]
     let userIndex = index - 1
     while (userIndex >= 0 && conv.messages[userIndex].role !== 'user') userIndex -= 1
     if (userIndex < 0) return sendJson(res, 400, { error: '找不到对应的提问' })
     userMessage = conv.messages[userIndex]
     text = userMessage.text
+    previousVersions = [...(Array.isArray(old.versions) ? old.versions : []), versionSnapshot(old)].slice(-10)
     conv.messages.splice(index)
   } else if (editOf) {
     const index = conv.messages.findIndex((msg) => msg.id === editOf && msg.role === 'user')
@@ -992,14 +1116,17 @@ async function handleChat(req, res, owner, restId) {
 
   // Capture durable preferences before building this turn's prompt so a
   // "记住…" message applies immediately, without waiting for the next turn.
+  const project = conv.projectId ? projects.get(conv.projectId) : null
+  const projectFiles = project ? await syncProjectFilesToWorkspace(conv, project) : []
+  const memoryDisabled = Boolean(conv.noMemory || project?.memoryOff)
   const capturedMemories =
-    !retryOf && !editOf && !internal ? memory.capture(owner, text, conv.id) : []
+    !memoryDisabled && !retryOf && !editOf && !internal ? memory.capture(owner, text, conv.id) : []
 
   let promptText = text
   if (attachments.length) {
     promptText += `\n\n[用户上传的附件]\n${attachments
       .map((file) => `- ${file.path}（${file.name}，${file.size} bytes）`)
-      .join('\n')}\n请按需读取这些文件。`
+      .join('\n')}\n请按需读取这些文件。${attachments.some((file) => /\.pdf$/i.test(file.name)) ? '\n注意：扫描版 PDF 可能没有文本层，若读取不到内容请明确说明，不要猜测。' : ''}`
   }
   if (retryOf) {
     promptText += '\n\n（请重新生成上一条回答，忽略你之前给出的版本，不要提及这是一次重试。）'
@@ -1007,9 +1134,13 @@ async function handleChat(req, res, owner, restId) {
     promptText += '\n\n（这是编辑后的重新发送，请以本条消息为准，忽略此前相同问题的上下文。）'
   }
   const projectBlock = projectPromptBlock(conv)
-  const memoryBlock = memory.promptBlock(owner)
+  const projectFilesBlock = projectFiles.length
+    ? `[项目文件]\n${projectFiles.map((file) => `- ${file.relative}（${file.name}，${file.size} bytes）`).join('\n')}\n这些文件已复制到当前工作区的 project/ 目录，可直接读取。`
+    : ''
+  const memoryBlock = memoryDisabled ? '' : memory.promptBlock(owner)
   if (memoryBlock) promptText = `${memoryBlock}\n\n${promptText}`
   if (projectBlock) promptText = `${projectBlock}\n\n${promptText}`
+  if (projectFilesBlock) promptText = `${projectFilesBlock}\n\n${promptText}`
 
   // The text is rendered with textContent on the client; store it as-is.
   const assistant = {
@@ -1026,6 +1157,7 @@ async function handleChat(req, res, owner, restId) {
     durationMs: null,
     model: MODEL,
     files: [],
+    ...(previousVersions.length ? { versions: previousVersions } : {}),
   }
   conv.messages.push(assistant)
   if (conv.title === '新对话') conv.title = store.titleFrom(text || '附件')
@@ -1592,7 +1724,7 @@ async function handleApi(req, res, url) {
   const rest = segments.slice(1)
 
   if (rest[0] === 'health') {
-    return sendJson(res, 200, { ok: true, model: MODEL, version: VERSION })
+    return sendJson(res, 200, { ok: true })
   }
   if (rest[0] === 'login' && req.method === 'POST') {
     const ip = req.socket.remoteAddress || 'unknown'
@@ -1611,7 +1743,7 @@ async function handleApi(req, res, url) {
       authFailures.delete(ip)
       res.appendHeader(
         'Set-Cookie',
-        `${AUTH_COOKIE}=${AUTH_TOKEN}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000`,
+        `${AUTH_COOKIE}=${authToken()}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000${isSecureRequest(req) ? '; Secure' : ''}`,
       )
       return sendJson(res, 200, { ok: true, model: MODEL })
     }
@@ -1620,8 +1752,12 @@ async function handleApi(req, res, url) {
     return sendJson(res, 401, { error: '访问码不正确' })
   }
   if (rest[0] === 'logout' && req.method === 'POST') {
-    res.appendHeader('Set-Cookie', `${AUTH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`)
-    return sendJson(res, 200, { ok: true })
+    // Single-user auth has no session table. Rotating the epoch invalidates
+    // every previously issued cookie, so a copied cookie cannot outlive the
+    // logout the user just performed.
+    bumpAuthEpoch()
+    res.appendHeader('Set-Cookie', `${AUTH_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${isSecureRequest(req) ? '; Secure' : ''}`)
+    return sendJson(res, 200, { ok: true, revokedAllDevices: true })
   }
   if (rest[0] === 'me') {
     return sendJson(res, 200, {
@@ -1636,12 +1772,37 @@ async function handleApi(req, res, url) {
       codexReady: codexBridge.ready,
       codexModels: codexBridge.currentModels().models.length,
       permission: DEFAULT_PERMISSION,
+      baseUrl: publicBaseUrl(req),
+      secureContext: isSecureRequest(req),
       memory: {
         enabled: memory.settings.enabled,
         autoCapture: memory.settings.autoCapture,
         count: memory.count(owner),
       },
     })
+  }
+
+  if (rest[0] === 'share' && rest.length === 2 && req.method === 'GET') {
+    const ip = req.socket.remoteAddress || 'unknown'
+    const now = Date.now()
+    const bucket = (shareViewRate.get(ip) || []).filter((at) => now - at < 60_000)
+    if (bucket.length >= 120) return sendJson(res, 429, { error: '访问太快，请稍后再试' })
+    bucket.push(now)
+    shareViewRate.set(ip, bucket)
+    let raw = ''
+    try {
+      raw = decodeURIComponent(rest[1])
+    } catch {
+      return sendJson(res, 400, { error: '链接无效' })
+    }
+    const result = shares.findPublic(raw)
+    if (result.error === 'notfound') return sendJson(res, 404, { error: '分享不存在或已被撤销' })
+    if (result.error === 'revoked') return sendJson(res, 410, { error: '这个分享已被撤销' })
+    if (result.error === 'expired') return sendJson(res, 410, { error: '这个分享已过期' })
+    securityHeaders(res)
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow')
+    return sendJson(res, 200, result.share)
   }
 
   if (!isAuthed(req)) return sendJson(res, 401, { error: '需要访问码' })
@@ -1657,6 +1818,64 @@ async function handleApi(req, res, url) {
         }
         return sendJson(res, 405, { error: '不支持的方法' })
       }
+      if (rest.length === 3 && rest[2] === 'files') {
+        const project = ownedProject(rest[1], res)
+        if (!project) return
+        const root = projects.fileRoot(project.id)
+        if (req.method === 'GET') {
+          return sendJson(res, 200, { files: projects.listFiles(project.id), note: '最多 20 个文件会随项目上下文复制到对话工作区 project/ 目录' })
+        }
+        if (req.method === 'POST') {
+          const name = sanitizeUploadName(url.searchParams.get('name'))
+          fs.mkdirSync(root, { recursive: true, mode: 0o700 })
+          let target = path.join(root, name)
+          const extension = path.extname(name)
+          const base = path.basename(name, extension)
+          let index = 1
+          while (fs.existsSync(target)) target = path.join(root, `${base}-${index++}${extension}`)
+          if (projects.listFiles(project.id).length >= 20) {
+            return sendJson(res, 409, { error: '项目文件最多 20 个，请先删除不用的文件' })
+          }
+          try {
+            const uploaded = await readUploadTo(req, target)
+            audit.add('project.file.upload', `项目文件：${path.basename(uploaded.target)}`, { projectId: project.id })
+            return sendJson(res, 201, { file: { name: path.basename(uploaded.target), size: uploaded.size }, files: projects.listFiles(project.id) })
+          } catch (error) {
+            return sendJson(res, error.status || 400, { error: error.message || '上传失败' })
+          }
+        }
+        if (req.method === 'DELETE') {
+          const body = await readJsonBody(req)
+          const name = sanitizeUploadName(body.name)
+          try {
+            fs.rmSync(path.join(root, name), { force: true })
+          } catch {}
+          audit.add('project.file.delete', `删除项目文件：${name}`, { projectId: project.id })
+          return sendJson(res, 200, { ok: true, files: projects.listFiles(project.id) })
+        }
+        return sendJson(res, 405, { error: '不支持的方法' })
+      }
+      if (rest.length === 3 && rest[2] === 'file' && req.method === 'GET') {
+        const project = ownedProject(rest[1], res)
+        if (!project) return
+        const root = projects.fileRoot(project.id)
+        let file
+        try {
+          file = resolveWorkspaceFile(root, url.searchParams.get('name') || '')
+        } catch (error) {
+          return sendJson(res, 404, { error: error.message })
+        }
+        const extension = path.extname(file.absolute).toLowerCase()
+        const contentType = IMAGE_TYPES[extension] || (TEXT_EXTENSIONS.has(extension) ? 'text/plain; charset=utf-8' : extension === '.pdf' ? 'application/pdf' : 'application/octet-stream')
+        securityHeaders(res)
+        res.writeHead(200, {
+          'Content-Type': contentType,
+          'Content-Length': file.stat.size,
+          'Content-Disposition': `inline; filename*=UTF-8''${encodeURIComponent(path.basename(file.absolute))}`,
+          'Cache-Control': 'no-store',
+        })
+        return fs.createReadStream(file.absolute).pipe(res)
+      }
       if (rest.length === 2) {
         const project = ownedProject(rest[1], res)
         if (!project) return
@@ -1668,6 +1887,7 @@ async function handleApi(req, res, url) {
         if (req.method === 'DELETE') {
           const removed = projects.remove(project.id)
           const moved = store.unfileProject(project.id)
+          audit.add('project.delete', `删除项目：${String(project.name || '').slice(0, 60)}`, { projectId: project.id, moved })
           return sendJson(res, 200, { ok: true, removed: Boolean(removed), moved, ...projectsPayload(owner) })
         }
         return sendJson(res, 405, { error: '不支持的方法' })
@@ -1676,6 +1896,70 @@ async function handleApi(req, res, url) {
     } catch (error) {
       return sendJson(res, error.status || 400, { error: error.message || '项目操作失败' })
     }
+  }
+
+  if (rest[0] === 'shares') {
+    if (rest.length === 1 && req.method === 'GET') {
+      return sendJson(res, 200, { shares: shares.list(owner), counts: shares.counts(owner), baseUrl: publicBaseUrl(req) })
+    }
+    if (rest.length === 2 && req.method === 'DELETE') {
+      const revoked = shares.revoke(owner, rest[1])
+      if (!revoked) return sendJson(res, 404, { error: '分享不存在' })
+      audit.add('share.revoke', '撤销只读分享', { shareId: revoked.id, conversationId: revoked.conversationId })
+      return sendJson(res, 200, { ok: true, shares: shares.list(owner), counts: shares.counts(owner) })
+    }
+    return sendJson(res, 405, { error: '不支持的方法' })
+  }
+
+  if (rest[0] === 'settings') {
+    if (rest.length === 1 && req.method === 'GET') {
+      return sendJson(res, 200, {
+        publicBaseUrl: String(config.publicBaseUrl || ''),
+        effectiveBaseUrl: publicBaseUrl(req),
+        bindHost: String(config.host || ''),
+        tlsEnabled: Boolean(tlsOptions),
+      })
+    }
+    if (rest.length === 1 && req.method === 'PATCH') {
+      const body = await readJsonBody(req)
+      if (typeof body.publicBaseUrl !== 'string') return sendJson(res, 400, { error: '缺少 publicBaseUrl' })
+      const value = body.publicBaseUrl.trim().replace(/\/+$/, '')
+      if (value && !/^https?:\/\/[^\s/]+(?:\/[^\s]*)?$/i.test(value)) {
+        return sendJson(res, 400, { error: '请填写完整的 http(s) 地址，例如 https://chat.example.com' })
+      }
+      config.publicBaseUrl = value
+      if (!saveConfig()) return sendJson(res, 500, { error: '配置写入失败' })
+      audit.add('settings.shareBase', `对外地址：${value || '自动'}`, {})
+      return sendJson(res, 200, {
+        publicBaseUrl: value,
+        effectiveBaseUrl: publicBaseUrl(req),
+        bindHost: String(config.host || ''),
+        tlsEnabled: Boolean(tlsOptions),
+      })
+    }
+    return sendJson(res, 405, { error: '不支持的方法' })
+  }
+
+  if (rest[0] === 'audit') {
+    if (rest.length === 1 && req.method === 'GET') {
+      return sendJson(res, 200, { entries: audit.list(url.searchParams.get('limit')) })
+    }
+    if (rest.length === 1 && req.method === 'DELETE') {
+      const removed = audit.clear()
+      return sendJson(res, 200, { ok: true, removed })
+    }
+    return sendJson(res, 405, { error: '不支持的方法' })
+  }
+
+  if (rest[0] === 'library') {
+    if (rest.length === 1 && req.method === 'GET') {
+      return sendJson(res, 200, library.get(owner))
+    }
+    if (rest.length === 1 && req.method === 'PUT') {
+      const body = await readJsonBody(req, 2 * 1024 * 1024)
+      return sendJson(res, 200, library.put(owner, body))
+    }
+    return sendJson(res, 405, { error: '不支持的方法' })
   }
 
   if (rest[0] === 'memory') {
@@ -1809,6 +2093,7 @@ async function handleApi(req, res, url) {
       ...store.backup(owner),
       projects: projectBackup.projects,
       memory: memory.export(owner),
+      library: library.export(owner),
     })
   }
   if (rest[0] === 'backup' && rest[1] === 'import' && req.method === 'POST') {
@@ -1824,12 +2109,15 @@ async function handleApi(req, res, url) {
       for (const id of projectImport.map.values()) projects.remove(id)
       throw error
     }
+    audit.add('backup.import', `导入备份：${result.imported} 段对话`, { conversations: result.imported, projects: projectImport.imported })
     const memories = body.memory ? memory.import(owner, body.memory) : { imported: 0, skipped: 0 }
+    const libraryImport = body.library ? library.import(owner, body.library) : { imported: 0 }
     return sendJson(res, 200, {
       ok: true,
       ...result,
       projects: projectImport.imported,
       memories,
+      library: libraryImport,
     })
   }
 
@@ -1880,6 +2168,7 @@ async function handleApi(req, res, url) {
       if (!target || target.owner !== owner) return sendJson(res, 404, { error: '会话不存在' })
       const restored = store.restore(target.id)
       if (!restored) return sendJson(res, 410, { error: '撤销已过期，会话已删除' })
+      audit.add('conversation.restore', `恢复对话：${String(restored.title || '').slice(0, 80)}`, { conversationId: restored.id })
       return sendJson(res, 200, { conversation: convSummary(restored) })
     }
     const conv = ownedConversation(rest[1], res, owner)
@@ -1902,6 +2191,7 @@ async function handleApi(req, res, url) {
         await nativeBridge.archiveSession(conv.dshSessionId)
       }
       store.softRemove(conv.id)
+      audit.add('conversation.delete', `删除对话：${String(conv.title || '').slice(0, 80)}`, { conversationId: conv.id })
       return sendJson(res, 200, { ok: true, undoUntil: Date.now() + 8000 })
     }
     if (rest.length === 3 && rest[2] === 'duplicate' && req.method === 'POST') {
@@ -1957,6 +2247,10 @@ async function handleApi(req, res, url) {
         conv.pinned = body.pinned
         store.touch(conv)
       }
+      if (body.noMemory !== undefined) {
+        conv.noMemory = body.noMemory === true
+        store.touch(conv)
+      }
       if (body.projectId !== undefined) {
         const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
         if (projectId && !projects.get(projectId)) return sendJson(res, 400, { error: '项目不存在' })
@@ -1971,8 +2265,10 @@ async function handleApi(req, res, url) {
       if (typeof body.permission === 'string') {
         const permission = normalizePermission(body.permission)
         if (permission !== conv.permission) {
+          const previousPermission = conv.permission
           conv.permission = permission
           store.touch(conv)
+          audit.add('permission.change', `权限 ${previousPermission} → ${permission}`, { conversationId: conv.id })
           const run = activeRuns.get(conv.id)
           if (run) {
             if (conv.mode !== 'codex' && conv.dshSessionId) {
@@ -1989,6 +2285,68 @@ async function handleApi(req, res, url) {
         }
       }
       return sendJson(res, 200, { conversation: convSummary(conv) })
+    }
+    if (rest.length === 3 && rest[2] === 'context' && req.method === 'GET') {
+      const project = conv.projectId ? projects.get(conv.projectId) : null
+      const memoryDisabled = Boolean(conv.noMemory || project?.memoryOff)
+      return sendJson(res, 200, {
+        project: project ? { id: project.id, name: project.name, emoji: project.emoji } : null,
+        projectBlock: projectPromptBlock(conv),
+        memoryBlock: memoryDisabled ? '' : memory.promptBlock(owner),
+        memoryDisabled,
+        memoryCount: memory.count(owner),
+        limits: { projectPromptChars: projectPromptBlock(conv).length, memoryPromptChars: memoryDisabled ? 0 : memory.promptBlock(owner).length },
+      })
+    }
+    if (rest.length === 7 && rest[2] === 'messages' && rest[4] === 'versions' && rest[6] === 'activate' && req.method === 'POST') {
+      const message = conv.messages.find((msg) => msg.id === rest[3] && msg.role === 'assistant')
+      if (!message) return sendJson(res, 404, { error: '回答不存在' })
+      const versions = Array.isArray(message.versions) ? message.versions : []
+      const index = versions.findIndex((version) => version.id === rest[5])
+      if (index < 0) return sendJson(res, 404, { error: '版本不存在或已被清理' })
+      const current = versionSnapshot(message)
+      const selected = versions[index]
+      restoreVersion(message, selected)
+      const remaining = versions.filter((_, itemIndex) => itemIndex !== index)
+      remaining.splice(Math.min(index, remaining.length), 0, current)
+      message.versions = remaining.slice(0, 10)
+      store.touch(conv)
+      return sendJson(res, 200, { ok: true, messageId: message.id })
+    }
+    if (rest.length === 3 && rest[2] === 'fork' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      const messageId = typeof body.messageId === 'string' ? body.messageId : ''
+      if (!messageId) return sendJson(res, 400, { error: '缺少要分叉的消息' })
+      try {
+        const copy = store.fork(owner, conv.id, messageId)
+        if (!copy) return sendJson(res, 404, { error: '要分叉的消息不存在' })
+        return sendJson(res, 201, { conversation: convSummary(copy) })
+      } catch (error) {
+        return sendJson(res, error.status || 400, { error: error.message || '分叉失败' })
+      }
+    }
+    if (rest.length === 3 && rest[2] === 'share' && req.method === 'POST') {
+      const body = await readJsonBody(req)
+      try {
+        const project = conv.projectId ? projects.get(conv.projectId) : null
+        const created = shares.create({
+          conversation: conv,
+          owner,
+          expiresInDays: body.expiresInDays,
+          includeTools: body.includeTools === true,
+          includeThinking: body.includeThinking === true,
+          messageIds: Array.isArray(body.messageIds) ? body.messageIds : [],
+        })
+        audit.add('share.create', `创建只读分享：${String(conv.title || '').slice(0, 80)}`, { conversationId: conv.id, shareId: created.share.id, expiresAt: created.share.expiresAt })
+        const base = publicBaseUrl(req)
+        return sendJson(res, 201, {
+          share: created.share,
+          token: created.token,
+          url: `${base}/s/${created.token}`,
+        })
+      } catch (error) {
+        return sendJson(res, error.status || 400, { error: error.message || '创建分享失败' })
+      }
     }
     if (rest.length === 3 && rest[2] === 'chat' && req.method === 'POST') {
       return handleChat(req, res, owner, rest[1])
@@ -2036,6 +2394,7 @@ async function handleApi(req, res, url) {
           await nativeBridge.answerApproval(requestId, decision)
         }
         markInteractionResolved(requestId)
+        audit.add('approval.decision', `授权决定：${decision}`, { conversationId: conv.id, requestId })
         if (allowAlways && !codex) {
           conv.permission = 'danger-full-access'
           store.touch(conv)
@@ -2148,7 +2507,7 @@ async function handleApi(req, res, url) {
   return sendJson(res, 404, { error: '未知接口' })
 }
 
-const server = http.createServer(async (req, res) => {
+const requestHandler = async (req, res) => {
   securityHeaders(res)
   try {
     let url
@@ -2165,6 +2524,11 @@ const server = http.createServer(async (req, res) => {
       if (url.pathname === '/c' || url.pathname.startsWith('/c/')) {
         return serveStatic(req, res, '/index.html')
       }
+      if (url.pathname === '/s' || url.pathname.startsWith('/s/')) {
+        res.setHeader('X-Robots-Tag', 'noindex, nofollow')
+        res.setHeader('Cache-Control', 'no-store')
+        return serveStatic(req, res, '/share.html')
+      }
       return serveStatic(req, res, url.pathname)
     }
     return sendJson(res, 405, { error: '不支持的方法' })
@@ -2180,7 +2544,19 @@ const server = http.createServer(async (req, res) => {
     if (status >= 500) console.error('[server]', err)
     return sendJson(res, status, { error: err.message || '服务器内部错误' })
   }
-})
+}
+
+const tlsCert = String(config.tlsCert || '').trim()
+const tlsKey = String(config.tlsKey || '').trim()
+let tlsOptions = null
+if (tlsCert && tlsKey) {
+  try {
+    tlsOptions = { cert: fs.readFileSync(tlsCert), key: fs.readFileSync(tlsKey) }
+  } catch (error) {
+    console.error(`[server] TLS 证书读取失败，退回 HTTP：${error.message}`)
+  }
+}
+const server = tlsOptions ? https.createServer(tlsOptions, requestHandler) : http.createServer(requestHandler)
 
 server.on('error', (err) => {
   console.error('[server] 监听失败：', err.message)
@@ -2237,10 +2613,14 @@ server.listen(Number(config.port), config.host, () => {
   lines.push('')
   lines.push('  DSH Chat 已启动')
   lines.push('  ─────────────────────────────────────────────')
-  lines.push(`  本机访问   http://127.0.0.1:${config.port}`)
-  for (const ip of lanAddresses()) lines.push(`  内网访问   http://${ip}:${config.port}`)
+  const scheme = tlsOptions ? 'https' : 'http'
+  lines.push(`  本机访问   ${scheme}://127.0.0.1:${config.port}`)
+  for (const ip of lanAddresses()) lines.push(`  内网访问   ${scheme}://${ip}:${config.port}`)
   lines.push(`  模型       ${MODEL}`)
   if (AUTH_ENABLED) lines.push('  访问码     见 config.json（已设置，不在日志中打印）')
+  if (!tlsOptions) {
+    lines.push('  安全提示   当前为明文 HTTP，内网可用但不要直接暴露到公网；需要 HTTPS 请配置 tlsCert/tlsKey')
+  }
   lines.push(`  会话数据   ${store.data.conversations.length} 个会话`)
   lines.push(`  长期记忆   ${memory.data.items.length} 条（${memory.settings.enabled ? '已启用' : '已停用'}）`)
   if (!patchInfo.mirrored) {
@@ -2281,7 +2661,7 @@ async function shutdown(signal) {
     } catch {}
   }
   codexBridge.shutdown()
-  await Promise.all([store.flush().catch(() => {}), memory.flush().catch(() => {}), projects.flush().catch(() => {})])
+  await Promise.all([store.flush().catch(() => {}), memory.flush().catch(() => {}), projects.flush().catch(() => {}), shares.flush().catch(() => {}), library.flush().catch(() => {}), audit.flush().catch(() => {})])
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }
