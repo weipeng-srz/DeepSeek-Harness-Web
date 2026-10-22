@@ -217,25 +217,25 @@ let cssBundleCache = { key: '', raw: null, gzip: null, etag: '' }
 
 function serveCssBundle(req, res) {
   let key = ''
-  const chunks = []
   try {
     for (const rel of CSS_BUNDLE_FILES) {
-      const file = path.join(PUBLIC_DIR, rel)
-      const stat = fs.statSync(file)
-      key += `${rel}:${stat.size}:${Math.floor(stat.mtimeMs)};`
-      chunks.push(fs.readFileSync(file))
+      const stat = fs.statSync(path.join(PUBLIC_DIR, rel))
+      key += `${rel}:${stat.size}:${stat.mtimeMs};`
+    }
+    // Validate metadata on every request, but only read/compress on a miss.
+    // Conditional 304 responses therefore perform no content reads either.
+    if (cssBundleCache.key !== key) {
+      const chunks = CSS_BUNDLE_FILES.map((rel) => fs.readFileSync(path.join(PUBLIC_DIR, rel)))
+      const raw = Buffer.concat(chunks.flatMap((chunk) => [chunk, Buffer.from('\n')]))
+      cssBundleCache = {
+        key,
+        raw,
+        gzip: zlib.gzipSync(raw, { level: 6 }),
+        etag: `"bundle-${crypto.createHash('sha1').update(key).digest('hex').slice(0, 12)}"`,
+      }
     }
   } catch (error) {
     return sendJson(res, 500, { error: `样式打包失败：${error.message}` })
-  }
-  if (cssBundleCache.key !== key) {
-    const raw = Buffer.concat(chunks.flatMap((chunk) => [chunk, Buffer.from('\n')]))
-    cssBundleCache = {
-      key,
-      raw,
-      gzip: zlib.gzipSync(raw, { level: 6 }),
-      etag: `"bundle-${crypto.createHash('sha1').update(key).digest('hex').slice(0, 12)}"`,
-    }
   }
   const { raw, gzip, etag } = cssBundleCache
   const versioned = /[?&]v=[^&]+/.test(req.url || '')
