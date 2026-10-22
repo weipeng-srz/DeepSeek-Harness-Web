@@ -552,6 +552,14 @@ export class ConversationStore {
     copy.workspace = targetRoot
     if (copy.mode === 'native') copy.nativeCwd = targetRoot
     fs.mkdirSync(targetRoot, { recursive: true })
+    // A branch is used for side-by-side work; copying the workspace keeps the
+    // code/data the branch was created from.
+    const sourceRoot = source.mode === 'native' ? source.nativeCwd || source.workspace : source.workspace
+    try {
+      if (sourceRoot && sourceRoot !== targetRoot && fs.existsSync(sourceRoot)) {
+        fs.cpSync(sourceRoot, targetRoot, { recursive: true, force: false, errorOnExist: false })
+      }
+    } catch {}
     this.data.conversations.unshift(copy)
     this.scheduleSave()
     return copy
@@ -565,7 +573,12 @@ export class ConversationStore {
     const list = payload.conversations
     if (!list.length) return { imported: 0, skipped: 0 }
     this.assertCapacity(list.length)
-    const seen = new Set(this.data.conversations.map((conv) => conv.importKey).filter(Boolean))
+    const importKeys = new Map()
+    for (const conv of this.data.conversations) {
+      if (conv.importKey) importKeys.set(conv.importKey, conv.id)
+    }
+    const conversationMap = new Map()
+    const messageMap = new Map()
     let skipped = 0
     // Build the complete import in isolation. No schedule, insertion, or pruning
     // may happen until every conversation and message has been validated.
@@ -575,21 +588,30 @@ export class ConversationStore {
         throw invalid(`${label}格式不正确`)
       }
       const signature = importSignature(raw)
-      if (seen.has(signature)) {
+      if (importKeys.has(signature)) {
+        if (typeof raw.id === 'string') conversationMap.set(raw.id, importKeys.get(signature))
         skipped += 1
         return null
       }
-      seen.add(signature)
+      importKeys.set(signature, null)
       const conv = this.makeConversation(owner, {
         engine: raw.engine === 'codex' ? 'codex' : 'dsr',
         permission: raw.permission,
       })
       conv.importKey = signature
+      if (typeof raw.id === 'string') conversationMap.set(raw.id, conv.id)
       const projectId = typeof raw.projectId === 'string' ? raw.projectId : ''
       conv.projectId = projectId && options.projectMap?.get(projectId)
         ? options.projectMap.get(projectId)
         : null
       conv.title = `[导入] ${String(raw.title || '对话').slice(0, 50)}`
+      if (raw.mode === 'native' || raw.mode === 'headless' || raw.mode === 'codex') conv.mode = raw.mode
+      if (conv.mode === 'native') {
+        const nativeRoot = path.join(SHARED_WORKSPACE, 'chats', conv.id)
+        conv.nativeCwd = nativeRoot
+        conv.workspace = nativeRoot
+        try { fs.mkdirSync(nativeRoot, { recursive: true }) } catch {}
+      }
       conv.createdAt = Number(raw.createdAt) || Date.now()
       conv.updatedAt = Number(raw.updatedAt) || Date.now()
       conv.pinned = raw.pinned === true
@@ -662,14 +684,16 @@ export class ConversationStore {
             })
           }
         }
+        if (typeof msg.id === 'string') messageMap.set(msg.id, cloned.id)
         return cloned
       })
+      importKeys.set(signature, conv.id)
       return conv
     })
     const imported = built.filter(Boolean)
     this.data.conversations.unshift(...imported.reverse())
     this.scheduleSave()
-    return { imported: imported.length, skipped }
+    return { imported: imported.length, skipped, conversationMap, messageMap }
   }
 
   backup(owner) {

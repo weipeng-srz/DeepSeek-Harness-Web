@@ -5,8 +5,8 @@ import { DATA_DIR, SECRET } from './config.mjs'
 
 const STORE_PATH = path.join(DATA_DIR, 'shares.json')
 const MAX_SHARES = 100
-const MAX_SNAPSHOT_BYTES = 2 * 1024 * 1024
-const MAX_SNAPSHOT_MESSAGES = 500
+const MAX_SNAPSHOT_BYTES = 5 * 1024 * 1024
+const MAX_SNAPSHOT_MESSAGES = 1000
 const MAX_SHARE_DAYS = 365
 
 const now = () => Date.now()
@@ -35,6 +35,30 @@ function decryptToken(payload) {
     return Buffer.concat([decipher.update(Buffer.from(data, 'base64url')), decipher.final()]).toString('utf8')
   } catch {
     return ''
+  }
+}
+
+function redactText(value) {
+  return String(value || '')
+    .replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, '[已脱敏邮箱]')
+    .replace(/\b1[3-9]\d{9}\b/g, '[已脱敏手机号]')
+    .replace(/\b\d{17}[\dXx]\b/g, '[已脱敏证件号]')
+    .replace(/\b(sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g, '[已脱敏密钥]')
+}
+
+function redactMessages(messages) {
+  for (const msg of messages) {
+    msg.text = redactText(msg.text)
+    for (const block of msg.blocks || []) {
+      if (block.type === 'text' || block.type === 'thinking') block.text = redactText(block.text)
+      if (block.type === 'tool') {
+        if (typeof block.result === 'string') block.result = redactText(block.result)
+        try {
+          const serialized = JSON.stringify(block.input ?? null)
+          block.input = JSON.parse(redactText(serialized))
+        } catch {}
+      }
+    }
   }
 }
 
@@ -225,13 +249,14 @@ export class ShareStore {
     return snapshot
   }
 
-  create({ conversation, owner, expiresInDays = 7, includeTools = false, includeThinking = false, messageIds = [], allowSensitive = false, password = '' }) {
+  create({ conversation, owner, expiresInDays = 7, includeTools = false, includeThinking = false, messageIds = [], allowSensitive = false, redactSensitive = false, password = '' }) {
     this.prune()
     if (this.data.shares.length >= MAX_SHARES) {
       throw Object.assign(new Error(`分享链接最多 ${MAX_SHARES} 个，请先在设置里撤销不用的链接`), { status: 409 })
     }
     const snapshot = this.buildSnapshot(conversation, { includeTools, includeThinking, messageIds })
-    const sensitive = countSensitive(snapshot.messages)
+    if (redactSensitive) redactMessages(snapshot.messages)
+    const sensitive = redactSensitive ? 0 : countSensitive(snapshot.messages)
     if (sensitive && !allowSensitive) {
       throw Object.assign(new Error(`快照里有 ${sensitive} 处可能的手机号/邮箱/证件/密钥。确认要分享请再次确认。`), { status: 409, sensitive })
     }
@@ -254,6 +279,7 @@ export class ShareStore {
       revokedAt: null,
       includeTools: Boolean(includeTools),
       includeThinking: Boolean(includeThinking),
+      redactSensitive: Boolean(redactSensitive),
       passwordSalt,
       passwordHash,
       messageIds: Array.isArray(messageIds) ? messageIds.filter((id) => typeof id === 'string').slice(0, 500) : [],
@@ -278,7 +304,8 @@ export class ShareStore {
       includeThinking: share.includeThinking,
       messageIds: share.messageIds || [],
     })
-    const sensitive = countSensitive(snapshot.messages)
+    if (share.redactSensitive) redactMessages(snapshot.messages)
+    const sensitive = share.redactSensitive ? 0 : countSensitive(snapshot.messages)
     if (sensitive && !allowSensitive) {
       throw Object.assign(new Error(`更新后的快照有 ${sensitive} 处可能的手机号/邮箱/证件/密钥。确认要更新请再次确认。`), { status: 409, sensitive })
     }
@@ -372,7 +399,7 @@ export class ShareStore {
     const list = this.list(owner)
     return {
       total: list.length,
-      active: list.filter((share) => !share.expired).length,
+      active: list.filter((share) => !share.expired && !share.revokedAt).length,
       expired: list.filter((share) => share.expired).length,
       views: list.reduce((sum, share) => sum + (share.viewCount || 0), 0),
     }

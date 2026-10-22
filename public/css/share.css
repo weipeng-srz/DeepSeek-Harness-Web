@@ -273,6 +273,15 @@ body {
   margin-top: 0.24em;
 }
 
+.share-text img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 8px 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+}
+
 .share-text a {
   color: var(--accent);
   text-decoration-thickness: 1px;

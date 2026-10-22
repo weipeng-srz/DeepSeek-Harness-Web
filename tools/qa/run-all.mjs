@@ -22,6 +22,7 @@ const suites = [
   ['memory-scope', 'memory-scope.mjs'],
   ['rewrite', 'rewrite.mjs'],
   ['print', 'print.mjs'],
+  ['static', 'static.mjs'],
   ['baseline', 'quality-baseline.mjs'],
 ].filter(([name]) => !quick || !['share', 'trash', 'baseline'].includes(name))
 

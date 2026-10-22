@@ -7,7 +7,8 @@ const STORE_PATH = path.join(DATA_DIR, 'audit.json')
 const MAX_ENTRIES = 500
 
 export class AuditLog {
-  constructor() {
+  constructor(context = null) {
+    this.context = typeof context === 'function' ? context : null
     this.data = { version: 1, entries: [] }
     this.saveTimer = null
     this.writing = null
@@ -69,6 +70,13 @@ export class AuditLog {
       summary: String(summary || '').slice(0, 300),
       meta: meta && typeof meta === 'object' ? JSON.parse(JSON.stringify(meta)) : {},
     }
+    try {
+      const ctx = this.context?.()
+      if (ctx) {
+        entry.actor = ctx.actor || 'owner'
+        entry.device = ctx.device || ''
+      }
+    } catch {}
     this.data.entries.unshift(entry)
     if (this.data.entries.length > MAX_ENTRIES) this.data.entries.length = MAX_ENTRIES
     this.scheduleSave()

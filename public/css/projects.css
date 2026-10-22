@@ -1806,3 +1806,29 @@ body.text-large .msg-meta { font-size: 12px; }
   border-radius: 10px;
   border: 1px solid var(--border);
 }
+
+.project-archive {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.project-row.archived {
+  opacity: 0.62;
+}
+
+@media print {
+  body.print-text-only .tool-card,
+  body.print-text-only .think,
+  body.print-text-only .msg-sources,
+  body.print-text-only .msg-actions {
+    display: none !important;
+  }
+}

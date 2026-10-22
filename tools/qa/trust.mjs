@@ -37,6 +37,7 @@ try {
   record('audit records delete/restore', types.has('conversation.delete') && types.has('conversation.restore'))
   record('audit records project delete', types.has('project.delete'))
   record('audit entries are ordered newest first', res.body.entries[0].at >= res.body.entries.at(-1).at)
+  record('audit records a device fingerprint', /^[a-f0-9]{10}$/.test(res.body.entries[0].device || ''), res.body.entries[0].device)
   record('audit has no message bodies', !JSON.stringify(res.body.entries).includes('world'))
 
   await sleep(600)

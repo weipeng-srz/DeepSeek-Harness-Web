@@ -33,6 +33,7 @@ function sanitizeStoredItem(raw, owner) {
     text,
     source: SOURCES.has(raw.source) ? raw.source : 'manual',
     conversationId: typeof raw.conversationId === 'string' ? raw.conversationId : null,
+    projectId: typeof raw.projectId === 'string' && raw.projectId ? raw.projectId : null,
     createdAt,
     updatedAt: Number(raw.updatedAt) || createdAt,
     pinned: Boolean(raw.pinned),
@@ -412,7 +413,17 @@ export class MemoryStore {
         item.pinned = Boolean(raw?.pinned)
         item.disabled = Boolean(raw?.disabled)
         const rawProjectId = typeof raw?.projectId === 'string' ? raw.projectId : ''
-        item.projectId = rawProjectId ? (options.projectMap?.get(rawProjectId) || null) : null
+        if (rawProjectId && !options.projectMap?.get(rawProjectId)) {
+          // Never downgrade a project-scoped memory to global: that would leak
+          // it into unrelated conversations after a backup restore.
+          this.remove(owner, item.id)
+          skipped += 1
+          continue
+        }
+        item.projectId = rawProjectId ? options.projectMap.get(rawProjectId) : null
+        if (item.conversationId && options.conversationMap) {
+          item.conversationId = options.conversationMap.get(item.conversationId) || null
+        }
         imported += 1
       } catch {
         skipped += 1

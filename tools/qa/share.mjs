@@ -64,6 +64,13 @@ try {
     body: JSON.stringify({ expiresInDays: 7, allowSensitive: true }),
   })
   record('explicit confirmation allows sensitive share', allowedSensitive.status === 201, String(allowedSensitive.status))
+  const redacted = await api(`/api/conversations/${sensitiveConv.id}/share`, {
+    method: 'POST',
+    body: JSON.stringify({ expiresInDays: 7, redactSensitive: true, allowSensitive: true }),
+  })
+  const redactedBody = await (await fetch(`${sandbox.base}/api/share/${redacted.body.token}`)).json()
+  const redactedText = JSON.stringify(redactedBody)
+  record('redaction removes email/phone from the snapshot', redacted.status === 201 && !redactedText.includes('test@example.com') && !redactedText.includes('13800138000') && redactedText.includes('已脱敏'), redactedText.slice(0, 140))
 
   res = await api(`/api/conversations/${conv.id}/share`, {
     method: 'POST',
@@ -210,6 +217,13 @@ try {
   record('public page prints', await publicPage.locator('#sharePrint').isVisible())
   record('public page has copy button', await publicPage.locator('#shareCopy').isVisible())
   await publicPage.screenshot({ path: path.join(ROOT, 'reports/v5/round-2/share-page.png') })
+
+  await page.setViewportSize({ width: 320, height: 568 })
+  await page.waitForTimeout(400)
+  const ctaBox = await page.locator('#shareCreate').boundingBox()
+  record('share CTA fits a 320x568 viewport', Boolean(ctaBox && ctaBox.y + ctaBox.height <= 568), JSON.stringify(ctaBox))
+  await page.setViewportSize({ width: 1280, height: 900 })
+  await page.waitForTimeout(300)
 
   // Offline HTML export via the conversation menu.
   await page.locator('button[data-share-close]').click()

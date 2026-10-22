@@ -30,6 +30,13 @@ try {
   record('mobile does not overflow with extra-large text', !state.overflow)
   await page.locator('button[data-settings-close]').click()
   await page.waitForTimeout(300)
+  await page.reload()
+  await page.waitForTimeout(900)
+  const persisted = await page.evaluate(() => ({
+    large: document.body.classList.contains('text-large'),
+    scale: getComputedStyle(document.documentElement).getPropertyValue('--reading-scale').trim(),
+  }))
+  record('extra-large text survives reload', persisted.large && persisted.scale === '1.4', JSON.stringify(persisted))
   const emptySize = await page.locator('#emptyHintText').evaluate((el) => getComputedStyle(el).fontSize)
   record('secondary text scales too', parseFloat(emptySize) >= 12.5, emptySize)
 } finally {

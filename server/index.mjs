@@ -4,6 +4,7 @@ import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
+import { AsyncLocalStorage } from 'node:async_hooks'
 import os from 'node:os'
 import zlib from 'node:zlib'
 import { pipeline } from 'node:stream/promises'
@@ -107,10 +108,16 @@ const store = new ConversationStore()
 const projects = new ProjectStore()
 const shares = new ShareStore()
 const library = new LibraryStore()
-const audit = new AuditLog()
+const requestContext = new AsyncLocalStorage()
+const audit = new AuditLog(() => requestContext.getStore())
 store.onPurge = (conv) => {
   const revoked = shares.revokeAllForConversation(conv.id)
+  const removedBookmarks = library.removeConversation(conv.owner, conv.id)
+  const removedMemories = memory.removeConversation(conv.owner, conv.id)
   if (revoked) audit.add('share.revoke', `对话永久删除，撤销 ${revoked} 个分享`, { conversationId: conv.id })
+  if (removedBookmarks || removedMemories) {
+    audit.add('conversation.cleanup', `清理收藏 ${removedBookmarks} 条、记忆 ${removedMemories} 条`, { conversationId: conv.id })
+  }
 }
 
 // A deleted conversation stays in the trash for 30 days, but its public
@@ -569,7 +576,7 @@ function projectsPayload(owner) {
   const list = projects.list().map((project) => projectSummary(project, counts.get(project.id)))
   return {
     projects: list,
-    counts: { total, unfiled, filed: total - unfiled, projects: list.length },
+    counts: { total, unfiled, filed: total - unfiled, projects: list.filter((project) => !project.archivedAt).length, archived: list.filter((project) => project.archivedAt).length },
   }
 }
 
@@ -1020,6 +1027,7 @@ function versionSnapshot(message) {
     usage: message.usage ? JSON.parse(JSON.stringify(message.usage)) : null,
     durationMs: Number(message.durationMs) || null,
     model: message.model || null,
+    effort: message.codexEffort || null,
     editedAt: Number(message.editedAt) || null,
     context: message.context ? JSON.parse(JSON.stringify(message.context)) : null,
     files: Array.isArray(message.files) ? JSON.parse(JSON.stringify(message.files)) : [],
@@ -1037,6 +1045,7 @@ function restoreVersion(message, snapshot) {
   message.usage = snapshot.usage || null
   message.durationMs = Number(snapshot.durationMs) || null
   message.model = snapshot.model || message.model
+  message.codexEffort = snapshot.effort || null
   message.editedAt = Number(snapshot.editedAt) || null
   message.context = snapshot.context ? JSON.parse(JSON.stringify(snapshot.context)) : null
   message.files = Array.isArray(snapshot.files) ? snapshot.files : []
@@ -1099,6 +1108,10 @@ function chatRateLimited(owner) {
 async function handleChat(req, res, owner, restId) {
   const conv = ownedConversation(restId, res, owner)
   if (!conv) return
+  const archivedProject = conv.projectId ? projects.get(conv.projectId) : null
+  if (archivedProject?.archivedAt) {
+    return sendJson(res, 409, { error: '项目已归档，恢复项目后才能继续对话' })
+  }
   const body = await readJsonBody(req)
   let text = typeof body.text === 'string' ? body.text.trim() : ''
   const retryOf = typeof body.retryOf === 'string' ? body.retryOf : ''
@@ -1138,6 +1151,7 @@ async function handleChat(req, res, owner, restId) {
   const now = Date.now()
   let userMessage
   let previousVersions = []
+  let editBranchTitle = ''
   if (retryOf) {
     const index = conv.messages.findIndex((msg) => msg.id === retryOf && msg.role === 'assistant')
     if (index < 0) return sendJson(res, 404, { error: '要重新生成的回答不存在' })
@@ -1150,12 +1164,27 @@ async function handleChat(req, res, owner, restId) {
     if (userIndex < 0) return sendJson(res, 400, { error: '找不到对应的提问' })
     userMessage = conv.messages[userIndex]
     text = userMessage.text
-    previousVersions = [...(Array.isArray(old.versions) ? old.versions : []), versionSnapshot(old)].slice(-10)
+    if (Array.isArray(userMessage.attachments) && userMessage.attachments.length) {
+      attachments = userMessage.attachments
+    }
+    previousVersions = [...(Array.isArray(old.versions) ? old.versions : []), versionSnapshot(old)].slice(-30)
     conv.messages.splice(index)
   } else if (editOf) {
     const index = conv.messages.findIndex((msg) => msg.id === editOf && msg.role === 'user')
     if (index < 0) return sendJson(res, 404, { error: '要编辑的消息不存在' })
     userMessage = conv.messages[index]
+    if (conv.messages.length > index + 1) {
+      try {
+        const tail = conv.messages[conv.messages.length - 1]
+        const branch = store.fork(owner, conv.id, tail.id)
+        if (branch) {
+          branch.title = `${String(conv.title || '对话').slice(0, 40)} · 编辑前`
+          branch.forkedFrom = { ...(branch.forkedFrom || {}), reason: 'edit' }
+          store.touch(branch)
+          editBranchTitle = branch.title
+        }
+      } catch {}
+    }
     userMessage.text = text
     userMessage.editedAt = now
     userMessage.attachments = attachments
@@ -1353,6 +1382,7 @@ async function handleChat(req, res, owner, restId) {
 
   hub.send({ t: 'ready', userMessageId: userMessage.id, messageId: assistant.id, title: conv.title })
   if (projectSync.error) hub.send({ t: 'notice', text: `项目文件未完整同步：${projectSync.error}` })
+  if (editBranchTitle) hub.send({ t: 'notice', text: `编辑前的后文已保存为分支「${editBranchTitle}」，可在列表里找到。` })
   if (capturedMemories.length) {
     hub.send({
       t: 'memory',
@@ -1496,12 +1526,15 @@ async function handleChat(req, res, owner, restId) {
         break
       }
       case 'tool_result': {
-        state.toolResult(event.callId, event.status, event.result)
+        const cappedResult = typeof event.result === 'string'
+          ? (event.result.length > 200_000 ? `${event.result.slice(0, 200_000)}\n…（工具输出超过 200KB，已截断后保存）` : event.result)
+          : event.result
+        state.toolResult(event.callId, event.status, cappedResult)
         hub.send({
           t: 'tool_result',
           id: event.callId,
           status: event.status,
-          result: event.result,
+          result: cappedResult,
         })
         persist()
         break
@@ -2195,8 +2228,10 @@ async function handleApi(req, res, url) {
 
   if (rest[0] === 'backup' && req.method === 'GET') {
     const projectBackup = projects.export()
+    const backup = store.backup(owner)
+    res.setHeader('X-Backup-Count', String(backup.count || 0))
     return sendJson(res, 200, {
-      ...store.backup(owner),
+      ...backup,
       projects: projectBackup.projects,
       memory: memory.export(owner),
       library: library.export(owner),
@@ -2216,12 +2251,14 @@ async function handleApi(req, res, url) {
       throw error
     }
     audit.add('backup.import', `导入备份：${result.imported} 段对话`, { conversations: result.imported, projects: projectImport.imported })
-    const memories = body.memory ? memory.import(owner, body.memory, { projectMap: projectImport.map }) : { imported: 0, skipped: 0 }
-    const libraryImport = body.library ? library.import(owner, body.library) : { imported: 0 }
+    const memories = body.memory ? memory.import(owner, body.memory, { projectMap: projectImport.map, conversationMap: result.conversationMap }) : { imported: 0, skipped: 0 }
+    const libraryImport = body.library ? library.import(owner, body.library, { conversationMap: result.conversationMap, messageMap: result.messageMap }) : { imported: 0 }
+    const { conversationMap: _conversationMap, messageMap: _messageMap, ...resultPayload } = result
     return sendJson(res, 200, {
       ok: true,
-      ...result,
+      ...resultPayload,
       projects: projectImport.imported,
+      skippedProjects: projectImport.skipped || 0,
       memories,
       library: libraryImport,
     })
@@ -2257,6 +2294,9 @@ async function handleApi(req, res, url) {
         const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
         if (projectId && !projects.get(projectId)) {
           return sendJson(res, 400, { error: '项目不存在' })
+        }
+        if (projectId && projects.get(projectId)?.archivedAt) {
+          return sendJson(res, 409, { error: '项目已归档，请先恢复项目再新建对话' })
         }
         const parentProject = projectId ? projects.get(projectId) : null
         const finalEngine = parentProject?.defaultEngine === 'codex' ? 'codex' : parentProject?.defaultEngine === 'dsr' ? 'dsr' : engine
@@ -2381,6 +2421,7 @@ async function handleApi(req, res, url) {
       if (body.projectId !== undefined) {
         const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
         if (projectId && !projects.get(projectId)) return sendJson(res, 400, { error: '项目不存在' })
+        if (projectId && projects.get(projectId)?.archivedAt) return sendJson(res, 409, { error: '项目已归档，不能把对话移入' })
         if (conv.projectId !== projectId) {
           conv.projectId = projectId
           store.touch(conv)
@@ -2433,7 +2474,7 @@ async function handleApi(req, res, url) {
       if (!text) return sendJson(res, 400, { error: '回答不能为空' })
       if ([...text].length > MAX_PROMPT) return sendJson(res, 400, { error: '回答过长' })
       const previous = versionSnapshot(message)
-      message.versions = [...(Array.isArray(message.versions) ? message.versions : []), previous].slice(-10)
+      message.versions = [...(Array.isArray(message.versions) ? message.versions : []), previous].slice(-30)
       message.text = text
       // Manual wording edits keep the original block order: replace the first
       // text block in place and preserve tool/thinking blocks around it.
@@ -2499,6 +2540,7 @@ async function handleApi(req, res, url) {
           includeThinking: body.includeThinking === true,
           messageIds: Array.isArray(body.messageIds) ? body.messageIds : [],
           allowSensitive: body.allowSensitive === true,
+          redactSensitive: body.redactSensitive === true,
           password: typeof body.password === 'string' ? body.password : '',
         })
         audit.add('share.create', `创建只读分享：${String(conv.title || '').slice(0, 80)}`, { conversationId: conv.id, shareId: created.share.id, expiresAt: created.share.expiresAt })
@@ -2681,7 +2723,9 @@ const requestHandler = async (req, res) => {
       return sendJson(res, 400, { error: '请求地址无效' })
     }
     if (url.pathname.startsWith('/api/')) {
-      return await handleApi(req, res, url)
+      const ua = String(req.headers['user-agent'] || '').slice(0, 200)
+      const device = crypto.createHash('sha256').update(`${ua}|${req.socket.remoteAddress || ''}`).digest('hex').slice(0, 10)
+      return await requestContext.run({ actor: 'owner', device, ip: req.socket.remoteAddress || '' }, () => handleApi(req, res, url))
     }
     if (req.method === 'GET' || req.method === 'HEAD') {
       if (url.pathname === '/css/bundle.css') return serveCssBundle(req, res)
@@ -2829,6 +2873,10 @@ async function shutdown(signal) {
   server.close(() => process.exit(0))
   setTimeout(() => process.exit(0), 3000).unref()
 }
+
+process.on('unhandledRejection', (error) => {
+  console.error('[server] 未处理的 Promise 拒绝（已记录，不退出）：', error?.message || error)
+})
 
 process.on('SIGINT', () => void shutdown('SIGINT'))
 process.on('SIGTERM', () => void shutdown('SIGTERM'))

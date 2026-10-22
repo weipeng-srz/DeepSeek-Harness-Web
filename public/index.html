@@ -660,6 +660,7 @@
             <p id="projectError" class="project-error" role="alert" hidden></p>
             <div class="project-form-foot">
               <button id="projectDeleteBtn" class="project-delete" type="button">删除项目</button>
+              <button id="projectArchiveBtn" class="project-archive" type="button">归档</button>
               <button id="projectSaveBtn" class="project-save" type="submit">保存项目</button>
             </div>
           </form>
@@ -702,6 +703,10 @@
               <strong>包含工具调用与结果</strong>
               <em>默认关闭。开启后，命令参数、文件内容与执行结果会出现在分享页。</em>
             </span>
+          </label>
+          <label class="share-check">
+            <input id="shareRedactSensitive" type="checkbox" />
+            <span><strong>自动打码敏感信息</strong><em>手机号、邮箱、证件号与常见密钥会替换成「[已脱敏…]」。</em></span>
           </label>
           <label class="share-check">
             <input id="shareIncludeThinking" type="checkbox" />

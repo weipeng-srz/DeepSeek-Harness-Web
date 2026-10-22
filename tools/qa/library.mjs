@@ -73,9 +73,9 @@ try {
       },
     }),
   })
-  record('backup import merges library', imported.status === 200 && imported.body.library?.imported >= 2, JSON.stringify(imported.body.library))
+  record('backup import merges library', imported.status === 200 && imported.body.library?.imported >= 1, JSON.stringify(imported.body.library))
   const afterImport = await api('/api/library')
-  record('import keeps existing library entries', afterImport.body.bookmarks.length === 2 && afterImport.body.prompts.length === 2, JSON.stringify({ b: afterImport.body.bookmarks.length, p: afterImport.body.prompts.length }))
+  record('import drops dead bookmark references', afterImport.body.bookmarks.length === 1 && afterImport.body.prompts.length === 2, JSON.stringify({ b: afterImport.body.bookmarks.length, p: afterImport.body.prompts.length }))
 
   // Clear bookmarks so the star starts from "not bookmarked"; keep a prompt
   // for the second-device prompt check.

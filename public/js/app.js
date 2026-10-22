@@ -198,10 +198,12 @@
     projectError: $('#projectError'),
     projectSaveBtn: $('#projectSaveBtn'),
     projectDeleteBtn: $('#projectDeleteBtn'),
+    projectArchiveBtn: $('#projectArchiveBtn'),
     moveSheet: $('#moveSheet'),
     shareSheet: $('#shareSheet'),
     shareIncludeTools: $('#shareIncludeTools'),
     shareIncludeThinking: $('#shareIncludeThinking'),
+    shareRedactSensitive: $('#shareRedactSensitive'),
     shareCreate: $('#shareCreate'),
     shareResult: $('#shareResult'),
     shareUrl: $('#shareUrl'),
@@ -1743,7 +1745,7 @@
       name.addEventListener('click', () => void openFilePreview(file))
       const meta = document.createElement('div')
       meta.className = 'file-row-meta'
-      meta.textContent = `${file.path} · ${formatBytes(file.size)} · ${relativeTime(file.mtime)}`
+      meta.textContent = `${file.path} · ${formatBytes(file.size)} · ${relativeTime(file.mtime)}${file.path.startsWith('project/') ? ' · 项目副本，下次提问会重新同步' : ''}`
       main.append(name, meta)
 
       const actions = document.createElement('div')
@@ -1787,7 +1789,9 @@
       remove.addEventListener('click', () => {
         askConfirm({
           title: `删除「${file.name}」？`,
-          body: '文件会从会话工作区移除，此操作不可撤销。',
+          body: file.path.startsWith('project/')
+            ? '这是从项目文件复制来的副本，删除后下一次提问仍会重新同步；要彻底删除请到项目编辑页删除源文件。'
+            : '文件会从会话工作区移除，此操作不可撤销。',
           okLabel: '删除',
           onOk: async () => {
             try {
@@ -2481,7 +2485,7 @@
       const parsed = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')
       return {
         density: parsed.density === 'compact' ? 'compact' : 'comfortable',
-        fontScale: [0.94, 1, 1.1].includes(Number(parsed.fontScale)) ? Number(parsed.fontScale) : 1,
+        fontScale: [0.94, 1, 1.1, 1.25, 1.4].includes(Number(parsed.fontScale)) ? Number(parsed.fontScale) : 1,
         notify: Boolean(parsed.notify),
       }
     } catch {
@@ -3833,9 +3837,12 @@
   function applyProjectsPayload(data) {
     if (Array.isArray(data.projects)) state.projects = data.projects
     if (data.counts) state.projectCounts = data.counts
-    if (state.activeProjectId && state.activeProjectId !== '__unfiled__' && !projectById(state.activeProjectId)) {
-      state.activeProjectId = ''
-      localStorage.removeItem('dsh.project')
+    if (state.activeProjectId && state.activeProjectId !== '__unfiled__') {
+      const active = projectById(state.activeProjectId)
+      if (!active || active.archivedAt) {
+        state.activeProjectId = ''
+        localStorage.removeItem('dsh.project')
+      }
     }
     state.projectsLoaded = true
     renderProjectUI()
@@ -3854,7 +3861,7 @@
 
   function renderProjectUI() {
     if (els.projectCountBadge) {
-      const count = state.projects.length
+      const count = state.projectCounts.projects || state.projects.filter((project) => !project.archivedAt).length
       els.projectCountBadge.hidden = !count
       els.projectCountBadge.textContent = String(count)
     }
@@ -3869,7 +3876,7 @@
         all.setAttribute('aria-pressed', String(!state.activeProjectId))
         all.textContent = '全部'
         els.projectChips.appendChild(all)
-        for (const project of state.projects) {
+        for (const project of state.projects.filter((item) => !item.archivedAt)) {
           const chip = document.createElement('button')
           chip.type = 'button'
           chip.className = 'project-chip' + (state.activeProjectId === project.id ? ' active' : '')
@@ -3987,7 +3994,7 @@
     }
     for (const project of state.projects) {
       const row = document.createElement('div')
-      row.className = 'project-row' + (state.activeProjectId === project.id ? ' active' : '')
+      row.className = 'project-row' + (state.activeProjectId === project.id ? ' active' : '') + (project.archivedAt ? ' archived' : '')
       row.dataset.projectId = project.id
       const main = document.createElement('button')
       main.type = 'button'
@@ -4011,7 +4018,7 @@
       const meta = document.createElement('span')
       meta.className = 'project-row-meta'
       const updated = project.lastActiveAt ? relativeTime(project.lastActiveAt) : '刚刚创建'
-      meta.textContent = `${project.conversationCount || 0} 个对话 · ${updated}${project.instructions ? ' · 有指令' : ''}`
+      meta.textContent = `${project.archivedAt ? '已归档 · ' : ''}${project.conversationCount || 0} 个对话 · ${updated}${project.instructions ? ' · 有指令' : ''}${project.fileCount ? ` · ${project.fileCount} 个文件` : ''}`
       textWrap.append(name, meta)
       main.append(avatar, textWrap)
       main.addEventListener('click', () => {
@@ -4058,6 +4065,8 @@
     els.projectFileUploadBtn.disabled = !project
     if (project) void loadProjectFiles(project.id)
     els.projectDeleteBtn.hidden = !project
+    els.projectArchiveBtn.hidden = !project
+    els.projectArchiveBtn.textContent = project?.archivedAt ? '恢复项目' : '归档'
     els.projectSaveBtn.textContent = project ? '保存项目' : '创建项目'
     els.projectColors.replaceChildren()
     for (const [name, value] of PROJECT_COLORS) {
@@ -4232,7 +4241,7 @@
     if (!project) return
     askConfirm({
       title: `删除项目「${project.name}」？`,
-      body: `项目里的 ${project.conversationCount || 0} 个对话不会被删除，只会回到「未归档」的最近列表。项目指令和资料会一并删除。`,
+      body: `项目里的 ${project.conversationCount || 0} 个对话不会删除，只会回到最近列表；项目指令、${project.fileCount || 0} 个项目文件以及该项目的记忆会被永久删除。`,
       okLabel: '删除项目',
       onOk: async () => {
         try {
@@ -4306,7 +4315,7 @@
     unfiled.append(unfiledAvatar, unfiledText)
     if (!currentProjectId) unfiled.appendChild(moveCheck())
     els.moveList.appendChild(unfiled)
-    for (const project of state.projects) {
+    for (const project of state.projects.filter((item) => !item.archivedAt)) {
       const button = document.createElement('button')
       button.type = 'button'
       button.className = 'move-item' + (currentProjectId === project.id ? ' current' : '')
@@ -4463,6 +4472,7 @@
     els.shareUrl.value = ''
     els.shareIncludeTools.checked = false
     els.shareIncludeThinking.checked = false
+    if (els.shareRedactSensitive) els.shareRedactSensitive.checked = false
     if (els.sharePassword) els.sharePassword.value = ''
     setShareExpiry(7)
     void updateSharePreview(conversationId, messageId)
@@ -4543,7 +4553,7 @@
       (text.match(/\b1[3-9]\d{9}\b/g) || []).length +
       (text.match(/\b\d{17}[\dXx]\b/g) || []).length +
       (text.match(/\b(sk-[A-Za-z0-9_-]{12,}|AKIA[0-9A-Z]{16})\b/g) || []).length
-    els.sharePreview.textContent = `${count ? `将分享 ${count}/${visible.length} 条消息` : '还没有选择消息，请点「全选」或逐条勾选'}${attachments ? `、${attachments} 个附件文件名` : ''}；${hidden.length ? `默认不含${hidden.join('与')}，` : ''}不包含文件内容、记忆与其他对话。${sensitiveHits ? ` 检测到 ${sensitiveHits} 处可能的手机号/邮箱/证件/密钥，请确认后再分享。` : ''}`
+    els.sharePreview.textContent = `${count ? `将分享 ${count}/${visible.length} 条消息` : '还没有选择消息，请点「全选」或逐条勾选'}${attachments ? `、${attachments} 个附件文件名` : ''}；${els.shareRedactSensitive?.checked ? '已开启自动打码；' : ''}${hidden.length ? `默认不含${hidden.join('与')}，` : ''}不包含文件内容、记忆与其他对话。${sensitiveHits ? ` 检测到 ${sensitiveHits} 处可能的手机号/邮箱/证件/密钥，请确认后再分享。` : ''}`
     els.sharePreview.classList.toggle('warn', sensitiveHits > 0)
   }
 
@@ -4651,6 +4661,7 @@
             return selected.length && selected.length < visible.length ? selected : []
           })(),
           allowSensitive,
+          redactSensitive: els.shareRedactSensitive?.checked === true,
           password: els.sharePassword?.value.trim() || '',
         }),
       })
@@ -4854,7 +4865,7 @@
       const when = entry.version.createdAt ? new Date(entry.version.createdAt).toLocaleString('zh-CN', { hour12: false }) : ''
       const text = versionText(entry.version)
       const ctx = entry.version.context || {}
-      meta.textContent = `${when}${ctx.projectName ? ` · ${ctx.projectName}` : ''}${entry.version.model ? ` · ${entry.version.model}` : ''} · ${text.length} 字${ctx.memoryChars ? ` · 记忆 ${ctx.memoryChars} 字` : ''}`
+      meta.textContent = `${when}${ctx.projectName ? ` · ${ctx.projectName}` : ''}${entry.version.model ? ` · ${entry.version.model}` : ''}${entry.version.effort ? ` · ${entry.version.effort}` : ''} · ${text.length} 字${ctx.memoryChars ? ` · 记忆 ${ctx.memoryChars} 字` : ''}`
       const actions = document.createElement('div')
       actions.className = 'version-actions'
       const preview = document.createElement('button')
@@ -5221,7 +5232,8 @@
       }],
       ['share', 'i-share', '分享只读链接', () => openShareSheet(id)],
       ['export', 'i-download', '导出…', () => openExportSheet(id)],
-      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); setTimeout(() => window.print(), 60) }],
+      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); document.body.classList.remove('print-text-only'); setTimeout(() => window.print(), 60) }],
+      ['print-clean', 'i-file', '打印（仅正文）', () => { closeConvMenu({ restoreFocus: false }); document.body.classList.add('print-text-only'); const done = () => { document.body.classList.remove('print-text-only'); window.removeEventListener('afterprint', done) }; window.addEventListener('afterprint', done); setTimeout(() => window.print(), 60) }],
       ['link', 'i-external', '复制对话链接', () => void copyConversationLink(id)],
       ['duplicate', 'i-copy', '创建副本', () => void duplicateConversation(id)],
       ['stats', 'i-info', '对话统计', () => void openStats(id)],
@@ -7270,6 +7282,23 @@
   els.projectInstructions?.addEventListener('input', updateProjectBudget)
   els.projectNotes?.addEventListener('input', updateProjectBudget)
   els.projectDeleteBtn?.addEventListener('click', () => void deleteEditingProject())
+  els.projectArchiveBtn?.addEventListener('click', async () => {
+    const project = state.editingProjectId ? projectById(state.editingProjectId) : null
+    if (!project) return
+    try {
+      const data = await api(`/api/projects/${project.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ archived: !project.archivedAt }),
+      })
+      applyProjectsPayload(data)
+      renderProjects()
+      const updated = data.project || {}
+      els.projectArchiveBtn.textContent = updated.archivedAt ? '恢复项目' : '归档'
+      showToast(updated.archivedAt ? '项目已归档，历史仍可筛选' : '项目已恢复')
+    } catch (error) {
+      showToast(error.message || '归档失败', { tone: 'error' })
+    }
+  })
   els.projectBar?.addEventListener('click', (event) => {
     const chip = event.target.closest('.project-chip')
     if (!chip) return
@@ -7300,6 +7329,7 @@
   })
   els.shareIncludeTools?.addEventListener('change', updateSharePreviewOptions)
   els.shareIncludeThinking?.addEventListener('change', updateSharePreviewOptions)
+  els.shareRedactSensitive?.addEventListener('change', updateSharePreviewOptions)
   els.versionsSheet?.addEventListener('click', (event) => {
     if (event.target.closest('[data-versions-close]')) closeVersions()
   })
@@ -8414,7 +8444,7 @@
         const kind = document.createElement('strong')
         kind.textContent = labels[entry.type] || entry.type
         const text = document.createElement('span')
-        text.textContent = entry.summary
+        text.textContent = `${entry.summary}${entry.device ? ` · 设备 ${entry.device}` : ''}`
         copy.append(kind, text)
         row.append(time, copy)
         els.auditList.appendChild(row)
@@ -8465,10 +8495,20 @@
     try {
       const response = await fetch('/api/backup', { credentials: 'same-origin' })
       if (!response.ok) throw new Error(`导出失败（${response.status}）`)
-      const data = await response.json()
+      // Stream the server's bytes straight to disk; parsing and pretty-printing
+      // a large backup in the page triples peak memory and crashes mobile Safari.
+      const blob = await response.blob()
       const stamp = new Date().toISOString().slice(0, 10)
-      downloadText(`dsh-chat-backup-${stamp}.json`, JSON.stringify(data, null, 2), 'application/json')
-      showToast(`已导出 ${data.count || 0} 段对话`)
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `dsh-chat-backup-${stamp}.json`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      setTimeout(() => URL.revokeObjectURL(url), 10_000)
+      const count = Number(response.headers.get('x-backup-count')) || 0
+      showToast(`已导出${count ? ` ${count} 段对话` : '备份'}（${formatBytes(blob.size)}）`)
     } catch (error) {
       showToast(error.message || '导出失败', { tone: 'error' })
     } finally {
@@ -10455,12 +10495,7 @@
           scheduleCacheSave()
           void refreshConversations().catch(() => {})
           void refreshFiles(conversationId)
-          void syncConversation(conversationId).then(() => {
-        if (options.retryOf && !failed && state.currentId === conversationId && !state.streaming) {
-          renderMessages(state.messages, { restoreScroll: false })
-          scrollToBottom()
-        }
-      })
+          void syncConversation(conversationId)
         }
       }
 

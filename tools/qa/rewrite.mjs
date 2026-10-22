@@ -46,6 +46,20 @@ try {
   record('edited answer is current text', edited.text === '手工修正后的回答', edited.text)
   record('edit adds another version', edited.versions?.length === 2, String(edited.versions?.length))
 
+  const beforeEdit = (await api('/api/conversations?limit=100')).body.total
+  const userMessage = detail.messages.find((msg) => msg.role === 'user')
+  const editChat = await fetch(`${sandbox.base}/api/conversations/${conv.id}/chat`, {
+    method: 'POST',
+    headers: { Cookie: sandbox.cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ editOf: userMessage.id, text: '编辑后的原始问题' }),
+  })
+  await editChat.text()
+  await sleep(500)
+  const listAfterEdit = (await api('/api/conversations?limit=100')).body
+  record('editing creates a branch for the old tail', listAfterEdit.total === beforeEdit + 1 && listAfterEdit.conversations.some((item) => item.forkedFrom?.reason === 'edit'), `${beforeEdit} -> ${listAfterEdit.total}`)
+  const editedConv = (await api(`/api/conversations/${conv.id}`)).body.conversation
+  record('edited conversation contains the new question', editedConv.messages.some((msg) => msg.text.includes('编辑后的原始问题')))
+
   browser = await launchBrowser()
   const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, serviceWorkers: 'block' })).newPage()
   const errors = []

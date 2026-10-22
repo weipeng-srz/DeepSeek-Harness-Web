@@ -4,7 +4,7 @@ import fs from 'node:fs'
 import { DATA_DIR } from './config.mjs'
 
 const STORE_PATH = path.join(DATA_DIR, 'projects.json')
-const MAX_PROJECTS = 40
+const MAX_PROJECTS = 100
 const NAME_MAX = 40
 const INSTRUCTIONS_MAX = 4000
 const NOTES_MAX = 8000
@@ -75,6 +75,7 @@ export class ProjectStore {
       defaultPermission: ['read-only', 'workspace-write', 'danger-full-access'].includes(input.defaultPermission)
         ? input.defaultPermission
         : 'workspace-write',
+      archivedAt: Number(input.archivedAt) > 0 ? Number(input.archivedAt) : null,
     }
     return base
   }
@@ -164,6 +165,9 @@ export class ProjectStore {
     if (patch.defaultPermission !== undefined && ['read-only', 'workspace-write', 'danger-full-access'].includes(patch.defaultPermission)) {
       project.defaultPermission = patch.defaultPermission
     }
+    if (patch.archived !== undefined) {
+      project.archivedAt = patch.archived === true ? now() : null
+    }
     project.updatedAt = now()
     this.scheduleSave()
     return project
@@ -213,27 +217,41 @@ export class ProjectStore {
 
   import(payload) {
     const list = Array.isArray(payload?.projects) ? payload.projects : []
-    if (!list.length) return { imported: 0, map: new Map() }
-    if (this.data.projects.length + list.length > MAX_PROJECTS) {
-      throw Object.assign(new Error(`项目数量超过上限（${MAX_PROJECTS}）`), { status: 409 })
+    if (!list.length) return { imported: 0, skipped: 0, map: new Map() }
+    const seen = new Map()
+    for (const project of this.data.projects) {
+      if (project.importKey) seen.set(project.importKey, project.id)
     }
     const map = new Map()
     const imported = []
+    let skipped = 0
     for (const raw of list) {
       if (!raw || typeof raw !== 'object') continue
       const clean = this.sanitize(raw)
+      const signature = raw.id
+        ? `id:${raw.id}`
+        : `txt:${clean.name}|${clean.instructions.slice(0, 120)}|${clean.notes.slice(0, 120)}`
+      if (seen.has(signature)) {
+        if (typeof raw.id === 'string') map.set(raw.id, seen.get(signature))
+        skipped += 1
+        continue
+      }
       const copy = {
         id: projectId(),
         ...clean,
-        name: `${clean.name}`.slice(0, NAME_MAX),
+        importKey: signature,
         createdAt: Number(raw.createdAt) || now(),
         updatedAt: Number(raw.updatedAt) || now(),
       }
       if (typeof raw.id === 'string') map.set(raw.id, copy.id)
+      seen.set(signature, copy.id)
       imported.push(copy)
     }
+    if (this.data.projects.length + imported.length > MAX_PROJECTS) {
+      throw Object.assign(new Error(`项目数量超过上限（${MAX_PROJECTS}）`), { status: 409 })
+    }
     this.data.projects.unshift(...imported.reverse())
-    this.scheduleSave()
-    return { imported: imported.length, map }
+    if (imported.length) this.scheduleSave()
+    return { imported: imported.length, skipped, map }
   }
 }

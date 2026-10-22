@@ -68,6 +68,11 @@ try {
   const importedProject = projectsNow.find((item) => item.name === '导入项目')
   record('imported conversation points to imported project', Boolean(importedConv?.projectId && importedProject?.id === importedConv.projectId), JSON.stringify({ conv: importedConv?.projectId, project: importedProject?.id }))
 
+  await api(`/api/projects/${project.id}`, { method: 'PATCH', body: JSON.stringify({ archived: true }) })
+  const archivedCreate = await api('/api/conversations', { method: 'POST', body: JSON.stringify({ projectId: project.id }) })
+  record('archived project rejects new conversations', archivedCreate.status === 409, String(archivedCreate.status))
+  await api(`/api/projects/${project.id}`, { method: 'PATCH', body: JSON.stringify({ archived: false }) })
+
   res = await api(`/api/projects/${project.id}`, { method: 'DELETE' })
   record('delete project keeps conversations', res.status === 200 && res.body.moved >= 1, JSON.stringify({ moved: res.body.moved }))
   const afterDelete = await api('/api/conversations?projectId=' + project.id)

@@ -130,14 +130,22 @@ export class LibraryStore {
     return this.get(owner)
   }
 
-  import(owner, payload) {
+  import(owner, payload, options = {}) {
     if (!payload || typeof payload !== 'object') return { imported: 0 }
     const before = this.get(owner)
     const bookmarks = [...before.bookmarks]
     const prompts = [...before.prompts]
     for (const item of Array.isArray(payload.bookmarks) ? payload.bookmarks : []) {
-      const clean = cleanBookmark(item)
-      if (!clean) continue
+      const raw = cleanBookmark(item)
+      if (!raw) continue
+      const clean = {
+        ...raw,
+        conversationId: options.conversationMap?.get(raw.conversationId) || '',
+        messageId: options.messageMap?.get(raw.messageId) || '',
+      }
+      // Never keep a bookmark that points at a conversation/message that was
+      // not actually imported; that is how dead links accumulate.
+      if (!clean.conversationId || !clean.messageId) continue
       if (!bookmarks.some((entry) => entry.conversationId === clean.conversationId && entry.messageId === clean.messageId)) {
         bookmarks.push(clean)
       }

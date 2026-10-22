@@ -1,7 +1,9 @@
 // Round 3 — project-scoped memory isolation.
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { ROOT, createSandbox } from './quality-harness.mjs'
+import { MemoryStore } from '../../server/memory-store.mjs'
 
 const results = []
 const record = (name, ok, detail = '') => {
@@ -31,6 +33,19 @@ try {
 } finally {
   await sandbox.stop().catch(() => {})
 }
+// Persistence: a restart must not drop the project scope.
+const tmp = path.join(os.tmpdir(), `dsh-memory-${process.pid}.json`)
+try {
+  const store = new MemoryStore({ filePath: tmp })
+  store.add('owner', '项目 A 的持久记忆', { projectId: 'p_test123456789' })
+  await store.flush()
+  const reloaded = new MemoryStore({ filePath: tmp })
+  const item = reloaded.list('owner').find((entry) => entry.text.includes('持久记忆'))
+  record('project scope survives restart', item?.projectId === 'p_test123456789', JSON.stringify(item))
+} finally {
+  fs.rmSync(tmp, { force: true })
+}
+
 const failed = results.filter((item) => !item.ok)
 fs.mkdirSync(path.join(ROOT, 'reports/v5/round-3'), { recursive: true })
 fs.writeFileSync(path.join(ROOT, 'reports/v5/round-3/memory-scope-qa.json'), JSON.stringify(results, null, 2))

@@ -8,6 +8,7 @@
     "start": "./start.sh",
     "qa": "node tools/qa/run-all.mjs",
     "qa:quick": "node tools/qa/run-all.mjs --quick",
+    "qa:static": "node tools/qa/static.mjs",
     "review": "node tools/review/consolidate.mjs round-1 --strict"
   },
   "engines": {
