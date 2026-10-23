@@ -10,6 +10,30 @@
   const icon = (id, cls = '') =>
     `<svg class="${cls}" aria-hidden="true"><use href="#${id}"></use></svg>`
 
+  // Accessing localStorage throws outright when site data is blocked (embedded
+  // webviews, privacy modes, storage policy). The whole client used to abort at
+  // the first read — before login, with only the skip link rendered. Fall back
+  // to an in-memory store so the product still works, just without persistence.
+  const storage = (() => {
+    try {
+      const real = window.localStorage
+      const probe = '__dsh_probe__'
+      real.setItem(probe, '1')
+      real.removeItem(probe)
+      return real
+    } catch {
+      const memory = new Map()
+      return {
+        getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+        setItem: (key, value) => { memory.set(key, String(value)) },
+        removeItem: (key) => { memory.delete(key) },
+        key: (index) => [...memory.keys()][index] ?? null,
+        get length() { return memory.size },
+        clear: () => memory.clear(),
+      }
+    }
+  })()
+
   const BOOKMARK_KEY = 'dsh.bookmarks.v1'
   const PROMPT_KEY = 'dsh.prompts.v1'
   const PREFS_KEY = 'dsh.prefs.v1'
@@ -300,7 +324,7 @@
     conversations: [],
     projects: [],
     projectCounts: { total: 0, unfiled: 0, filed: 0, projects: 0 },
-    activeProjectId: localStorage.getItem('dsh.project') || '',
+    activeProjectId: storage.getItem('dsh.project') || '',
     projectsLoaded: false,
     projectsFocus: null,
     editingProjectId: null,
@@ -343,7 +367,7 @@
     approvals: new Map(),
     liveViews: new Map(),
     stick: true,
-    theme: localStorage.getItem('dsh.theme') || 'auto',
+    theme: storage.getItem('dsh.theme') || 'auto',
     confirmAction: null,
     toastTimer: null,
     approvalNoticeTimer: null,
@@ -355,8 +379,9 @@
     initRetryTimer: null,
     refreshRetryTimer: null,
     attachRetryTimer: null,
+    attachSeq: 0,
     resuming: false,
-    engine: localStorage.getItem('dsh.engine') === 'codex' ? 'codex' : 'dsr',
+    engine: storage.getItem('dsh.engine') === 'codex' ? 'codex' : 'dsr',
     currentEngine: 'dsr',
     codexAvailable: false,
     permission: 'workspace-write',
@@ -374,6 +399,8 @@
     renamingId: null,
     draftTimer: null,
     stagedFiles: [],
+    stagedByConversation: new Map(),
+    stagedContextId: null,
     stagedSeq: 0,
     sending: false,
     pendingSend: null,
@@ -399,6 +426,7 @@
     lastSettingsFocus: null,
     lastMemoryFocus: null,
     lastArchiveFocus: null,
+    lastTrashFocus: null,
     lastBookmarksFocus: null,
     lastPromptsFocus: null,
     bookmarks: loadBookmarks(),
@@ -818,7 +846,7 @@
 
   function loadResolvedMap() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(RESOLVED_KEY) || '{}')
+      const parsed = JSON.parse(storage.getItem(RESOLVED_KEY) || '{}')
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
       const out = {}
       for (const [conversationId, value] of Object.entries(parsed)) {
@@ -833,7 +861,7 @@
 
   function saveResolvedMap() {
     try {
-      localStorage.setItem(RESOLVED_KEY, JSON.stringify(state.resolvedRequests))
+      storage.setItem(RESOLVED_KEY, JSON.stringify(state.resolvedRequests))
     } catch {}
   }
 
@@ -1000,7 +1028,7 @@
       closePermissionMenu()
       return
     }
-    state.permissionMenuFocus = document.activeElement
+    state.permissionMenuFocus = focusOrigin()
     els.permissionBtn?.setAttribute('aria-expanded', 'true')
     renderPermissionMenu()
   }
@@ -1246,7 +1274,7 @@
 
   function openScenarioSheet() {
     if (!els.filesSheet.hidden) closeFilesSheet()
-    state.lastScenarioFocus = document.activeElement
+    state.lastScenarioFocus = focusOrigin()
     renderScenarios()
     els.scenarioSheet.hidden = false
     lockShell(true)
@@ -1494,6 +1522,21 @@
     })
   }
 
+  // Staged attachments are conversation-scoped, like drafts. They used to be a
+  // single global tray, so a file staged in one chat silently rode along into
+  // another chat's workspace and was uploaded there.
+  function setStagedContext(nextId, { carry = false } = {}) {
+    const key = nextId || ''
+    const current = state.stagedContextId
+    if (current === key && !carry) return
+    if (current !== null && !carry) state.stagedByConversation.set(current, state.stagedFiles.slice())
+    state.stagedContextId = key
+    if (carry) state.stagedByConversation.set(key, state.stagedFiles.slice())
+    else state.stagedFiles = (state.stagedByConversation.get(key) || []).slice()
+    renderAttachmentTray()
+    updateComposerMeta()
+  }
+
   async function uploadStagedFiles(conversationId) {
     if (!conversationId) return null
     const items = state.stagedFiles.filter((item) => item.status !== 'done')
@@ -1654,7 +1697,7 @@
     const url = fileUrl(file.path)
     if (!els.filesSheet.hidden) closeFilesSheet()
     state.previewFile = file
-    state.previewFocus = document.activeElement
+    state.previewFocus = focusOrigin()
     const kind = previewKind(file)
     els.filePreviewTitle.textContent = file.name
     els.filePreviewMeta.textContent = `${file.path} · ${formatBytes(file.size)} · ${relativeTime(file.mtime)}`
@@ -1842,7 +1885,7 @@
 
   function openFilesSheet() {
     if (!els.scenarioSheet.hidden) closeScenarioSheet()
-    state.lastFilesFocus = document.activeElement
+    state.lastFilesFocus = focusOrigin()
     renderFilesSheet()
     els.filesSheet.hidden = false
     lockShell(true)
@@ -2081,7 +2124,9 @@
       callId: event.callId || null,
     })
     if (state.stick) scrollToBottom()
-    requestAnimationFrame(() => allow.focus({ preventScroll: true }))
+    // Focus stays where the user put it. Moving it to "允许一次" while they were
+    // typing meant the next Enter approved a tool instead of sending a message.
+    announce('需要授权：' + (event.toolName ? `${event.toolName}，` : '') + (event.reason || '请确认是否继续'))
   }
 
   function showQuestion(event) {
@@ -2363,7 +2408,7 @@
 
   function loadBookmarks() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(BOOKMARK_KEY) || '[]')
+      const parsed = JSON.parse(storage.getItem(BOOKMARK_KEY) || '[]')
       return Array.isArray(parsed)
         ? parsed.filter((item) => item && item.conversationId && item.messageId).slice(-200)
         : []
@@ -2374,14 +2419,14 @@
 
   function saveBookmarks() {
     try {
-      localStorage.setItem(BOOKMARK_KEY, JSON.stringify(state.bookmarks.slice(-200)))
+      storage.setItem(BOOKMARK_KEY, JSON.stringify(state.bookmarks.slice(-200)))
     } catch {}
     scheduleLibrarySync()
   }
 
   function loadPrompts() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(PROMPT_KEY) || 'null')
+      const parsed = JSON.parse(storage.getItem(PROMPT_KEY) || 'null')
       if (Array.isArray(parsed)) return parsed.filter((item) => item && item.name && item.text)
     } catch {}
     return PROMPT_DEFAULTS.slice()
@@ -2389,7 +2434,7 @@
 
   function savePrompts() {
     try {
-      localStorage.setItem(PROMPT_KEY, JSON.stringify(state.prompts))
+      storage.setItem(PROMPT_KEY, JSON.stringify(state.prompts))
     } catch {}
     scheduleLibrarySync()
   }
@@ -2507,7 +2552,7 @@
   function loadPrefs() {
     const defaults = { density: 'comfortable', fontScale: 1, notify: false }
     try {
-      const parsed = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}')
+      const parsed = JSON.parse(storage.getItem(PREFS_KEY) || '{}')
       return {
         density: parsed.density === 'compact' ? 'compact' : 'comfortable',
         fontScale: [0.94, 1, 1.1, 1.25, 1.4].includes(Number(parsed.fontScale)) ? Number(parsed.fontScale) : 1,
@@ -2520,7 +2565,7 @@
 
   function savePrefs() {
     try {
-      localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs))
+      storage.setItem(PREFS_KEY, JSON.stringify(state.prefs))
     } catch {}
   }
 
@@ -2589,7 +2634,7 @@
     state.theme = next
     if (next === 'auto') document.documentElement.removeAttribute('data-theme')
     else document.documentElement.dataset.theme = next
-    localStorage.setItem('dsh.theme', next)
+    storage.setItem('dsh.theme', next)
     syncThemeColor()
     updateThemeButton()
   }
@@ -2617,6 +2662,10 @@
 
   function setDocumentTitle(title) {
     state.baseTitle = title || 'DSH Chat'
+    // Heading navigation needs a target inside the conversation view: the
+    // visible title is a button in the topbar and the transcript is a region.
+    const heading = document.getElementById('chatHeading')
+    if (heading) heading.textContent = state.baseTitle
     const busy = Boolean(state.streaming) || state.unread
     document.title = `${busy ? '● ' : ''}${state.baseTitle}`
     const link = document.querySelector('link[rel="icon"]')
@@ -2652,6 +2701,25 @@
     } catch {}
   }
 
+  // Where focus should go back to when an overlay closes. Command palette
+  // actions close the palette before opening a sheet, so the sheet captured
+  // <body> as its return target and closing it dropped the user at the top of
+  // the page. Track the last real external focus instead.
+  let lastExternalFocus = null
+  document.addEventListener('focusin', (event) => {
+    const el = event.target
+    if (!el || el === document.body || el === document.documentElement) return
+    if (typeof el.closest === 'function' && el.closest('.sheet, .modal, .palette, .conv-popover, .quick-switcher, #permissionMenu')) return
+    lastExternalFocus = el
+  }, true)
+
+  function focusOrigin() {
+    const el = document.activeElement
+    if (el && el !== document.body && el !== document.documentElement) return el
+    if (lastExternalFocus && document.contains(lastExternalFocus)) return lastExternalFocus
+    return els.input || null
+  }
+
   const desktopQuery = window.matchMedia('(min-width: 1024px)')
   window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
     if (state.theme === 'auto') syncThemeColor()
@@ -2659,17 +2727,19 @@
 
   function setSidebarA11y() {
     if (!els.sidebar) return
+    const main = document.querySelector('.main')
     if (desktopQuery.matches) {
       const collapsed = document.body.classList.contains('sidebar-collapsed')
       els.sidebar.inert = collapsed
       els.sidebar.setAttribute('aria-hidden', collapsed ? 'true' : 'false')
       els.menuBtn.setAttribute('aria-expanded', String(!collapsed))
+      // Always release the drawer's lock when the desktop layout takes over.
+      if (main) main.inert = false
     } else {
       const open = document.body.classList.contains('sidebar-open')
       els.sidebar.inert = !open
       els.sidebar.setAttribute('aria-hidden', open ? 'false' : 'true')
       els.menuBtn.setAttribute('aria-expanded', String(open))
-      const main = document.querySelector('.main')
       if (main) main.inert = open
     }
   }
@@ -2677,7 +2747,7 @@
   function openSidebar() {
     if (desktopQuery.matches) document.body.classList.remove('sidebar-collapsed')
     else document.body.classList.add('sidebar-open')
-    if (!desktopQuery.matches) localStorage.setItem('dsh.sidebar', 'open')
+    if (!desktopQuery.matches) storage.setItem('dsh.sidebar', 'open')
     setSidebarA11y()
     if (!desktopQuery.matches) {
       const active = els.convList.querySelector('.conv-item.active .conv-main')
@@ -2686,10 +2756,10 @@
   }
 
   function closeSidebar() {
-    const active = document.activeElement
+    const active = focusOrigin()
     if (desktopQuery.matches) document.body.classList.add('sidebar-collapsed')
     else document.body.classList.remove('sidebar-open')
-    localStorage.setItem('dsh.sidebar', desktopQuery.matches ? 'collapsed' : 'closed')
+    storage.setItem('dsh.sidebar', desktopQuery.matches ? 'collapsed' : 'closed')
     setSidebarA11y()
     if (active && els.sidebar.contains(active)) els.menuBtn.focus({ preventScroll: true })
   }
@@ -2697,7 +2767,7 @@
   function toggleSidebar() {
     if (desktopQuery.matches) {
       document.body.classList.toggle('sidebar-collapsed')
-      localStorage.setItem(
+      storage.setItem(
         'dsh.sidebar',
         document.body.classList.contains('sidebar-collapsed') ? 'collapsed' : 'open',
       )
@@ -2712,7 +2782,7 @@
     if (desktopQuery.matches) {
       document.body.classList.toggle(
         'sidebar-collapsed',
-        localStorage.getItem('dsh.sidebar') === 'collapsed',
+        storage.getItem('dsh.sidebar') === 'collapsed',
       )
       document.body.classList.remove('sidebar-open')
     } else {
@@ -2766,7 +2836,7 @@
     }
 
     const routeId = routeConversationId()
-    const saved = localStorage.getItem('dsh.current')
+    const saved = storage.getItem('dsh.current')
     if (routeId) {
       await openConversation(routeId, { skipStop: true, fromRoute: true })
       if (state.currentId === routeId) return
@@ -3079,7 +3149,7 @@
 
   function readCache() {
     try {
-      const raw = localStorage.getItem(CACHE_KEY)
+      const raw = storage.getItem(CACHE_KEY)
       if (!raw) return null
       const data = JSON.parse(raw)
       if (!data || data.v !== 1 || !data.authed) return null
@@ -3091,7 +3161,7 @@
 
   function clearCache() {
     try {
-      localStorage.removeItem(CACHE_KEY)
+      storage.removeItem(CACHE_KEY)
     } catch {}
   }
 
@@ -3163,7 +3233,7 @@
         payload.current.messages = current.messages.slice(-10)
         raw = JSON.stringify(payload)
       }
-      if (raw.length <= 4_600_000) localStorage.setItem(CACHE_KEY, raw)
+      if (raw.length <= 4_600_000) storage.setItem(CACHE_KEY, raw)
     } catch {}
   }
 
@@ -3935,7 +4005,7 @@
       const active = projectById(state.activeProjectId)
       if (!active || active.archivedAt) {
         state.activeProjectId = ''
-        localStorage.removeItem('dsh.project')
+        storage.removeItem('dsh.project')
       }
     }
     state.projectsLoaded = true
@@ -3962,28 +4032,39 @@
     const projects = state.projects.filter((project) => !project.archivedAt)
     if (els.projectFilter) els.projectFilter.hidden = projects.length === 0
     if (els.projectSelect) {
-      const options = [new Option('全部对话', '')]
-      for (const project of projects) {
-        const count = Number(project.conversationCount) || 0
-        const option = new Option(
-          `${project.emoji || '📁'}  ${project.name}${count ? ` · ${count}` : ''}`,
-          project.id,
-        )
-        option.title = `${project.name} · ${count} 个对话`
-        options.push(option)
-      }
-      if (state.projectCounts.unfiled > 0) {
-        const option = new Option(`未归类 · ${state.projectCounts.unfiled}`, '__unfiled__')
-        option.title = `${state.projectCounts.unfiled} 个未归类对话`
-        options.push(option)
-      }
       // Keep a filter pointing at an archived project selectable rather than
       // silently showing "全部对话" while the list is still filtered.
       const current = state.activeProjectId && state.activeProjectId !== '__unfiled__' ? projectById(state.activeProjectId) : null
-      if (current && current.archivedAt && !projects.includes(current)) {
-        options.push(new Option(`📁  ${current.name} · 已归档`, current.id))
+      const archivedCurrent = current && current.archivedAt && !projects.includes(current) ? current : null
+      const signature = [
+        projects.map((project) => `${project.id}:${project.name}:${project.emoji || ''}:${project.conversationCount || 0}`).join('|'),
+        state.projectCounts.unfiled || 0,
+        archivedCurrent?.id || '',
+      ].join(';')
+      // Rebuilding a focused <select> discards keyboard focus; only rebuild
+      // when the option set actually changed.
+      if (els.projectSelect.dataset.signature !== signature) {
+        const options = [new Option('全部对话', '')]
+        for (const project of projects) {
+          const count = Number(project.conversationCount) || 0
+          const option = new Option(
+            `${project.emoji || '📁'}  ${project.name}${count ? ` · ${count}` : ''}`,
+            project.id,
+          )
+          option.title = `${project.name} · ${count} 个对话`
+          options.push(option)
+        }
+        if (state.projectCounts.unfiled > 0) {
+          const option = new Option(`未归类 · ${state.projectCounts.unfiled}`, '__unfiled__')
+          option.title = `${state.projectCounts.unfiled} 个未归类对话`
+          options.push(option)
+        }
+        if (archivedCurrent) {
+          options.push(new Option(`📁  ${archivedCurrent.name} · 已归档`, archivedCurrent.id))
+        }
+        els.projectSelect.replaceChildren(...options)
+        els.projectSelect.dataset.signature = signature
       }
-      els.projectSelect.replaceChildren(...options)
       els.projectSelect.value = state.activeProjectId || ''
     }
     updateEmptyProject()
@@ -4018,8 +4099,8 @@
 
   async function setProjectFilter(id, { close = true } = {}) {
     state.activeProjectId = id === '__unfiled__' || (id && projectById(id)) ? id : ''
-    if (state.activeProjectId) localStorage.setItem('dsh.project', state.activeProjectId)
-    else localStorage.removeItem('dsh.project')
+    if (state.activeProjectId) storage.setItem('dsh.project', state.activeProjectId)
+    else storage.removeItem('dsh.project')
     renderProjectUI()
     if (close) closeProjects()
     await refreshConversations()
@@ -4027,7 +4108,7 @@
   }
 
   function openProjects() {
-    state.projectsFocus = document.activeElement
+    state.projectsFocus = focusOrigin()
     els.projectsSheet.hidden = false
     els.projectEditor.hidden = true
     els.projectsList.hidden = false
@@ -4334,7 +4415,7 @@
           applyProjectsPayload(data)
           if (state.activeProjectId === id) {
             state.activeProjectId = ''
-            localStorage.removeItem('dsh.project')
+            storage.removeItem('dsh.project')
           }
           state.editingProjectId = null
           els.projectEditor.hidden = true
@@ -4355,9 +4436,10 @@
     const targets = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean))]
     if (!targets.length) return
     state.moveTargets = targets
-    state.moveFocus = document.activeElement
+    state.moveFocus = focusOrigin()
     els.moveSheet.hidden = false
     document.body.classList.add('sheet-open')
+    lockShell()
     renderMoveList()
     requestAnimationFrame(() => els.moveList.querySelector('.move-item')?.focus({ preventScroll: true }))
   }
@@ -4477,7 +4559,7 @@
   function openExportSheet(conversationId = state.currentId) {
     if (!conversationId) return showToast('先打开一段对话再导出', { tone: 'error' })
     state.exportConversationId = conversationId
-    state.exportFocus = document.activeElement
+    state.exportFocus = focusOrigin()
     els.exportTools.checked = false
     els.exportThinking.checked = false
     els.exportMeta.checked = false
@@ -4537,7 +4619,7 @@
       showToast('先打开一段对话再分享', { tone: 'error' })
       return
     }
-    state.shareFocus = document.activeElement
+    state.shareFocus = focusOrigin()
     state.shareConversationId = conversationId
     state.shareMessageId = messageId
     state.shareMessages = []
@@ -4902,7 +4984,7 @@
     const msg = state.messages.find((item) => item.id === messageId)
     if (!msg || !Array.isArray(msg.versions) || !msg.versions.length) return
     state.versionTarget = { conversationId: state.currentId, messageId, message: msg }
-    state.versionsFocus = document.activeElement
+    state.versionsFocus = focusOrigin()
     els.versionsSheet.hidden = false
     els.versionsCompare.hidden = true
     els.versionsCompareBtn.setAttribute('aria-pressed', 'false')
@@ -5006,7 +5088,7 @@
     const message = state.messages.find((msg) => msg.id === messageId)
     if (!message) return showToast('找不到这条回答', { tone: 'error' })
     state.regenTarget = { messageId }
-    state.regenFocus = document.activeElement
+    state.regenFocus = focusOrigin()
     els.regenerateInstruction.value = ''
     els.regenerateModal.hidden = false
     lockShell()
@@ -5047,7 +5129,7 @@
     const message = state.messages.find((msg) => msg.id === messageId)
     if (!message) return showToast('找不到这条回答', { tone: 'error' })
     state.editAnswerTarget = { messageId }
-    state.editAnswerFocus = document.activeElement
+    state.editAnswerFocus = focusOrigin()
     els.editAnswerText.value = message.text || (message.blocks || []).filter((block) => block.type === 'text').map((block) => block.text).join('\n\n')
     els.editAnswerError.hidden = true
     els.editAnswerModal.hidden = false
@@ -5145,8 +5227,11 @@
     if (!state.convMenuEl) return
     const el = state.convMenuEl
     const anchor = el.__anchor
+    const wasSheet = el.classList.contains('sheet-mode')
     state.convMenuEl = null
+    el.__backdrop?.remove()
     el.remove()
+    if (wasSheet) lockShell(false)
     if (anchor) anchor.setAttribute('aria-expanded', 'false')
     if (restoreFocus && anchor?.isConnected) anchor.focus({ preventScroll: true })
   }
@@ -5279,7 +5364,7 @@
         row.append(name, amount)
         els.statsList.appendChild(row)
       }
-      state.lastStatsFocus = document.activeElement
+      state.lastStatsFocus = focusOrigin()
       els.statsModal.hidden = false
       lockShell(true)
       els.statsClose.focus()
@@ -5300,10 +5385,14 @@
     const conv = state.conversations.find((item) => item.id === id) ||
       state.searchResults.find((item) => item.id === id)
     if (!conv) return
+    const sheetMode = window.innerWidth < 641
     const menu = document.createElement('div')
-    menu.className = 'conv-popover' + (window.innerWidth < 641 ? ' sheet-mode' : '')
+    menu.className = 'conv-popover' + (sheetMode ? ' sheet-mode' : '')
     menu.id = 'convPopover'
-    menu.setAttribute('role', 'menu')
+    // On phones this renders as a bottom sheet; a sheet that leaves the page
+    // behind it tabbable and tappable is a trap for keyboard and thumb alike.
+    menu.setAttribute('role', sheetMode ? 'dialog' : 'menu')
+    if (sheetMode) menu.setAttribute('aria-modal', 'true')
     menu.setAttribute('aria-label', '对话操作')
     menu.__anchor = anchor
 
@@ -5359,7 +5448,51 @@
       menu.appendChild(button)
     }
 
+    // role=menu promises arrow-key navigation and Escape; without it Escape
+    // fell through to the global handler and aborted the running answer.
+    menu.addEventListener('keydown', (event) => {
+      const items = [...menu.querySelectorAll('.conv-popover-item:not([disabled])')]
+      if (!items.length) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        event.stopPropagation()
+        closeConvMenu({ restoreFocus: true })
+        return
+      }
+      if (event.key === 'Tab') {
+        if (menu.classList.contains('sheet-mode')) {
+          // Wrap inside the sheet instead of letting focus walk the page behind.
+          event.preventDefault()
+          const next = (index + (event.shiftKey ? -1 : 1) + items.length) % items.length
+          items[next].focus()
+          return
+        }
+        closeConvMenu({ restoreFocus: false })
+        return
+      }
+      const index = items.indexOf(document.activeElement)
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        const next = event.key === 'ArrowDown'
+          ? (index + 1 + items.length) % items.length
+          : (index - 1 + items.length) % items.length
+        items[next].focus()
+        return
+      }
+      if (event.key === 'Home' || event.key === 'End') {
+        event.preventDefault()
+        items[event.key === 'Home' ? 0 : items.length - 1].focus()
+      }
+    })
     document.body.appendChild(menu)
+    if (sheetMode) {
+      const backdrop = document.createElement('div')
+      backdrop.className = 'conv-popover-backdrop'
+      backdrop.addEventListener('click', () => closeConvMenu({ restoreFocus: true }))
+      document.body.appendChild(backdrop)
+      menu.__backdrop = backdrop
+      lockShell(true)
+    }
     state.convMenuEl = menu
     anchor.setAttribute('aria-expanded', 'true')
     if (window.innerWidth >= 641) {
@@ -5500,7 +5633,7 @@
         if (state.currentId === id) {
           state.currentId = null
           state.messages = []
-          localStorage.removeItem('dsh.current')
+          storage.removeItem('dsh.current')
           showEmptyChat()
         }
         renderConversations()
@@ -5521,7 +5654,7 @@
     els.confirmOk.classList.add('danger-btn')
     els.confirmOk.classList.remove('primary-btn')
     els.confirmTitle.textContent = `删除「${conv?.title || '这个对话'}」？`
-    state.lastFocus = document.activeElement
+    state.lastFocus = focusOrigin()
     els.confirmModal.hidden = false
     lockShell(true)
     els.confirmCancel.focus()
@@ -5615,7 +5748,7 @@
   const PALETTE_RECENT_KEY = 'dsh.palette.recent'
   function paletteRecentIds() {
     try {
-      const parsed = JSON.parse(localStorage.getItem(PALETTE_RECENT_KEY) || '[]')
+      const parsed = JSON.parse(storage.getItem(PALETTE_RECENT_KEY) || '[]')
       return Array.isArray(parsed) ? parsed.filter((id) => COMMANDS.some((command) => command.id === id)).slice(0, 3) : []
     } catch {
       return []
@@ -5625,7 +5758,7 @@
     if (!COMMANDS.some((command) => command.id === id)) return
     try {
       const list = [id, ...paletteRecentIds().filter((item) => item !== id)]
-      localStorage.setItem(PALETTE_RECENT_KEY, JSON.stringify(list.slice(0, 6)))
+      storage.setItem(PALETTE_RECENT_KEY, JSON.stringify(list.slice(0, 6)))
     } catch {}
   }
   function paletteCommandItems(query) {
@@ -5730,8 +5863,18 @@
     const item = state.paletteItems[index]
     if (!item) return
     if (!String(item.id).startsWith('conv:')) rememberPaletteCommand(item.id)
+    const opener = state.paletteFocus || focusOrigin()
     closePalette({ restoreFocus: false })
-    item.run()
+    // The palette is gone by the time the action runs, so anything it opens
+    // (a conversation, a sheet) has nothing to return focus to. Give the user
+    // a landing spot instead of leaving focus on <body>.
+    Promise.resolve(item.run()).finally(() => {
+      setTimeout(() => {
+        if (document.activeElement && document.activeElement !== document.body) return
+        const target = opener && document.contains(opener) && opener !== document.body ? opener : els.input
+        target?.focus({ preventScroll: true })
+      }, 60)
+    })
   }
 
   function openPalette() {
@@ -5740,7 +5883,7 @@
     if (!els.filesSheet.hidden) closeFilesSheet()
     if (!els.scenarioSheet.hidden) closeScenarioSheet()
     if (!els.shortcutsSheet.hidden) closeShortcutsSheet()
-    state.paletteFocus = document.activeElement
+    state.paletteFocus = focusOrigin()
     state.paletteIndex = 0
     els.paletteInput.value = ''
     els.palette.hidden = false
@@ -5844,7 +5987,7 @@
   function openShortcuts() {
     if (!els.shortcutsSheet || !els.shortcutsSheet.hidden) return
     renderShortcuts()
-    state.shortcutsFocus = document.activeElement
+    state.shortcutsFocus = focusOrigin()
     els.shortcutsSheet.hidden = false
     lockShell(true)
     requestAnimationFrame(() => {
@@ -5865,7 +6008,7 @@
       state.searchResults.find((item) => item.id === id)
     if (!conv || !els.renameModal) return
     state.renameId = id
-    state.lastFocus = document.activeElement
+    state.lastFocus = focusOrigin()
     els.renameInput.value = conv.title === '新对话' ? '' : conv.title || ''
     els.renameError.hidden = true
     els.renameModal.hidden = false
@@ -6119,7 +6262,7 @@
     els.confirmOk.textContent = okLabel
     els.confirmOk.classList.toggle('danger-btn', danger)
     els.confirmOk.classList.toggle('primary-btn', !danger)
-    state.lastFocus = document.activeElement
+    state.lastFocus = focusOrigin()
     els.confirmModal.hidden = false
     lockShell(true)
     els.confirmCancel.focus()
@@ -7083,6 +7226,7 @@
     clearQuestionSlot()
     closePermissionMenu({ restoreFocus: false })
     state.currentId = null
+    setStagedContext(null)
     state.currentEngine = state.engine
     state.permission = state.permissionCatalog?.default || 'workspace-write'
     state.messages = []
@@ -7097,7 +7241,7 @@
     const emptyProject = activeProject()
     els.topbarName.textContent = emptyProject ? emptyProject.name : 'DSH Chat'
     setDocumentTitle(emptyProject ? emptyProject.name : 'DSH Chat')
-    localStorage.removeItem('dsh.current')
+    storage.removeItem('dsh.current')
     if (updateRoute) pushRoute(null)
     state.files = []
     state.filePaths.clear()
@@ -7133,7 +7277,7 @@
     const el = els.scrollArea
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
     try {
-      localStorage.setItem(scrollKey(id), nearBottom ? 'bottom' : String(Math.round(el.scrollTop)))
+      storage.setItem(scrollKey(id), nearBottom ? 'bottom' : String(Math.round(el.scrollTop)))
     } catch {}
   }
 
@@ -7148,7 +7292,7 @@
     if (!id) return
     let saved = 'bottom'
     try {
-      saved = localStorage.getItem(scrollKey(id)) || 'bottom'
+      saved = storage.getItem(scrollKey(id)) || 'bottom'
     } catch {}
     const el = els.scrollArea
     if (saved === 'bottom' || !Number.isFinite(Number(saved))) {
@@ -7461,11 +7605,14 @@
 
   async function openConversation(id, options = {}) {
     const request = ++state.navigationRequest
+    // Invalidates an attach handshake that has not delivered its first frame.
+    state.attachSeq += 1
     const nav = { id, request }
     state.navigating = nav
     if (state.streaming) detachStreaming()
     saveScrollPosition()
     saveDraftNow()
+    const draftBaseline = els.input.value
     clearQuestionSlot()
     closePermissionMenu({ restoreFocus: false })
     const switching = state.currentId !== id
@@ -7493,13 +7640,14 @@
       state.totalMessages = totalMessages
       state.threadWindow = hasEarlier ? Math.max(60, conv.messages.length) : 60
       state.currentId = conv.id
+      setStagedContext(conv.id)
       markConversationRead(conv.id)
       state.currentEngine = conv.engine === 'codex' ? 'codex' : 'dsr'
       state.engine = state.currentEngine
       state.permission = conv.permission || 'workspace-write'
-      localStorage.setItem('dsh.engine', state.currentEngine)
+      storage.setItem('dsh.engine', state.currentEngine)
       state.messages = conv.messages || []
-      localStorage.setItem('dsh.current', conv.id)
+      storage.setItem('dsh.current', conv.id)
       els.topbarName.textContent = conv.title || 'DSH Chat'
       setDocumentTitle(conv.title || 'DSH Chat')
       renderMessages(state.messages)
@@ -7520,7 +7668,7 @@
       if (runningMessage && !options.skipAttach) {
         void attachRun(conv.id, runningMessage.id)
       }
-      restoreDraft()
+      restoreDraft({ onlyIfUntouched: draftBaseline })
       void refreshFiles(conv.id)
       renderConversations()
       scheduleCacheSave()
@@ -7549,6 +7697,7 @@
 
   function newChat() {
     if (state.streaming) detachStreaming()
+    state.attachSeq += 1
     saveDraftNow()
     showEmptyChat()
   }
@@ -7715,6 +7864,9 @@
     if (!desktopQuery.matches) {
       document.body.classList.remove('sidebar-collapsed')
     }
+    // Crossing the breakpoint used to leave `.main` inert from the mobile
+    // drawer, freezing the desktop UI until a reload (no click, no typing).
+    setSidebarA11y()
   })
 
   document.addEventListener('keydown', (event) => {
@@ -7748,12 +7900,15 @@
       return
     }
     if (event.key !== 'Escape') return
+    if (state.convMenuEl) return closeConvMenu({ restoreFocus: true })
     if (els.chatInfo && !els.chatInfo.hidden) return closeChatInfo({ restoreFocus: true })
     if (els.engineInfo && !els.engineInfo.hidden) return closeEngineInfo()
     if (els.connectionDetail && !els.connectionDetail.hidden) return closeConnectionDetail({ restoreFocus: true })
     if (els.findBar && !els.findBar.hidden) return closeFind()
     if (els.quickSwitcher && !els.quickSwitcher.hidden) return closeQuickSwitcher()
     if (els.statsModal && !els.statsModal.hidden) return closeStats()
+    // Trash is opened *from* settings, so it is the top layer of the two.
+    if (els.trashSheet && !els.trashSheet.hidden) return closeTrash()
     if (els.settingsSheet && !els.settingsSheet.hidden) return closeSettings()
     if (els.archiveSheet && !els.archiveSheet.hidden) return closeArchive()
     if (els.bookmarksSheet && !els.bookmarksSheet.hidden) return closeBookmarks()
@@ -7766,7 +7921,6 @@
     if (els.templateModal && !els.templateModal.hidden) return closeTemplateModal()
     if (els.regenerateModal && !els.regenerateModal.hidden) return closeRegenerate()
     if (els.editAnswerModal && !els.editAnswerModal.hidden) return closeEditAnswer()
-    if (els.trashSheet && !els.trashSheet.hidden) return closeTrash()
     if (els.exportSheet && !els.exportSheet.hidden) return closeExportSheet()
     if (els.palette && !els.palette.hidden) return closePalette()
     if (els.commandMenu && !els.commandMenu.hidden) return closeCommandMenu()
@@ -7993,7 +8147,7 @@
   function openShortcutsSheet() {
     if (!els.shortcutsSheet) return
     renderShortcuts()
-    state.lastShortcutsFocus = document.activeElement
+    state.lastShortcutsFocus = focusOrigin()
     els.shortcutsSheet.hidden = false
     lockShell(true)
     requestAnimationFrame(() => {
@@ -8150,7 +8304,7 @@
   function openSettings() {
     void loadShareBase()
     if (!els.settingsSheet) return
-    state.lastSettingsFocus = document.activeElement
+    state.lastSettingsFocus = focusOrigin()
     els.settingsSheet.hidden = false
     lockShell(true)
     applyPrefs()
@@ -8309,7 +8463,7 @@
 
   async function openMemory() {
     if (!els.memorySheet) return
-    state.lastMemoryFocus = document.activeElement
+    state.lastMemoryFocus = focusOrigin()
     els.memorySheet.hidden = false
     lockShell(true)
     updateMemoryUI()
@@ -8875,14 +9029,14 @@
   function markConversationRead(id) {
     if (!id) return
     try {
-      localStorage.setItem(readKey(id), String(Date.now()))
+      storage.setItem(readKey(id), String(Date.now()))
     } catch {}
   }
 
   function isConversationUnread(conv) {
     if (!conv || conv.id === state.currentId) return false
     try {
-      const raw = localStorage.getItem(readKey(conv.id))
+      const raw = storage.getItem(readKey(conv.id))
       if (!raw) return false
       const read = Number(raw) || 0
       return Number(conv.updatedAt) > read + 1500 && (conv.messageCount || 0) > 0
@@ -8907,7 +9061,7 @@
 
   function openBookmarks() {
     if (!els.bookmarksSheet) return
-    state.lastBookmarksFocus = document.activeElement
+    state.lastBookmarksFocus = focusOrigin()
     els.bookmarksSheet.hidden = false
     lockShell(true)
     renderBookmarks()
@@ -8967,7 +9121,7 @@
 
   function openPrompts() {
     if (!els.promptSheet) return
-    state.lastPromptsFocus = document.activeElement
+    state.lastPromptsFocus = focusOrigin()
     els.promptSheet.hidden = false
     lockShell(true)
     renderPrompts()
@@ -8985,7 +9139,7 @@
 
   function loadTemplateValues() {
     try {
-      const parsed = JSON.parse(localStorage.getItem('dsh.templateValues.v1') || '{}')
+      const parsed = JSON.parse(storage.getItem('dsh.templateValues.v1') || '{}')
       return parsed && typeof parsed === 'object' ? parsed : {}
     } catch {
       return {}
@@ -8994,7 +9148,7 @@
 
   function saveTemplateValues() {
     try {
-      localStorage.setItem('dsh.templateValues.v1', JSON.stringify(state.templateValues))
+      storage.setItem('dsh.templateValues.v1', JSON.stringify(state.templateValues))
     } catch {}
   }
 
@@ -9026,7 +9180,7 @@
 
   function openTemplateModal(names, scope, onFill) {
     state.templateScope = scope || ''
-    state.templateFocus = document.activeElement
+    state.templateFocus = focusOrigin()
     state.templateOnFill = onFill
     els.templateFields.replaceChildren()
     els.templateError.hidden = true
@@ -9211,9 +9365,9 @@
         text = `本机缓存约 ${formatBytes(used)}${estimate.quota ? ` / 配额 ${formatBytes(estimate.quota)}` : ''}`
       }
       let localBytes = 0
-      for (let i = 0; i < localStorage.length; i += 1) {
-        const key = localStorage.key(i)
-        localBytes += (key?.length || 0) + (localStorage.getItem(key)?.length || 0)
+      for (let i = 0; i < storage.length; i += 1) {
+        const key = storage.key(i)
+        localBytes += (key?.length || 0) + (storage.getItem(key)?.length || 0)
       }
       text += ` · 浏览器本地键值 ${formatBytes(localBytes)}`
     } catch {}
@@ -9255,7 +9409,7 @@
     const at = Date.now()
     for (const conv of state.conversations) {
       try {
-        localStorage.setItem(readKey(conv.id), String(at))
+        storage.setItem(readKey(conv.id), String(at))
       } catch {}
     }
     renderConversations()
@@ -9263,6 +9417,7 @@
   })
 
   async function openTrash() {
+    state.lastTrashFocus = focusOrigin()
     els.trashSheet.hidden = false
     lockShell()
     focusSheetClose(els.trashSheet)
@@ -9406,6 +9561,12 @@
     if (!els.trashSheet || els.trashSheet.hidden) return
     els.trashSheet.hidden = true
     lockShell()
+    // Closing used to drop focus to <body>, so the next Tab restarted at the
+    // skip link at the top of the page.
+    const target = state.lastTrashFocus
+    state.lastTrashFocus = null
+    if (target && document.contains(target)) target.focus({ preventScroll: true })
+    else els.trashBtn?.focus({ preventScroll: true })
   }
 
   els.trashBtn?.addEventListener('click', () => void openTrash())
@@ -9415,7 +9576,7 @@
 
   async function openArchive() {
     if (!els.archiveSheet) return
-    state.lastArchiveFocus = document.activeElement
+    state.lastArchiveFocus = focusOrigin()
     els.archiveSheet.hidden = false
     lockShell(true)
     els.archiveList.replaceChildren()
@@ -9676,7 +9837,7 @@
     if (!els.quickSwitcher) return
     if (!els.quickSwitcher.hidden) return els.quickInput.focus({ preventScroll: true })
     els.quickSwitcher.hidden = false
-    state.lastQuickFocus = document.activeElement
+    state.lastQuickFocus = focusOrigin()
     lockShell(true)
     els.quickInput.value = ''
     els.quickInput.setAttribute('aria-expanded', 'true')
@@ -9857,6 +10018,7 @@
       els.quickSwitcher,
       els.statsModal,
       els.settingsSheet,
+      els.trashSheet,
       els.archiveSheet,
       els.bookmarksSheet,
       els.promptSheet,
@@ -9983,8 +10145,8 @@
   function saveDraftNow() {
     try {
       const value = els.input.value
-      if (value.trim()) localStorage.setItem(draftKey(), value)
-      else localStorage.removeItem(draftKey())
+      if (value.trim()) storage.setItem(draftKey(), value)
+      else storage.removeItem(draftKey())
     } catch {}
   }
 
@@ -9993,16 +10155,24 @@
     state.draftTimer = setTimeout(saveDraftNow, 320)
   }
 
-  function restoreDraft() {
+  function restoreDraft({ onlyIfUntouched = null } = {}) {
+    // A slow conversation load used to finish by overwriting whatever the user
+    // had typed while the skeleton was on screen.
+    if (onlyIfUntouched !== null && els.input.value !== onlyIfUntouched) return
     let value = ''
     try {
-      value = localStorage.getItem(draftKey()) || ''
+      value = storage.getItem(draftKey()) || ''
       if (!value) {
-        const unsent = JSON.parse(localStorage.getItem('dsh.unsent.v1') || 'null')
+        const unsent = JSON.parse(storage.getItem('dsh.unsent.v1') || 'null')
         if (unsent && typeof unsent.text === 'string' && Date.now() - Number(unsent.at) < 86_400_000) {
-          value = unsent.text
-          localStorage.removeItem('dsh.unsent.v1')
-          showToast('上次未发送的内容已恢复到输入框', { duration: 5000 })
+          // Recovery is scoped to the conversation the send belonged to.
+          // Restoring it in another chat posted one chat's text into another.
+          const belongs = !unsent.conversationId || !state.currentId || unsent.conversationId === state.currentId
+          if (belongs) {
+            value = unsent.text
+            storage.removeItem('dsh.unsent.v1')
+            showToast('上次未发送的内容已恢复到输入框', { duration: 5000 })
+          }
         }
       }
     } catch {}
@@ -10015,7 +10185,7 @@
 
   function clearDraft(id = state.currentId) {
     try {
-      localStorage.removeItem(draftKey(id))
+      storage.removeItem(draftKey(id))
     } catch {}
   }
 
@@ -10319,7 +10489,7 @@
     }
     state.engine = engine
     state.currentEngine = engine
-    localStorage.setItem('dsh.engine', engine)
+    storage.setItem('dsh.engine', engine)
     const conv = state.conversations.find((item) => item.id === state.currentId)
     if (conv) conv.engine = engine
     setModelLabels()
@@ -10335,14 +10505,26 @@
       body: JSON.stringify({ engine: state.engine, permission: state.permission, projectId: state.activeProjectId || undefined }),
     })
     const conv = data.conversation
+    // A slow POST used to hijack navigation: if the user opened another
+    // conversation while this was in flight, the reply landed in that thread
+    // while the request went to this brand-new one. Register the new
+    // conversation in the list, but never yank the user out of what they chose.
+    if (state.currentId && state.currentId !== conv.id) {
+      state.conversations.unshift(conv)
+      renderConversations()
+      return null
+    }
     state.currentId = conv.id
+    // The staged files were chosen for this (previously empty) chat; carry them
+    // into the conversation that was just created for them.
+    setStagedContext(conv.id, { carry: true })
     state.currentEngine = conv.engine === 'codex' ? 'codex' : 'dsr'
     state.engine = state.currentEngine
     state.permission = conv.permission || state.permission
     state.messages = []
-    localStorage.removeItem(draftKey(null))
-    localStorage.setItem('dsh.current', conv.id)
-    localStorage.setItem('dsh.engine', state.currentEngine)
+    storage.removeItem(draftKey(null))
+    storage.setItem('dsh.current', conv.id)
+    storage.setItem('dsh.engine', state.currentEngine)
     state.conversations.unshift(conv)
     els.topbarName.textContent = conv.title
     if (state.activeProjectId) void loadProjects({ silent: true })
@@ -10372,6 +10554,15 @@
           resizeInput()
           updateComposerMeta()
         }
+        return
+      }
+      if (!conversationId) {
+        if (!options.skipUserBubble) {
+          els.input.value = text
+          resizeInput()
+          updateComposerMeta()
+        }
+        showToast('已切换到其他对话，这条消息没有发送', { tone: 'error' })
         return
       }
     }
@@ -10415,6 +10606,7 @@
       if (attachments.length) payload.attachments = attachments
       if (options.retryOf) payload.retryOf = options.retryOf
       if (options.editOf) payload.editOf = options.editOf
+      if (options.instruction) payload.instruction = String(options.instruction).slice(0, 500)
       if (options.internal) payload.internal = true
       const res = await fetch(`/api/conversations/${conversationId}/chat`, {
         method: 'POST',
@@ -10499,21 +10691,38 @@
       } else {
         failed = true
         view.finish({ status: 'error', error: err.message || '网络错误' })
+        // The server rejected the message, so the optimistic bubble is a lie:
+        // it survived until the conversation was reloaded. Remove it and give
+        // the text back to the composer.
         if (!/正在生成|发送太频繁|已经发送过/.test(err.message || '')) {
+          if (bubble) {
+            const index = state.messages.findIndex((message) => message.id === bubble.dataset.messageId)
+            if (index >= 0) state.messages.splice(index, 1)
+            bubble.remove()
+          }
+          if (state.currentId === conversationId && !els.input.value.trim()) {
+            els.input.value = text
+            resizeInput()
+            updateComposerMeta()
+          }
           view.addRetry(() => retryRun({ text, conversationId, attachments, view }))
         }
       }
     } finally {
       const detached = Boolean(streamingRef.detached)
       if (state.streaming && state.streaming.view === view) state.streaming = null
+      // The "unsent" marker is a crash-recovery aid for a send that never
+      // reached the server. Clearing it only when the view was still attached
+      // left it behind on a conversation switch, and opening another chat then
+      // resurrected this text as that chat's draft.
+      if (!failed) {
+        try {
+          storage.removeItem('dsh.unsent.v1')
+        } catch {}
+      }
       if (!detached) {
         setComposerStreaming(false)
         view.finish({ status: 'done' })
-        if (!failed) {
-          try {
-            localStorage.removeItem('dsh.unsent.v1')
-          } catch {}
-        }
         if (!failed && bubble) {
           bubble.classList.remove('pending')
           bubble.querySelector('.pending-label')?.remove()
@@ -10583,18 +10792,38 @@
     saveDraftNow()
     state.sending = true
     els.sendBtn.disabled = true
+    // The composer belongs to whatever conversation is open when the request
+    // leaves. An upload can take seconds, and the user may switch meanwhile;
+    // sending then appended this thread's bubble and stream into the new
+    // conversation while POSTing to the old one.
     try {
       let attachments = []
       if (staged.length) {
         const conversationId = await ensureConversation()
+        if (!conversationId) {
+          els.input.value = text
+          resizeInput()
+          updateComposerMeta()
+          showToast('已切换到其他对话，这条消息没有发送', { tone: 'error' })
+          return
+        }
         els.uploadBtn.disabled = true
         const uploaded = await uploadStagedFiles(conversationId)
         if (!uploaded) return
         attachments = uploaded
+        if (state.currentId !== conversationId) {
+          // Keep the text and the staged files with the user; they are not lost
+          // and the next send targets whatever conversation is open then.
+          els.input.value = els.input.value || text
+          resizeInput()
+          updateComposerMeta()
+          showToast('已切换到其他对话：消息没有发送，附件仍在暂存区', { tone: 'error' })
+          return
+        }
         clearStagedAttachments()
       }
       try {
-        localStorage.setItem('dsh.unsent.v1', JSON.stringify({ text, at: Date.now() }))
+        storage.setItem('dsh.unsent.v1', JSON.stringify({ text, conversationId: state.currentId || '', at: Date.now() }))
       } catch {}
       els.input.value = ''
       resizeInput()
@@ -10805,6 +11034,12 @@
   async function attachRun(conversationId, messageId, attempt = 0) {
     if (state.streaming) detachStreaming()
     const controller = new AbortController()
+    // The attach handshake happens before `state.streaming` exists, so
+    // detachStreaming() could not abort it: switching conversations while it
+    // was in flight appended the old run's answer (and armed its stop button)
+    // inside the newly opened conversation.
+    const attachToken = ++state.attachSeq
+    const stillHere = () => state.attachSeq === attachToken && state.currentId === conversationId
     let view = null
     let streamRef = null
     let finished = false
@@ -10844,6 +11079,11 @@
 
       const handle = (line) => {
         if (!line.trim()) return
+        if (!stillHere()) {
+          finished = true
+          controller.abort()
+          return
+        }
         let event
         try {
           event = JSON.parse(line)
@@ -10993,6 +11233,10 @@
     }
     if (state.hasEarlier) void loadAllMessages()
     if (!state.currentId || !state.messages.length) return
+    // Re-rendering from stored messages while a run is streaming replaces the
+    // thread's children, detaching the live view: the answer vanished on print
+    // and no later token could reach the page. Print what is on screen instead.
+    if (state.streaming) return
     printState = { end: state.threadEnd, stick: state.stick, window: state.threadWindow }
     state.threadEnd = null
     state.threadWindow = Math.max(state.messages.length, state.threadWindow)

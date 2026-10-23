@@ -181,12 +181,11 @@ async function main() {
     const touch = await cdp.eval(`(() => {
       const h = (s) => { const e=document.querySelector(s); if(!e) return 0; return Math.round(e.getBoundingClientRect().height) }
       const links=[...document.querySelectorAll('.sidebar-link')].map(e=>Math.round(e.getBoundingClientRect().height))
-      const chips=[...document.querySelectorAll('.project-chip')].map(e=>Math.round(e.getBoundingClientRect().height))
-      return { links, manage:h('#manageBtn'), archive:h('#archiveBtn'), search:h('#convSearch'), chips }
+      return { links, manage:h('#manageBtn'), archive:h('#archiveBtn'), search:h('#convSearch'), filter:h('#projectFilter'), select:h('#projectSelect') }
     })()`)
-    record('R1-21-390', '侧栏触控尺寸', touch.links.every((h) => h >= 44) && touch.manage >= 44 && touch.archive >= 44 && touch.search >= 44 && touch.chips.every((h) => h >= 44),
-      `links=${touch.links.join(',')} manage=${touch.manage} archive=${touch.archive} search=${touch.search} chips=${touch.chips.join(',')}`,
-      '入口/管理/归档/搜索/项目 chip ≥44')
+    record('R1-21-390', '侧栏触控尺寸', touch.links.every((h) => h >= 44) && touch.manage >= 44 && touch.archive >= 44 && touch.search >= 44 && touch.filter >= 44 && touch.select >= touch.filter - 2,
+      `links=${touch.links.join(',')} manage=${touch.manage} archive=${touch.archive} search=${touch.search} filter=${touch.filter} select=${touch.select}`,
+      '入口/管理/归档/搜索/项目筛选 ≥44')
 
     // Settings footer
     await cdp.eval(`document.querySelector('#settingsBtn')?.click()`); await sleep(600)

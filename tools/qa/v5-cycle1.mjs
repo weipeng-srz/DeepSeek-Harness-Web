@@ -73,7 +73,14 @@ try {
   await page.goto(`${sandbox.base}/c/${conv.id}`)
   await page.waitForTimeout(1200)
 
-  record('thread is a screen-reader log', await page.locator('#thread').getAttribute('role') === 'log')
+  // The transcript is fully repainted on every streamed chunk, so it must NOT
+  // be an implicit live region (role="log" announced the whole answer over and
+  // over). It stays a labelled region; milestones are announced via #srStatus.
+  record(
+    'thread is a labelled, non-live transcript region',
+    (await page.locator('#thread').getAttribute('role')) === 'region'
+      && (await page.locator('#thread').getAttribute('aria-label')) === '对话内容',
+  )
   record('hidden polite status exists', await page.locator('#srStatus').getAttribute('aria-live') === 'polite')
   record('table copy affordance rendered', await page.locator('.table-copy').count() === 1, String(await page.locator('.table-copy').count()))
 

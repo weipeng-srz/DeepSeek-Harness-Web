@@ -68,6 +68,31 @@ async function main() {
   })
   record('overlong title rejected', longTitle.status === 400)
 
+  // A rejected PATCH must not half-apply: the engine switch used to land even
+  // though the same request returned 400 for the bad title.
+  const mixedPatch = await fetch(`${BASE}/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engine: 'codex', title: '   ' }),
+  })
+  const afterMixed = await fetch(`${BASE}/api/conversations/${id}?summary=1`, { headers: { Cookie: cookie } }).then((r) => r.json())
+  record(
+    'rejected PATCH leaves the conversation untouched',
+    mixedPatch.status === 400 && afterMixed.conversation.engine === 'dsr',
+    `status=${mixedPatch.status} engine=${afterMixed.conversation.engine}`,
+  )
+  const badProject = await fetch(`${BASE}/api/conversations/${id}`, {
+    method: 'PATCH',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title: '不应生效的标题', projectId: 'p_missing' }),
+  })
+  const afterBadProject = await fetch(`${BASE}/api/conversations/${id}?summary=1`, { headers: { Cookie: cookie } }).then((r) => r.json())
+  record(
+    'rejected project move does not rename',
+    badProject.status === 400 && afterBadProject.conversation.title !== '不应生效的标题',
+    `status=${badProject.status} title=${afterBadProject.conversation.title}`,
+  )
+
   const rename = await fetch(`${BASE}/api/conversations/${id}`, {
     method: 'PATCH',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },
@@ -90,6 +115,45 @@ async function main() {
     body: JSON.stringify({ text: 'test', attachments: ['../../etc/passwd'] }),
   })
   record('path traversal attachment rejected', invalidAttachment.status === 400)
+
+  // A rejected request must not burn its Idempotency-Key: the user retrying
+  // the same message would otherwise get "already sent" for two minutes.
+  const secondConv = await fetch(`${BASE}/api/conversations`, {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ engine: 'dsr' }),
+  }).then((r) => r.json())
+  const retrySame = await fetch(`${BASE}/api/conversations/${id}/chat`, {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json', 'Idempotency-Key': 'qa-retry-1' },
+    body: JSON.stringify({ text: 'test', attachments: ['../../etc/passwd'] }),
+  })
+  record('rejected chat does not burn the idempotency key', retrySame.status === 400, `status=${retrySame.status}`)
+  const otherConv = await fetch(`${BASE}/api/conversations/${secondConv.conversation.id}/chat`, {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json', 'Idempotency-Key': 'qa-retry-1' },
+    body: JSON.stringify({ text: 'test', attachments: ['../../etc/passwd'] }),
+  })
+  record('idempotency key is scoped per conversation', otherConv.status === 400, `status=${otherConv.status}`)
+
+  // A genuinely duplicated send is still rejected while the first is live.
+  const controller = new AbortController()
+  const firstSend = fetch(`${BASE}/api/conversations/${id}/chat`, {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json', 'Idempotency-Key': 'qa-dup-live' },
+    body: JSON.stringify({ text: 'idempotency probe' }),
+    signal: controller.signal,
+  }).catch(() => null)
+  await new Promise((resolve) => setTimeout(resolve, 600))
+  const duplicateSend = await fetch(`${BASE}/api/conversations/${id}/chat`, {
+    method: 'POST',
+    headers: { Cookie: cookie, 'Content-Type': 'application/json', 'Idempotency-Key': 'qa-dup-live' },
+    body: JSON.stringify({ text: 'idempotency probe' }),
+  })
+  record('live duplicate send rejected', duplicateSend.status === 409, `status=${duplicateSend.status}`)
+  controller.abort()
+  await firstSend
+  await fetch(`${BASE}/api/conversations/${id}/stop`, { method: 'POST', headers: { Cookie: cookie } }).catch(() => {})
 
   const emptyUpload = await fetch(`${BASE}/api/conversations/${id}/upload?name=empty.txt`, {
     method: 'POST',

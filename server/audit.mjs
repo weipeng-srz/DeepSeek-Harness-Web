@@ -16,13 +16,33 @@ export class AuditLog {
   }
 
   load() {
+    const quarantine = (reason) => {
+      const backup = `${STORE_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+      try {
+        fs.copyFileSync(STORE_PATH, backup)
+        console.error(`[audit] ${reason}；原文件已备份到 ${backup}`)
+      } catch (error) {
+        console.error(`[audit] ${reason}；备份失败：${error.message}`)
+      }
+    }
     try {
       if (fs.existsSync(STORE_PATH)) {
         const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'))
-        if (parsed && Array.isArray(parsed.entries)) this.data = parsed
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.entries)) {
+          this.data = parsed
+        } else {
+          quarantine('审计文件结构异常，已按空日志启动')
+        }
       }
     } catch (error) {
-      console.error('[audit] 读取失败:', error.message)
+      quarantine(`读取失败：${error.message}`)
+    }
+    const usable = (Array.isArray(this.data.entries) ? this.data.entries : [])
+      .filter((entry) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    if (usable.length !== this.data.entries.length) {
+      this.data.entries = usable
+      quarantine('跳过损坏的审计记录')
+      this.scheduleSave()
     }
   }
 
@@ -30,7 +50,7 @@ export class AuditLog {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch((error) => console.error('[store] 审计数据后台写入失败:', error.message))
     }, 200)
     if (this.saveTimer.unref) this.saveTimer.unref()
   }

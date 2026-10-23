@@ -1,5 +1,5 @@
 /* DSH Chat service worker — shell + static cache, API always network. */
-const VERSION = 'dsh-v27'
+const VERSION = 'dsh-v31'
 const SHELL = [
   '/',
   '/favicon.svg',

@@ -96,19 +96,34 @@ export class ShareStore {
   }
 
   load() {
+    const quarantine = (reason) => {
+      const backup = `${STORE_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+      try {
+        fs.copyFileSync(STORE_PATH, backup)
+        console.error(`[shares] ${reason}；原文件已备份到 ${backup}`)
+      } catch (error) {
+        console.error(`[shares] ${reason}；备份失败：${error.message}`)
+      }
+    }
     try {
       if (fs.existsSync(STORE_PATH)) {
         const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'))
-        if (parsed && Array.isArray(parsed.shares)) this.data = parsed
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.shares)) {
+          this.data = parsed
+        } else {
+          quarantine('分享文件结构异常，已按空库启动')
+        }
       }
     } catch (error) {
-      const backup = `${STORE_PATH}.corrupt-${Date.now()}`
-      try {
-        fs.copyFileSync(STORE_PATH, backup)
-      } catch {}
-      console.error(`[shares] 读取失败，已备份到 ${backup}:`, error.message)
+      quarantine(`读取失败：${error.message}`)
     }
-    for (const share of this.data.shares) {
+    const usable = []
+    let dropped = 0
+    for (const share of Array.isArray(this.data.shares) ? this.data.shares : []) {
+      if (!share || typeof share !== 'object' || Array.isArray(share)) {
+        dropped += 1
+        continue
+      }
       if (typeof share.tokenHash !== 'string' && typeof share.token === 'string') {
         share.tokenHash = hashToken(share.token)
         share.tokenEnc = encryptToken(share.token)
@@ -118,7 +133,17 @@ export class ShareStore {
         share.tokenEnc = encryptToken(share.token)
         delete share.token
       }
+      if (typeof share.tokenHash !== 'string') {
+        dropped += 1
+        continue
+      }
+      usable.push(share)
     }
+    if (usable.length !== this.data.shares.length) {
+      this.data.shares = usable
+      this.scheduleSave()
+    }
+    if (dropped) quarantine(`跳过 ${dropped} 条损坏分享记录`)
   }
 
   scheduleViewSave() {
@@ -134,7 +159,7 @@ export class ShareStore {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch((error) => console.error('[store] 分享数据后台写入失败:', error.message))
     }, 150)
     if (this.saveTimer.unref) this.saveTimer.unref()
   }
@@ -251,15 +276,20 @@ export class ShareStore {
     }
     const bytes = Buffer.byteLength(JSON.stringify(snapshot))
     if (bytes > MAX_SNAPSHOT_BYTES) {
-      throw Object.assign(new Error(`这段对话快照约 ${(bytes / 1024 / 1024).toFixed(1)}MB，超过 2MB 分享上限；请导出文件后发送`), { status: 413 })
+      throw Object.assign(new Error(`这段对话快照约 ${(bytes / 1024 / 1024).toFixed(1)}MB，超过 ${MAX_SNAPSHOT_BYTES / 1024 / 1024}MB 分享上限；请导出文件后发送`), { status: 413 })
     }
     return snapshot
   }
 
   create({ conversation, owner, expiresInDays = 7, includeTools = false, includeThinking = false, messageIds = [], allowSensitive = false, redactSensitive = false, password = '' }) {
     this.prune()
-    if (this.data.shares.length >= MAX_SHARES) {
-      throw Object.assign(new Error(`分享链接最多 ${MAX_SHARES} 个，请先在设置里撤销不用的链接`), { status: 409 })
+    // Only links that can still be opened should count against the quota.
+    // Revoked links used to occupy it for 30 days, so after ~100 created links
+    // sharing was blocked even after revoking every one of them — with an error
+    // telling the user to do exactly what they had already done.
+    const live = this.data.shares.filter((item) => !item.revokedAt && !(item.expiresAt && item.expiresAt <= now()))
+    if (live.length >= MAX_SHARES) {
+      throw Object.assign(new Error(`有效分享链接最多 ${MAX_SHARES} 个，请先撤销或等待过期后再创建`), { status: 409 })
     }
     const snapshot = this.buildSnapshot(conversation, { includeTools, includeThinking, messageIds, redactSensitive })
     if (redactSensitive) redactMessages(snapshot.messages)
@@ -274,6 +304,15 @@ export class ShareStore {
     }
     const passwordSalt = pass ? crypto.randomBytes(16).toString('base64url') : ''
     const passwordHash = pass ? crypto.scryptSync(pass, passwordSalt, 32).toString('base64url') : ''
+    // `-5` used to collapse to 0, which means "never expires": a UI that sent a
+    // negative value silently produced a permanent public link.
+    if (expiresInDays !== undefined && expiresInDays !== null && expiresInDays !== '') {
+      const requested = Number(expiresInDays)
+      // 0 is the documented "长期/永久" choice; only nonsense is rejected.
+      if (!Number.isFinite(requested) || requested < 0 || requested > MAX_SHARE_DAYS) {
+        throw Object.assign(new Error(`有效期需要在 0–${MAX_SHARE_DAYS} 天之间（0 表示长期有效）`), { status: 400 })
+      }
+    }
     const days = Math.min(Math.max(Number(expiresInDays) || 0, 0), MAX_SHARE_DAYS)
     const share = {
       id: shareId(),

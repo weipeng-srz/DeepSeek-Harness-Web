@@ -6,6 +6,24 @@
 (function () {
   'use strict'
 
+  // See app.js: localStorage throws when site data is blocked, and these
+  // modules run before login. Degrade to memory instead of breaking the page.
+  const storage = (() => {
+    try {
+      const real = window.localStorage
+      real.setItem('__dsh_probe__', '1')
+      real.removeItem('__dsh_probe__')
+      return real
+    } catch {
+      const memory = new Map()
+      return {
+        getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+        setItem: (key, value) => { memory.set(key, String(value)) },
+        removeItem: (key) => { memory.delete(key) },
+      }
+    }
+  })()
+
   const MODEL_KEY = 'dsh.codex.model'
   const EFFORT_KEY = 'dsh.codex.effort'
   const CATALOG_KEY = 'dsh.codex.catalog.v1'
@@ -40,7 +58,7 @@
 
   function readCachedCatalog() {
     try {
-      const raw = JSON.parse(localStorage.getItem(CATALOG_KEY) || 'null')
+      const raw = JSON.parse(storage.getItem(CATALOG_KEY) || 'null')
       if (!raw || !Array.isArray(raw.models) || !raw.models.length) return null
       if (Date.now() - Number(raw.at || 0) > CATALOG_TTL) return null
       return raw
@@ -51,7 +69,7 @@
 
   function writeCachedCatalog(value) {
     try {
-      localStorage.setItem(CATALOG_KEY, JSON.stringify(value))
+      storage.setItem(CATALOG_KEY, JSON.stringify(value))
     } catch {}
   }
 
@@ -68,8 +86,8 @@
   function selection() {
     const conversation = state.conversation
     const convIsCurrent = conversation && conversation.id === currentConversationId()
-    const storedModel = localStorage.getItem(MODEL_KEY)
-    const storedEffort = localStorage.getItem(EFFORT_KEY)
+    const storedModel = storage.getItem(MODEL_KEY)
+    const storedEffort = storage.getItem(EFFORT_KEY)
     const modelId = (convIsCurrent && conversation.codexModel) || storedModel
     const model = modelById(modelId)
     if (!model) return { model: null, effort: null }
@@ -80,8 +98,8 @@
 
   function remember(modelId, effortValue) {
     try {
-      if (modelId) localStorage.setItem(MODEL_KEY, modelId)
-      if (effortValue) localStorage.setItem(EFFORT_KEY, effortValue)
+      if (modelId) storage.setItem(MODEL_KEY, modelId)
+      if (effortValue) storage.setItem(EFFORT_KEY, effortValue)
     } catch {}
   }
 
@@ -152,7 +170,13 @@
     state.toastTimer = setTimeout(() => node.classList.remove('show'), 2600)
   }
 
+  function authedNow() {
+    const shell = document.getElementById('shell')
+    return Boolean(shell && !shell.hidden)
+  }
+
   async function loadCatalog(force = false) {
+    if (!authedNow()) return
     if (state.loading) return
     if (!force && Date.now() - state.catalogAttemptAt < 5000) return
     if (!force && state.catalog?.models?.length && Date.now() - Number(state.catalog.at || 0) < 60_000) return
@@ -707,10 +731,15 @@
       }
     })
     window.addEventListener('popstate', () => void refreshCurrent(true))
+    // Idle polling was one summary request every 4 s per module. The metadata
+    // only changes when a turn finishes or the model changes — both of which
+    // already trigger a refresh — so slow the safety net down and skip it in a
+    // background tab.
     setInterval(() => {
-      if (!document.hidden && codexContext()) void refreshCurrent()
+      if (document.hidden) return
+      if (codexContext()) void refreshCurrent()
       render()
-    }, 4000)
+    }, 15000)
   }
 
   function ensureStyles() {
@@ -722,13 +751,28 @@
     document.head.appendChild(link)
   }
 
+
+  // Never call an authenticated endpoint before the shell is on screen: the
+  // login page used to fire /api/*/models and log two 401s every load.
+  function whenAuthed(run, attempt = 0) {
+    const shell = document.getElementById('shell')
+    if (shell && !shell.hidden) {
+      run()
+      return
+    }
+    if (attempt >= 30) return
+    setTimeout(() => whenAuthed(run, attempt + 1), 200)
+  }
+
   function init() {
     ensureStyles()
     ensureControls()
     render()
     watchDom()
-    void loadCatalog()
-    void refreshCurrent(true)
+    whenAuthed(() => {
+      void loadCatalog()
+      void refreshCurrent(true)
+    })
   }
 
   if (document.readyState === 'loading') {

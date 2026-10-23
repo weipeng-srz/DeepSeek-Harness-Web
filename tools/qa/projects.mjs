@@ -98,17 +98,30 @@ try {
   })
   await page.reload()
   await page.locator('#shell').waitFor({ state: 'visible' })
-  await page.locator('.project-chip').first().waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
+  await page.locator('#projectSelect').waitFor({ state: 'visible', timeout: 10000 }).catch(() => {})
   await page.waitForTimeout(300)
 
   record('sidebar project entry visible', await page.locator('#projectsBtn').isVisible())
-  record('project chips rendered', await page.locator('.project-chip').count() >= 2, String(await page.locator('.project-chip').count()))
+  // v6 replaced the chip row with a native <select> (#projectFilter). The
+  // contract under test is unchanged: every selectable project is reachable
+  // from the sidebar, carries its emoji/count, and filters the conversation
+  // list. Assert the control actually exists rather than tolerating a
+  // missing element.
+  const filterVisible = await page.locator('#projectFilter').isVisible()
+  const optionTexts = await page.locator('#projectSelect option').evaluateAll((nodes) => nodes.map((node) => node.textContent.trim()))
+  record('project filter rendered', filterVisible)
+  record(
+    'project filter lists every project plus 全部/未归类',
+    optionTexts.length >= 4 && optionTexts[0] === '全部对话' && optionTexts.some((text) => text.includes('论文') && text.includes('📚')) && optionTexts.some((text) => text.startsWith('未归类')),
+    optionTexts.join(' | '),
+  )
   record('project badge shown on conversation', (await page.locator('.conv-item .project-badge').count()) >= 1)
 
-  await page.locator(`.project-chip[data-project-id="${uiProject.id}"]`).click({ timeout: 10000 })
+  await page.selectOption('#projectSelect', uiProject.id, { timeout: 10000 })
   await page.waitForTimeout(500)
   const filtered = await page.locator('.conv-item').count()
-  record('project chip filters conversation list', filtered === 1, String(filtered))
+  record('project select filters conversation list', filtered === 1, String(filtered))
+  record('project select keeps the chosen project selected', (await page.locator('#projectSelect').inputValue()) === uiProject.id)
   record('empty state shows project context', await page.locator('#emptyProject').isVisible() && (await page.locator('#emptyProjectName').textContent()) === '论文')
 
   await page.locator('#projectsBtn').click()
@@ -126,7 +139,7 @@ try {
 
   // Move the unfiled conversation into the filtered project.
   await page.locator('#convSearch').fill('')
-  await page.locator('.project-chip[data-project-id=""]').click()
+  await page.selectOption('#projectSelect', '')
   await page.waitForTimeout(400)
   const item = page.locator('.conv-item').filter({ hasText: '城市热岛文献综述' }).first()
   await item.locator('.conv-more').click()
@@ -143,10 +156,37 @@ try {
   await page.locator('#menuBtn').click()
   await page.waitForTimeout(400)
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)
-  const chipHeight = await page.locator('.project-chip').first().evaluate((el) => el.getBoundingClientRect().height)
-  record('mobile project chips fit without overflow', !overflow, String(overflow))
-  record('mobile project chip target >= 38px', chipHeight >= 38, String(chipHeight))
+  record('mobile project filter fits without overflow', !overflow, String(overflow))
   await page.screenshot({ path: path.join(ROOT, 'reports/v5/round-1/projects-mobile.png') })
+
+  // A mouse-driven viewport reports pointer: fine, so coarse-pointer rules do
+  // not apply. Touch targets therefore have to be measured in a touch context.
+  const touchContext = await browser.newContext({
+    viewport: { width: 390, height: 844 },
+    hasTouch: true,
+    isMobile: true,
+    deviceScaleFactor: 3,
+    serviceWorkers: 'block',
+  })
+  await touchContext.addCookies(await context.cookies())
+  const touchPage = await touchContext.newPage()
+  await touchPage.goto(sandbox.base + '/')
+  await touchPage.locator('#shell').waitFor({ state: 'visible' })
+  await touchPage.locator('#menuBtn').click()
+  await touchPage.waitForTimeout(400)
+  const touchHeights = await touchPage.evaluate(() => ({
+    select: Math.round(document.querySelector('#projectSelect').getBoundingClientRect().height),
+    add: Math.round(document.querySelector('#newProjectBtn').getBoundingClientRect().height),
+    filter: Math.round(document.querySelector('#projectFilter').getBoundingClientRect().height),
+  }))
+  // The visible control is the 44px filter row; the borderless <select> inside
+  // covers it minus the 1px top/bottom borders. Both are asserted so a future
+  // shrink of either is caught.
+  record('touch project filter row >= 44px', touchHeights.filter >= 44, JSON.stringify(touchHeights))
+  record('touch project select covers the row', touchHeights.select >= touchHeights.filter - 2, `${touchHeights.select}/${touchHeights.filter}`)
+  record('touch project add target >= 32px', touchHeights.add >= 32, String(touchHeights.add))
+  await touchPage.screenshot({ path: path.join(ROOT, 'reports/v5/round-1/projects-mobile-touch.png') })
+  await touchContext.close()
 
   record('no page errors', errors.length === 0, errors.join(' | ').slice(0, 200))
 } finally {

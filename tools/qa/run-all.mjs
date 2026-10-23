@@ -23,8 +23,11 @@ const suites = [
   ['rewrite', 'rewrite.mjs'],
   ['print', 'print.mjs'],
   ['static', 'static.mjs'],
+  ['isolation', 'isolation.mjs'],
+  ['store-contract', 'store-contract.mjs'],
+  ['client-behaviour', 'client-behaviour.mjs'],
   ['baseline', 'quality-baseline.mjs'],
-].filter(([name]) => !quick || !['share', 'trash', 'baseline'].includes(name))
+].filter(([name]) => !quick || !['share', 'trash', 'baseline', 'client-behaviour'].includes(name))
 
 const results = []
 for (const [name, file] of suites) {

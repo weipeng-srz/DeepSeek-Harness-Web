@@ -217,7 +217,7 @@ function pageCollect() {
 
   const regionSelectors = [
     '#loginView', '.login-card', '.shell', '#sidebar', '.sidebar-head', '.sidebar-links',
-    '.conv-search', '.conv-toolbar', '.conv-scroll', '.sidebar-foot', '.main', '.topbar',
+    '.conv-search', '.sidebar-links', '#projectFilter', '.conv-toolbar', '.conv-scroll', '.sidebar-foot', '.main', '.topbar',
     '#scrollArea', '#emptyState', '.hero', '#scenarioGrid', '.scenario-note', '#thread',
     '.composer-wrap', '#engineBar', '#filesBar', '.composer', '.composer-row', '.composer-foot',
     '#reconnectBar', '#findBar', '#batchBar', '#readProgress', '.toast',
@@ -237,7 +237,7 @@ function pageCollect() {
     '.conv-toolbar-actions', '.sidebar-foot', '.foot-actions', '.composer-row', '.composer-foot',
     '.hero', '.hero-actions', '#scenarioGrid', '.sheet-head', '.sheet-sub', '.modal-actions',
     '.batch-bar', '.engine-bar', '.files-bar', '.attachment-tray', '.settings-options',
-    '.settings-row', '.settings-actions', '.project-chips', '.project-card-actions',
+    '.settings-row', '.settings-actions', '#projectFilter', '.project-card-actions',
     '.project-head', '.project-sheet-foot', '.share-actions', '.share-preview', '.msg-actions',
     '.msg-meta', '.quick-card', '.palette-card', '.palette-results', '.settings-preview',
     '.login-card', '.login-foot', '.empty-hint', '.shortcuts-list', '.archive-toolbar',

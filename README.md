@@ -55,7 +55,7 @@ DSH 引擎现在和桌面端使用**同一份模型目录**，不用回桌面切
   幂等导入与引用重映射、跨设备收藏/提示词、操作审计（含设备指纹）、日备份。
 - **可信边界**：完全权限二次确认、headless 权限透传、单实例锁、可选 HTTPS/Secure Cookie/HSTS、
   退出登录吊销旧 Cookie、分享令牌加密、敏感扫描（服务端不可绕过）。
-- **可达与工程**：320–1440、5 档字号、读屏播报、焦点陷阱、PWA/SW、`npm run qa` 20+ 套件与静态预算检查。
+- **可达与工程**：320–1440、5 档字号、读屏播报、焦点陷阱、PWA/SW、`npm run qa` 20 个套件与静态预算检查。
 
 **明确未完成（不宣称完美）**：工作区/项目文件不随 JSON 备份；单访问码无只读成员；
 审计无“人”的身份；搜索仍是同步扫描；app.js 未拆模块、无 lint/typecheck/CI；无 i18n；
@@ -161,7 +161,7 @@ python3 -c "import json;print(json.load(open('config.json'))['accessCode'])"
 - **沉淀**：消息收藏与收藏面板、提示词库（默认周报/代码审查/会议纪要）、一键结构化总结（二次确认并提示成本）。
 - **输入与文件**：草稿按会话保存、拖拽/粘贴附件、上传进度与取消、附件随消息持久化；文件抽屉内上传、预览、插入路径、删除。
 - **设置**：跟随系统/浅色/深色、阅读密度、正文字号、完成通知、全部已读、存储占用、备份导出/导入。
-- **性能**：7 个 CSS 合并为 `/css/bundle.css`（1 请求，gzip ~29KB）；KaTeX 仅在出现公式时加载；长对话默认渲染最近 60 条。
+- **性能**：11 个 CSS 合并为 `/css/bundle.css`（1 请求，约 303KB / gzip ~53KB）；KaTeX 仅在出现公式时加载；长对话默认渲染最近 60 条。
 - **离线与更新**：Service Worker 缓存 shell 与静态资源，断网可打开已缓存会话；新版本就绪时 Toast 提示刷新。
 - **可访问性**：焦点陷阱、44px 触控目标、Alt+↑/↓ 消息导航、高对比度、打印样式、320px 适配。
 
@@ -183,12 +183,12 @@ node tools/qa/memory.mjs    # 长期记忆：提取/存储/去重
 
 ### 已知限制
 
-- 导入备份只创建新会话（标题加 `[导入]`），不去重；不包含工作区文件。
+- 导入备份只创建新会话（标题加 `[导入]`），按 `importKey` 幂等去重；不包含工作区文件内容。
 - 收藏、提示词、阅读偏好是设备级（localStorage），不跨设备同步。
 - 文件删除不可撤销（有二次确认）。
 - 长对话窗口化后，会话内查找只覆盖最近已渲染的 60 条。
 - 记忆捕获是本地规则匹配，不做语义总结；复杂表述可能漏记，可在记忆面板手动补充或从对话整理。
-- `app.js` 仍为单文件（约 230KB，gzip ~55KB），暂无构建链。
+- `app.js` 仍为单文件（约 430KB，gzip ~101KB），暂无构建链。
 - 打印样式未在 Safari 实机验证；VoiceOver 全流程未脚本化；通知需浏览器授权，iOS 需先安装 PWA。
 
 ## 界面预览
@@ -609,7 +609,7 @@ dsh-chat/
 ## 技术约束
 
 - 无需 npm 依赖；使用 macOS 自带的 Node，或 DeepSeek Harness 内置的 Node 运行时（`start.sh` 会自动查找）。
-- 样式入口为 `/css/bundle.css`（服务端按固定顺序拼接 9 个 CSS，带 gzip/ETag）；新增样式请追加到 `public/css/visual.css`（最后加载）并更新 bundle 版本号。手机端专属样式统一收在 `visual.css` 末尾的 `21 · phone chat layout`（`@media (max-width: 640px)`），桌面与平板不受影响。
+- 样式入口为 `/css/bundle.css`（服务端按 `CSS_BUNDLE_FILES` 顺序拼接 11 个 CSS，带 gzip/ETag）；新增样式表必须同时加入 `server/index.mjs` 的 `CSS_BUNDLE_FILES`（顺序即层叠顺序，`sidebar.css` 最后加载）并更新 bundle 版本号；`tools/qa/static.mjs` 会检查「未打包且无人引用」的孤儿样式表。手机端专属样式统一收在 `visual.css` 末尾的 `21 · phone chat layout`（`@media (max-width: 640px)`），桌面与平板不受影响。
 - KaTeX 不再首屏加载：出现 `\(...\)`、`\[...\]`、`$$...$$` 时动态注入。
 - 静态资源使用 `?v=` 做 immutable 缓存，改完前端务必 bump 版本号（HTML/CSS/JS）。
 - Service Worker（`public/sw.js`）缓存 shell；API 请求永不缓存。

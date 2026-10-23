@@ -69,6 +69,11 @@ const MAX_PROMPT = 24_000
 const MAX_PARALLEL_RUNS = 4
 const MAX_RUNS_PER_MINUTE = 12
 const MAX_ATTACHMENTS = 5
+// A 24,000-character prompt is 72 KB of UTF-8 for CJK and up to 96 KB for
+// astral-plane characters. The generic 64 KB JSON cap used to reject the very
+// prompts MAX_PROMPT advertises as supported, so the chat route gets its own
+// budget: prompt bytes plus room for the attachment/instruction fields.
+const MAX_CHAT_BODY = MAX_PROMPT * 4 + 16 * 1024
 const STATIC_CACHE = new Map()
 const chatRate = new Map()
 const idempotency = new Map()
@@ -162,7 +167,9 @@ const notifier = new Notifier({
 })
 if (SINGLE_USER) {
   store.setOwner(SHARED_OWNER)
-  void store.flush()
+  // Projects created before they carried an owner belong to the single user.
+  projects.setOwner(SHARED_OWNER)
+  void store.flush().catch((error) => console.error('[store] 启动写入失败:', error.message))
 }
 const patchInfo = writeHeadlessPatch()
 const activeRuns = new Map()
@@ -170,6 +177,34 @@ const authFailures = new Map()
 // requestId -> { run, kind }，用于在重新打开网页并回放事件时跳过已经处理过的卡片。
 const pendingInteractions = new Map()
 let permissionCatalogCache = { at: 0, value: null }
+
+// Every rate-limit map below is keyed by client-controlled values (IP, share
+// token, idempotency key). They were only pruned when the same key came back,
+// so an attacker cycling through addresses or tokens could grow them without
+// bound for the lifetime of the process. Sweep them on a slow timer instead.
+function sweepRateLimits(now = Date.now()) {
+  for (const [ip, entry] of authFailures) {
+    if (!entry || now > (Number(entry.resetAt) || 0) + 5 * 60_000) authFailures.delete(ip)
+  }
+  for (const [key, entry] of shareFailures) {
+    if (!entry || now - (Number(entry.resetAt) || 0) > 15 * 60_000) shareFailures.delete(key)
+  }
+  for (const [ip, bucket] of shareViewRate) {
+    const fresh = (Array.isArray(bucket) ? bucket : []).filter((at) => now - at < 60_000)
+    if (fresh.length) shareViewRate.set(ip, fresh)
+    else shareViewRate.delete(ip)
+  }
+  for (const [key, value] of idempotency) {
+    if (now - (Number(value?.at) || 0) > 120_000) idempotency.delete(key)
+  }
+  for (const [owner, list] of chatRate) {
+    const fresh = (Array.isArray(list) ? list : []).filter((at) => now - at < 60_000)
+    if (fresh.length) chatRate.set(owner, fresh)
+    else chatRate.delete(owner)
+  }
+}
+const rateSweepTimer = setInterval(() => sweepRateLimits(), 60_000)
+if (rateSweepTimer.unref) rateSweepTimer.unref()
 
 const CONTENT_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -453,7 +488,19 @@ function serveStatic(req, res, pathname) {
   res.writeHead(200, headers)
   if (req.method === 'HEAD') return res.end()
   if (body) return res.end(body)
-  fs.createReadStream(resolved).pipe(res)
+  streamFile(resolved, res)
+}
+
+// `readStream.pipe(res)` alone leaks the source descriptor when the client
+// aborts: the destination closes but the file is never destroyed. A tab
+// closed during a big preview then burns one fd for the process lifetime, and
+// enough of them end in EMFILE (every file, socket and child spawn fails).
+// `pipeline` destroys both ends on abort/error; the catch keeps the rejection
+// from becoming an unhandled one.
+function streamFile(absolute, res) {
+  pipeline(fs.createReadStream(absolute), res).catch(() => {
+    try { res.destroy() } catch {}
+  })
 }
 
 /* ── conversations ───────────────────────────────────────────────────── */
@@ -700,19 +747,27 @@ function projectSummary(project, counts) {
 
 function projectsPayload(owner) {
   const { counts, unfiled, total } = store.projectCounts(owner)
-  const list = projects.list().map((project) => projectSummary(project, counts.get(project.id)))
+  const list = projects.list(owner).map((project) => projectSummary(project, counts.get(project.id)))
   return {
     projects: list,
     counts: { total, unfiled, filed: total - unfiled, projects: list.filter((project) => !project.archivedAt).length, archived: list.filter((project) => project.archivedAt).length },
   }
 }
 
-function ownedProject(id, res) {
+function ownedProject(id, res, owner) {
   const project = projects.get(id)
-  if (!project || project.deletedAt) {
+  // A project owned by someone else must look identical to a missing one, so
+  // its existence (and name/instructions) cannot be probed by id.
+  if (!project || project.deletedAt || !projects.ownedBy(project, owner)) {
     sendJson(res, 404, { error: '项目不存在' })
     return null
   }
+  return project
+}
+
+function projectForAnyState(id, owner) {
+  const project = projects.get(id)
+  if (!project || !projects.ownedBy(project, owner)) return null
   return project
 }
 
@@ -957,14 +1012,27 @@ function resolveWorkspaceFile(root, relative) {
     throw new Error('文件路径无效')
   }
   if (path.isAbsolute(relative) || /^[a-zA-Z]:/.test(relative)) throw new Error('文件路径无效')
-  const realRoot = fs.realpathSync(root)
+  // fs errors carry the absolute path in their message; surfacing them to the
+  // client leaked the server's directory layout for every missing file.
+  let realRoot
+  try {
+    realRoot = fs.realpathSync(root)
+  } catch {
+    throw new Error('对话工作区不可用')
+  }
   const absolute = path.resolve(realRoot, relative)
   if (absolute !== realRoot && !absolute.startsWith(realRoot + path.sep)) {
     throw new Error('文件不在对话工作区内')
   }
-  const real = fs.realpathSync(absolute)
-  if (!real.startsWith(realRoot + path.sep)) throw new Error('文件不在对话工作区内')
-  const stat = fs.statSync(real)
+  let real
+  let stat
+  try {
+    real = fs.realpathSync(absolute)
+    if (!real.startsWith(realRoot + path.sep)) throw new Error('outside')
+    stat = fs.statSync(real)
+  } catch {
+    throw new Error('文件不存在')
+  }
   if (!stat.isFile()) throw new Error('不是文件')
   return { absolute: real, relative: path.relative(realRoot, real), stat }
 }
@@ -1167,7 +1235,7 @@ function serveConversationFile(req, res, conv, url) {
       : "default-src 'none'; sandbox",
   })
   if (req.method === 'HEAD') return res.end()
-  fs.createReadStream(file.absolute).pipe(res)
+  streamFile(file.absolute, res)
 }
 
 
@@ -1305,7 +1373,13 @@ async function handleChat(req, res, owner, restId) {
   if (chatRateLimited(owner)) {
     return sendJson(res, 429, { error: '发送太频繁了，请稍等一分钟再试' })
   }
-  const idempotencyKey = String(req.headers['idempotency-key'] || '').slice(0, 80)
+  // Idempotency is scoped to the conversation: a client that reuses a key for
+  // a different conversation (or another owner) must not be told its unrelated
+  // message was already sent. The key is only *reserved* once the request has
+  // passed validation — reserving it earlier let one rejected request block a
+  // legitimate retry for two minutes.
+  const rawIdempotencyKey = String(req.headers['idempotency-key'] || '').slice(0, 80)
+  const idempotencyKey = rawIdempotencyKey ? `${conv.id}:${rawIdempotencyKey}` : ''
   if (idempotencyKey) {
     const now = Date.now()
     for (const [key, value] of idempotency) {
@@ -1314,7 +1388,6 @@ async function handleChat(req, res, owner, restId) {
     if (idempotency.has(idempotencyKey)) {
       return sendJson(res, 409, { error: '这条消息已经发送过了' })
     }
-    idempotency.set(idempotencyKey, { at: now, convId: conv.id })
   }
 
   let attachments = []
@@ -1322,6 +1395,26 @@ async function handleChat(req, res, owner, restId) {
     attachments = normalizeAttachments(conv, body.attachments)
   } catch (error) {
     return sendJson(res, error.status || 400, { error: error.message })
+  }
+  // Validate the retry/edit target before reserving the key: a 404 here used to
+  // burn the key, so the corrected request was answered with "已经发送过了".
+  if (retryOf) {
+    const index = conv.messages.findIndex((msg) => msg.id === retryOf && msg.role === 'assistant')
+    if (index < 0) return sendJson(res, 404, { error: '要重新生成的回答不存在' })
+    if (index !== conv.messages.length - 1) {
+      return sendJson(res, 409, { error: '只能重新生成最后一条回答；更早的回答请用「从这里分叉」保留后文。' })
+    }
+    if (!conv.messages.slice(0, index).some((msg) => msg.role === 'user')) {
+      return sendJson(res, 400, { error: '找不到对应的提问' })
+    }
+  }
+  if (editOf) {
+    const index = conv.messages.findIndex((msg) => msg.id === editOf && msg.role === 'user')
+    if (index < 0) return sendJson(res, 404, { error: '要编辑的消息不存在' })
+  }
+  if (idempotencyKey) {
+    if (idempotency.size > 500) idempotency.clear()
+    idempotency.set(idempotencyKey, { at: Date.now(), convId: conv.id })
   }
 
   const now = Date.now()
@@ -1988,7 +2081,19 @@ async function handleChat(req, res, owner, restId) {
   assistant.thinking = state.thinking()
   if (assistant.error) hub.send({ t: 'error', message: assistant.error })
   store.touch(conv)
-  await store.flush()
+  // A failed final flush used to abort the handler before `done` was emitted:
+  // the answer existed only in memory while the disk kept status:"running"
+  // with empty text, so after a restart the reply the user just watched stream
+  // in was gone and the UI never learned the turn had finished. Report the
+  // failure instead of swallowing the completion event.
+  let persisted = true
+  try {
+    await store.flush()
+  } catch (error) {
+    persisted = false
+    console.error('[store] 本轮回答落盘失败:', error.message)
+    hub.send({ t: 'notice', text: '回答已生成，但写入本地存储失败（可能是磁盘已满或没有写权限）。请先释放空间后重新发送。' })
+  }
 
   hub.send({
     t: 'done',
@@ -2002,6 +2107,7 @@ async function handleChat(req, res, owner, restId) {
     effort: assistant.codexEffort || assistant.dshEffort || null,
     engine: conv.engine === 'codex' ? 'codex' : 'dsr',
     files: assistant.files,
+    persisted,
   })
 
   // Outbound notification: fire-and-forget, never blocks the run.
@@ -2073,6 +2179,10 @@ async function handleApi(req, res, url) {
     return sendJson(res, 401, { error: '访问码不正确' })
   }
   if (rest[0] === 'logout' && req.method === 'POST') {
+    // Rotating the epoch is a privileged, global action: it invalidates every
+    // previously issued cookie. Running it before the auth gate let any peer
+    // that could reach the port log every device out in a loop.
+    if (!isAuthed(req)) return sendJson(res, 401, { error: '需要访问码' })
     // Single-user auth has no session table. Rotating the epoch invalidates
     // every previously issued cookie, so a copied cookie cannot outlive the
     // logout the user just performed.
@@ -2081,8 +2191,18 @@ async function handleApi(req, res, url) {
     return sendJson(res, 200, { ok: true, revokedAllDevices: true })
   }
   if (rest[0] === 'me') {
+    // Only the login screen's own needs are public. Model name, engine
+    // availability, memory count and the share base URL used to be readable by
+    // any peer that could reach the port without the access code.
+    if (!isAuthed(req)) {
+      return sendJson(res, 200, {
+        authenticated: false,
+        authRequired: AUTH_ENABLED,
+        title: config.title,
+      })
+    }
     return sendJson(res, 200, {
-      authenticated: isAuthed(req),
+      authenticated: true,
       authRequired: AUTH_ENABLED,
       model: MODEL,
       title: config.title,
@@ -2156,19 +2276,19 @@ async function handleApi(req, res, url) {
       if (rest.length === 1) {
         if (req.method === 'GET') {
           if (url.searchParams.get('trash') === '1') {
-            return sendJson(res, 200, { projects: projects.listTrash(), counts: { trash: projects.listTrash().length } })
+            return sendJson(res, 200, { projects: projects.listTrash(owner), counts: { trash: projects.listTrash(owner).length } })
           }
           return sendJson(res, 200, projectsPayload(owner))
         }
         if (req.method === 'POST') {
           const body = await readJsonBody(req)
-          const project = projects.create(body)
+          const project = projects.create(body, owner)
           return sendJson(res, 201, { project: projectSummary(project), ...projectsPayload(owner) })
         }
         return sendJson(res, 405, { error: '不支持的方法' })
       }
       if (rest.length === 3 && rest[2] === 'files') {
-        const project = ownedProject(rest[1], res)
+        const project = ownedProject(rest[1], res, owner)
         if (!project) return
         const root = projects.fileRoot(project.id)
         if (req.method === 'GET') {
@@ -2196,16 +2316,25 @@ async function handleApi(req, res, url) {
         if (req.method === 'DELETE') {
           const body = await readJsonBody(req)
           const name = sanitizeUploadName(body.name)
+          // Deleting something that was not there is not a success: it used to
+          // return 200 and write an audit entry claiming a deletion happened.
+          try {
+            if (!fs.statSync(path.join(root, name)).isFile()) throw new Error('not a file')
+          } catch {
+            return sendJson(res, 404, { error: '文件不存在' })
+          }
           try {
             fs.rmSync(path.join(root, name), { force: true })
-          } catch {}
+          } catch (error) {
+            return sendJson(res, 500, { error: '删除文件失败' })
+          }
           audit.add('project.file.delete', `删除项目文件：${name}`, { projectId: project.id })
           return sendJson(res, 200, { ok: true, files: projects.listFiles(project.id) })
         }
         return sendJson(res, 405, { error: '不支持的方法' })
       }
       if (rest.length === 3 && rest[2] === 'file' && req.method === 'GET') {
-        const project = ownedProject(rest[1], res)
+        const project = ownedProject(rest[1], res, owner)
         if (!project) return
         const root = projects.fileRoot(project.id)
         let file
@@ -2224,10 +2353,11 @@ async function handleApi(req, res, url) {
           'Content-Disposition': `${download ? 'attachment' : 'inline'}; filename*=UTF-8''${encodeURIComponent(path.basename(file.absolute))}`,
           'Cache-Control': 'no-store',
         })
-        return fs.createReadStream(file.absolute).pipe(res)
+        streamFile(file.absolute, res)
+        return
       }
       if (rest.length === 3 && rest[2] === 'restore' && req.method === 'POST') {
-        const project = projects.get(rest[1])
+        const project = projectForAnyState(rest[1], owner)
         if (!project || !project.deletedAt) return sendJson(res, 404, { error: '最近删除里没有这个项目' })
         const restored = projects.restore(project.id)
         if (!restored) return sendJson(res, 410, { error: '超过 30 天，无法恢复' })
@@ -2237,7 +2367,7 @@ async function handleApi(req, res, url) {
         return sendJson(res, 200, { ok: true, ...projectsPayload(owner) })
       }
       if (rest.length === 3 && rest[2] === 'purge' && req.method === 'POST') {
-        const project = projects.get(rest[1])
+        const project = projectForAnyState(rest[1], owner)
         if (!project || !project.deletedAt) return sendJson(res, 404, { error: '最近删除里没有这个项目' })
         const removedMemories = memory.removeProject(owner, project.id)
         projects.purge(project.id)
@@ -2245,7 +2375,7 @@ async function handleApi(req, res, url) {
         return sendJson(res, 200, { ok: true, removedMemories, ...projectsPayload(owner) })
       }
       if (rest.length === 2) {
-        const project = ownedProject(rest[1], res)
+        const project = ownedProject(rest[1], res, owner)
         if (!project) return
         if (req.method === 'PATCH') {
           const body = await readJsonBody(req)
@@ -2266,7 +2396,11 @@ async function handleApi(req, res, url) {
       }
       return sendJson(res, 404, { error: '未知接口' })
     } catch (error) {
-      return sendJson(res, error.status || 400, { error: error.message || '项目操作失败' })
+      // ENOSPC/EACCES are not the client's fault; reporting them as 400 told
+      // the UI "your request was wrong" and it would never retry.
+      const status = error.status || (/^(EACCES|EPERM|ENOSPC|EROFS|EIO|EMFILE|ENFILE)\b/.test(String(error.code || '')) ? 500 : 400)
+      if (status >= 500) console.error('[projects] 操作失败:', error.message)
+      return sendJson(res, status, { error: status >= 500 ? '服务器写入失败，请稍后重试' : error.message || '项目操作失败' })
     }
   }
 
@@ -2432,8 +2566,11 @@ async function handleApi(req, res, url) {
           ...body,
           channels: Array.isArray(body.channels) ? body.channels : current.channels || [],
         }
-        config.notify = { ...nextRaw, ...notifier.update(nextRaw) }
-        saveConfig()
+        const next = notifier.update(nextRaw)
+        config.notify = { ...nextRaw, ...next }
+        if (!saveConfig()) {
+          return sendJson(res, 500, { error: '通知设置已生效，但写入 config.json 失败，重启后会丢失' })
+        }
         return sendJson(res, 200, { ...notifier.status(), baseUrl: notifyBaseUrl() })
       } catch (error) {
         return sendJson(res, error.status || 400, { error: error.message || '通知设置保存失败' })
@@ -2493,7 +2630,7 @@ async function handleApi(req, res, url) {
   }
 
   if (rest[0] === 'backup' && req.method === 'GET') {
-    const projectBackup = projects.export()
+    const projectBackup = projects.export(owner)
     const backup = store.backup(owner)
     res.setHeader('X-Backup-Count', String(backup.count || 0))
     return sendJson(res, 200, {
@@ -2510,7 +2647,7 @@ async function handleApi(req, res, url) {
     let projectImport = { imported: 0, map: new Map() }
     let result
     try {
-      projectImport = body.projects ? projects.import({ projects: body.projects }) : projectImport
+      projectImport = body.projects ? projects.import({ projects: body.projects }, owner) : projectImport
       result = store.import(owner, body, { projectMap: projectImport.map })
     } catch (error) {
       for (const id of projectImport.map.values()) projects.purge(id)
@@ -2558,7 +2695,7 @@ async function handleApi(req, res, url) {
         const engine = body.engine === 'codex' ? 'codex' : 'dsr'
         const permission = normalizePermission(body.permission)
         const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
-        if (projectId && (!projects.get(projectId) || projects.get(projectId)?.deletedAt)) {
+        if (projectId && (!projects.get(projectId) || projects.get(projectId)?.deletedAt || !projects.ownedBy(projects.get(projectId), owner))) {
           return sendJson(res, 400, { error: '项目不存在或已删除' })
         }
         if (projectId && projects.get(projectId)?.archivedAt) {
@@ -2591,6 +2728,9 @@ async function handleApi(req, res, url) {
     if (rest.length === 3 && rest[2] === 'restore' && req.method === 'POST') {
       const target = store.get(rest[1])
       if (!target || target.owner !== owner) return sendJson(res, 404, { error: '会话不存在' })
+      // A double-click used to answer "超过 30 天，无法恢复" for a conversation
+      // that had just been restored — a scary message for a harmless action.
+      if (!target.deletedAt) return sendJson(res, 409, { error: '该对话不在最近删除中' })
       const restored = store.restore(target.id)
       if (!restored) return sendJson(res, 410, { error: '最近删除已超过 30 天，无法恢复' })
       cancelShareRevoke(target.id)
@@ -2620,6 +2760,7 @@ async function handleApi(req, res, url) {
       const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 60, 1), 500)
       let start = 0
       let end = totalMessages
+      let cursorStale = false
       if (fullRequest) {
         start = 0
         end = totalMessages
@@ -2628,6 +2769,14 @@ async function handleApi(req, res, url) {
         if (index >= 0) {
           end = index
           start = Math.max(0, end - limit)
+        } else {
+          // A stale cursor (message deleted, second tab) used to fall through
+          // to the full conversation — a multi-megabyte response triggered by
+          // ordinary "load earlier" clicking. Serve the oldest page instead and
+          // tell the client pagination has reached the top.
+          cursorStale = true
+          end = Math.min(limit, totalMessages)
+          start = 0
         }
       } else if (tail > 0) {
         start = Math.max(0, totalMessages - tail)
@@ -2637,8 +2786,9 @@ async function handleApi(req, res, url) {
       return sendJson(res, 200, {
         conversation: { ...convSummary(conv), messages },
         totalMessages,
-        hasEarlier: start > 0,
+        hasEarlier: cursorStale ? false : start > 0,
         start,
+        ...(cursorStale ? { cursorStale: true } : {}),
       })
     }
     if (rest.length === 2 && req.method === 'DELETE') {
@@ -2659,10 +2809,33 @@ async function handleApi(req, res, url) {
     }
     if (rest.length === 2 && req.method === 'PATCH') {
       const body = await readJsonBody(req)
-      if (body.engine === 'codex' || body.engine === 'dsr') {
+      // Validate everything that can reject the request *before* touching the
+      // conversation. These checks used to sit inline, after the engine/model
+      // writes, so a 400 for a bad title still switched the engine and stored
+      // the new model — a partial write the client could not undo.
+      let nextTitle = null
+      if (typeof body.title === 'string') {
+        const title = body.title.replace(/\s+/g, ' ').trim()
+        if (!title) return sendJson(res, 400, { error: '标题不能为空' })
+        if ([...title].length > 60) return sendJson(res, 400, { error: '标题最多 60 个字符' })
+        nextTitle = title
+      }
+      let nextProjectId
+      if (body.projectId !== undefined) {
+        nextProjectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
+        if (nextProjectId && (!projects.get(nextProjectId) || projects.get(nextProjectId)?.deletedAt || !projects.ownedBy(projects.get(nextProjectId), owner))) {
+          return sendJson(res, 400, { error: '项目不存在或已删除' })
+        }
+        if (nextProjectId && projects.get(nextProjectId)?.archivedAt) {
+          return sendJson(res, 409, { error: '项目已归档，不能把对话移入' })
+        }
+      }
+      if ((body.engine === 'codex' || body.engine === 'dsr') && body.engine !== conv.engine) {
         if (conv.messages.length > 0 || activeRuns.has(conv.id)) {
           return sendJson(res, 409, { error: '已有消息的对话不能切换引擎' })
         }
+      }
+      if (body.engine === 'codex' || body.engine === 'dsr') {
         conv.engine = body.engine
         if (body.engine === 'codex') {
           conv.mode = 'codex'
@@ -2728,14 +2901,11 @@ async function handleApi(req, res, url) {
         const run = activeRuns.get(conv.id)
         if (run) run.send({ t: 'meta', model: selection.modelName, effort: selection.effortName || null })
       }
-      if (typeof body.title === 'string') {
-        const title = body.title.replace(/\s+/g, ' ').trim()
-        if (!title) return sendJson(res, 400, { error: '标题不能为空' })
-        if ([...title].length > 60) return sendJson(res, 400, { error: '标题最多 60 个字符' })
-        conv.title = title
+      if (nextTitle !== null) {
+        conv.title = nextTitle
         store.touch(conv)
         if (conv.engine === 'codex' && conv.codexThreadId) {
-          void codexBridge.setThreadName(conv.codexThreadId, title)
+          void codexBridge.setThreadName(conv.codexThreadId, nextTitle)
         }
       }
       if (typeof body.pinned === 'boolean') {
@@ -2746,16 +2916,9 @@ async function handleApi(req, res, url) {
         conv.noMemory = body.noMemory === true
         store.touch(conv)
       }
-      if (body.projectId !== undefined) {
-        const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
-        if (projectId && (!projects.get(projectId) || projects.get(projectId)?.deletedAt)) {
-          return sendJson(res, 400, { error: '项目不存在或已删除' })
-        }
-        if (projectId && projects.get(projectId)?.archivedAt) return sendJson(res, 409, { error: '项目已归档，不能把对话移入' })
-        if (conv.projectId !== projectId) {
-          conv.projectId = projectId
-          store.touch(conv)
-        }
+      if (nextProjectId !== undefined && conv.projectId !== nextProjectId) {
+        conv.projectId = nextProjectId
+        store.touch(conv)
       }
       if (typeof body.archived === 'boolean') {
         store.archive(conv.id, body.archived)

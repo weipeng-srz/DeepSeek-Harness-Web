@@ -69,10 +69,20 @@ export class MemoryStore {
             },
             items: parsed.items,
           }
+        } else {
+          // Keep the bytes: without a copy, the next save replaces whatever the
+          // user had with an empty list and no trace remains.
+          const backup = `${this.filePath}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+          try {
+            fs.copyFileSync(this.filePath, backup)
+            console.error(`[memory] 记忆文件结构异常，已备份到 ${backup}`)
+          } catch (error) {
+            console.error(`[memory] 记忆文件结构异常，备份失败：${error.message}`)
+          }
         }
       }
     } catch (error) {
-      const backup = `${this.filePath}.corrupt-${Date.now()}`
+      const backup = `${this.filePath}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
       try {
         fs.copyFileSync(this.filePath, backup)
       } catch {}
@@ -110,7 +120,7 @@ export class MemoryStore {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch((error) => console.error('[store] 记忆数据后台写入失败:', error.message))
     }, 120)
     if (this.saveTimer.unref) this.saveTimer.unref()
   }
@@ -227,6 +237,11 @@ export class MemoryStore {
 
     const ownerCount = this.count(owner)
     if (ownerCount >= MEMORY_ITEMS_MAX) {
+      // Silent eviction deleted the user's oldest memories — including during a
+      // backup import, where the response still claimed "imported: 3". Losing
+      // data to make room is never the right default: refuse instead, so the
+      // user (or the import summary) can see that the store is full.
+      if (options.evict !== true) throw memoryError('记忆已满，请先删除一些内容', 409)
       const disposable = this.list(owner)
         .filter((item) => !item.pinned)
         .sort((a, b) => a.updatedAt - b.updatedAt)[0]
@@ -393,6 +408,7 @@ export class MemoryStore {
     const list = Array.isArray(payload) ? payload : Array.isArray(payload?.items) ? payload.items : []
     let imported = 0
     let skipped = 0
+    let full = false
     for (const raw of list.slice(0, MEMORY_ITEMS_MAX * 2)) {
       const text = cleanMemoryText(raw?.text)
       if (!text || isSensitiveMemory(text)) {
@@ -425,12 +441,15 @@ export class MemoryStore {
           item.conversationId = options.conversationMap.get(item.conversationId) || null
         }
         imported += 1
-      } catch {
+      } catch (error) {
         skipped += 1
+        if (error?.status === 409) full = true
       }
     }
     if (imported) this.data.updatedAt = Date.now()
     this.scheduleSave()
-    return { imported, skipped }
+    // `full` lets the import summary say "记忆已满" instead of pretending the
+    // remaining items were merely duplicates.
+    return { imported, skipped, full }
   }
 }

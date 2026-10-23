@@ -34,20 +34,37 @@ export class ProjectStore {
   }
 
   load() {
+    // Same recovery contract as the conversation store: a wrong shape or a
+    // malformed record must never abort boot or be silently overwritten.
+    const quarantine = (reason) => {
+      const backup = `${STORE_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+      try {
+        fs.copyFileSync(STORE_PATH, backup)
+        console.error(`[projects] ${reason}；原文件已备份到 ${backup}`)
+      } catch (error) {
+        console.error(`[projects] ${reason}；备份失败：${error.message}`)
+      }
+    }
     try {
       if (fs.existsSync(STORE_PATH)) {
         const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'))
-        if (parsed && Array.isArray(parsed.projects)) this.data = parsed
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.projects)) {
+          this.data = parsed
+        } else {
+          quarantine('项目文件结构异常，已按空库启动')
+        }
       }
     } catch (error) {
-      const backup = `${STORE_PATH}.corrupt-${Date.now()}`
-      try {
-        fs.copyFileSync(STORE_PATH, backup)
-      } catch {}
-      console.error(`[projects] 读取失败，已备份到 ${backup}:`, error.message)
+      quarantine(`读取失败：${error.message}`)
     }
     let changed = false
-    for (const project of this.data.projects) {
+    const usable = []
+    let dropped = 0
+    for (const project of Array.isArray(this.data.projects) ? this.data.projects : []) {
+      if (!project || typeof project !== 'object' || Array.isArray(project)) {
+        dropped += 1
+        continue
+      }
       const clean = this.sanitize(project)
       for (const key of Object.keys(clean)) {
         if (project[key] !== clean[key]) {
@@ -59,7 +76,13 @@ export class ProjectStore {
         project.id = projectId()
         changed = true
       }
+      usable.push(project)
     }
+    if (usable.length !== this.data.projects.length) {
+      this.data.projects = usable
+      changed = true
+    }
+    if (dropped) quarantine(`跳过 ${dropped} 条损坏项目记录`)
     if (changed) this.scheduleSave()
   }
 
@@ -86,7 +109,7 @@ export class ProjectStore {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch((error) => console.error('[store] 项目数据后台写入失败:', error.message))
     }, 150)
     if (this.saveTimer.unref) this.saveTimer.unref()
   }
@@ -118,19 +141,19 @@ export class ProjectStore {
     })
   }
 
-  list() {
+  list(owner) {
     this.pruneTrash()
-    return this.data.projects.filter((project) => !project.deletedAt).sort((left, right) => {
+    return this.data.projects.filter((project) => !project.deletedAt && this.ownedBy(project, owner)).sort((left, right) => {
       const pin = Number(Boolean(right.pinned)) - Number(Boolean(left.pinned))
       if (pin) return pin
       return (right.updatedAt || 0) - (left.updatedAt || 0)
     })
   }
 
-  listTrash() {
+  listTrash(owner) {
     this.pruneTrash()
     return this.data.projects
-      .filter((project) => project.deletedAt)
+      .filter((project) => project.deletedAt && this.ownedBy(project, owner))
       .sort((left, right) => right.deletedAt - left.deletedAt)
       .map((project) => ({
         ...project,
@@ -164,8 +187,29 @@ export class ProjectStore {
     return this.data.projects.find((project) => project.id === id) || null
   }
 
-  create(input = {}) {
-    if (this.data.projects.filter((project) => !project.deletedAt).length >= MAX_PROJECTS) {
+  // Projects used to be global: the documented `singleUser: false` mode let any
+  // authenticated device read another owner's instructions/notes, rename or
+  // purge their projects, and inherit their defaultPermission. Conversations
+  // were already owner-scoped, so this only closes the inconsistency.
+  ownedBy(project, owner) {
+    if (!owner) return true
+    return project.owner === owner
+  }
+
+  setOwner(owner) {
+    let changed = false
+    for (const project of this.data.projects) {
+      if (!project.owner) {
+        project.owner = owner
+        changed = true
+      }
+    }
+    if (changed) this.scheduleSave()
+    return changed
+  }
+
+  create(input = {}, owner = '') {
+    if (this.data.projects.filter((project) => !project.deletedAt && this.ownedBy(project, owner)).length >= MAX_PROJECTS) {
       throw Object.assign(new Error(`项目最多 ${MAX_PROJECTS} 个，请先归档或删除不用的项目`), { status: 409 })
     }
     if (!String(input?.name ?? '').trim()) {
@@ -175,6 +219,7 @@ export class ProjectStore {
     const project = {
       id: projectId(),
       ...clean,
+      owner: owner || undefined,
       createdAt: now(),
       updatedAt: now(),
     }
@@ -252,21 +297,23 @@ export class ProjectStore {
     return project
   }
 
-  export() {
+  export(owner) {
     // Backup must not trigger trash pruning: exporting is a read-only action.
     return {
       version: 1,
       exportedAt: now(),
-      projects: JSON.parse(JSON.stringify(this.data.projects.filter((project) => !project.deletedAt))),
+      projects: JSON.parse(JSON.stringify(
+        this.data.projects.filter((project) => !project.deletedAt && this.ownedBy(project, owner)),
+      )),
     }
   }
 
-  import(payload) {
+  import(payload, owner = '') {
     const list = Array.isArray(payload?.projects) ? payload.projects : []
     if (!list.length) return { imported: 0, skipped: 0, map: new Map() }
     const seen = new Map()
     for (const project of this.data.projects) {
-      if (project.importKey) seen.set(project.importKey, project.id)
+      if (project.importKey && this.ownedBy(project, owner)) seen.set(project.importKey, project.id)
     }
     const map = new Map()
     const imported = []
@@ -285,6 +332,7 @@ export class ProjectStore {
       const copy = {
         id: projectId(),
         ...clean,
+        owner: owner || undefined,
         importKey: signature,
         createdAt: Number(raw.createdAt) || now(),
         updatedAt: Number(raw.updatedAt) || now(),
@@ -293,7 +341,7 @@ export class ProjectStore {
       seen.set(signature, copy.id)
       imported.push(copy)
     }
-    if (this.data.projects.filter((project) => !project.deletedAt).length + imported.length > MAX_PROJECTS) {
+    if (this.data.projects.filter((project) => !project.deletedAt && this.ownedBy(project, owner)).length + imported.length > MAX_PROJECTS) {
       throw Object.assign(new Error(`项目数量超过上限（${MAX_PROJECTS}）`), { status: 409 })
     }
     this.data.projects.unshift(...imported.reverse())

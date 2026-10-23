@@ -39,11 +39,12 @@ async function main() {
     await home(cdp)
     const nav = await cdp.eval(`(() => {
       const top = (s) => document.querySelector(s)?.getBoundingClientRect().top
-      return { search: top('#convSearch'), links: top('.sidebar-links'), label: getComputedStyle(document.querySelector('.sidebar-links'),'::before').content, heading: document.querySelector('#convHeading')?.textContent }
+      const links = [...document.querySelectorAll('.sidebar-link')].map((e) => e.textContent.trim())
+      return { search: top('#convSearch'), links: top('.sidebar-links'), count: links.length, heading: document.querySelector('#convHeading')?.textContent }
     })()`)
-    record('R2-01', '侧栏搜索上移与资料分组', nav.search < nav.links && nav.label.includes('资料') && nav.heading === '对话', `searchTop=${nav.search} linksTop=${nav.links} label=${nav.label} heading=${nav.heading}`, '搜索在资料组上方；::before=资料；标题=对话')
+    record('R2-01', '侧栏搜索与工具入口', nav.search < nav.links && nav.count === 4 && nav.heading === '对话', `searchTop=${nav.search} linksTop=${nav.links} count=${nav.count} heading=${nav.heading}`, '搜索在工具入口上方；4 个入口；标题=对话')
 
-    await cdp.eval(`document.querySelector('.project-chip[data-project-id=""]')?.click()`)
+    await cdp.eval(`(() => { const s=document.querySelector('#projectSelect'); if(!s) return; s.value=''; s.dispatchEvent(new Event('change',{bubbles:true})) })()`)
     await sleep(300)
     await cdp.eval(`document.dispatchEvent(new KeyboardEvent('keydown',{key:'k',metaKey:true,bubbles:true,cancelable:true}))`)
     await sleep(600)
@@ -61,15 +62,17 @@ async function main() {
 
     // Project chips + current marker
     await cdp.eval(`document.querySelector('#convSearchClear')?.click()`); await sleep(300)
-    await cdp.eval(`document.querySelector('.project-chip[data-project-id]:not([data-project-id=""])')?.click()`); await sleep(500)
     const chips = await cdp.eval(`(() => {
-      const active = document.querySelector('.project-chip.active')
-      const wrap = document.querySelector('.project-chips')
-      if (!active || !wrap) return null
-      const a = active.getBoundingClientRect(); const w = wrap.getBoundingClientRect()
-      return { text: active.textContent, visible: a.left >= w.left - 1 && a.right <= w.right + 1, placeholder: document.querySelector('#convSearch')?.placeholder, all: document.querySelector('.project-chip[data-project-id=""]')?.getBoundingClientRect().left, add: document.querySelector('.project-add-chip')?.getBoundingClientRect().right, wrapRight: w.right }
+      const select = document.querySelector('#projectSelect')
+      const option = [...select.options].find((item) => item.value)
+      if (!option) return null
+      select.value = option.value
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+      return { value: select.value, label: option.textContent, options: select.options.length }
     })()`)
-    record('R2-04', '项目 chips 当前可见与上下文', chips && chips.visible && String(chips.placeholder).includes('在「'), `active=${chips?.text} visible=${chips?.visible} placeholder=${chips?.placeholder}`, 'active chip 可见；placeholder 含 在「项目名」')
+    await sleep(700)
+    const filtered = await cdp.eval(`(() => ({ value: document.querySelector('#projectSelect')?.value, placeholder: document.querySelector('#convSearch')?.placeholder, filterHidden: document.querySelector('#projectFilter')?.hidden }))()`)
+    record('R2-04', '项目筛选保持选中与上下文', Boolean(chips && filtered.value === chips.value && String(filtered.placeholder).includes('在「') && !filtered.filterHidden), `selected=${filtered.value} options=${chips?.options} placeholder=${filtered.placeholder}`, 'select 保持项目；placeholder 含 在「项目名」')
 
     await cdp.eval(`document.querySelector('#archiveBtn')?.click()`); await sleep(600)
     const danger = await cdp.eval(`(() => { const btns=[...document.querySelectorAll('.archive-actions button')]; const del=btns.find(b=>b.textContent.includes('删除')); const restore=btns.find(b=>b.textContent.includes('恢复')); const cs=del?getComputedStyle(del):null; return { color: cs?.color, gap: del&&restore ? Math.round(del.getBoundingClientRect().left-restore.getBoundingClientRect().right) : null } })()`)

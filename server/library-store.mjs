@@ -44,17 +44,44 @@ export class LibraryStore {
   }
 
   load() {
+    const quarantine = (reason) => {
+      const backup = `${STORE_PATH}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+      try {
+        fs.copyFileSync(STORE_PATH, backup)
+        console.error(`[library] ${reason}；原文件已备份到 ${backup}`)
+      } catch (error) {
+        console.error(`[library] ${reason}；备份失败：${error.message}`)
+      }
+    }
     try {
       if (fs.existsSync(STORE_PATH)) {
         const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'))
-        if (parsed && parsed.owners && typeof parsed.owners === 'object') this.data = parsed
+        const ownersOk = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+          && parsed.owners && typeof parsed.owners === 'object' && !Array.isArray(parsed.owners)
+        if (ownersOk) this.data = parsed
+        else quarantine('收藏文件结构异常，已按空库启动')
       }
     } catch (error) {
-      const backup = `${STORE_PATH}.corrupt-${Date.now()}`
-      try {
-        fs.copyFileSync(STORE_PATH, backup)
-      } catch {}
-      console.error(`[library] 读取失败，已备份到 ${backup}:`, error.message)
+      quarantine(`读取失败：${error.message}`)
+    }
+    // Drop owner buckets that are not objects, and normalise the two lists.
+    let changed = false
+    for (const [owner, bucket] of Object.entries(this.data.owners || {})) {
+      if (!bucket || typeof bucket !== 'object' || Array.isArray(bucket)) {
+        delete this.data.owners[owner]
+        changed = true
+        continue
+      }
+      for (const key of ['bookmarks', 'prompts']) {
+        if (!Array.isArray(bucket[key])) {
+          bucket[key] = []
+          changed = true
+        }
+      }
+    }
+    if (changed) {
+      quarantine('收藏文件包含损坏的分组，已清理')
+      this.scheduleSave()
     }
   }
 
@@ -62,7 +89,7 @@ export class LibraryStore {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch((error) => console.error('[store] 收藏数据后台写入失败:', error.message))
     }, 150)
     if (this.saveTimer.unref) this.saveTimer.unref()
   }

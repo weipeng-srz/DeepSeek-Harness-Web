@@ -22,7 +22,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
-    <link rel="stylesheet" href="/css/bundle.css?v=78" />
+    <link rel="stylesheet" href="/css/bundle.css?v=82" />
   </head>
   <body>
     <a class="skip-link" href="#input">跳到输入框</a>
@@ -342,8 +342,9 @@
       </aside>
 
       <div class="main">
+        <h1 id="chatHeading" class="sr-only">DSH Chat</h1>
         <header class="topbar">
-          <button id="menuBtn" class="icon-btn" type="button" aria-label="打开菜单" aria-expanded="false" aria-controls="sidebar">
+          <button id="menuBtn" class="icon-btn" type="button" aria-label="切换侧栏" title="切换侧栏" aria-expanded="false" aria-controls="sidebar">
             <svg><use href="#i-menu" /></svg>
           </button>
           <button
@@ -459,7 +460,10 @@
             <p class="empty-hint"><span class="hint-dot"></span><span id="emptyHintText">数据存本机 · 推理经模型接口 · 与桌面版同步</span></p>
           </section>
           <div id="printHeader" class="print-header" aria-hidden="true"><strong id="printTitle">DSH Chat</strong><span id="printMeta"></span></div>
-          <div id="thread" class="thread" role="log" aria-label="对话内容" hidden></div>
+          <!-- A chat transcript that is fully repainted on every streamed chunk must
+               not be a live region: role="log" announced the whole answer over and
+               over. Completion and state changes are announced via #srStatus. -->
+          <div id="thread" class="thread" role="region" aria-label="对话内容" hidden></div>
           <div id="srStatus" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
         </main>
 

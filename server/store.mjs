@@ -81,20 +81,49 @@ export class ConversationStore {
   }
 
   load() {
+    // A single malformed record used to take the whole process down (a `null`
+    // entry crashed the loop below), or — worse — a file whose shape was valid
+    // JSON but not a store was silently replaced by an empty one on the next
+    // save with no copy kept. Both classes are now recoverable: keep the
+    // original bytes next to the store, then continue with whatever is usable.
+    let quarantinePath = ''
+    const quarantine = (reason) => {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-')
+      const target = `${STORE_PATH}.corrupt-${stamp}`
+      try {
+        fs.copyFileSync(STORE_PATH, target)
+        quarantinePath = target
+        console.error(`[store] ${reason}；原文件已备份到 ${target}`)
+      } catch (error) {
+        console.error(`[store] ${reason}；备份失败：${error.message}`)
+      }
+    }
     try {
       if (fs.existsSync(STORE_PATH)) {
         const parsed = JSON.parse(fs.readFileSync(STORE_PATH, 'utf8'))
-        if (parsed && Array.isArray(parsed.conversations)) this.data = parsed
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Array.isArray(parsed.conversations)) {
+          this.data = parsed
+        } else {
+          quarantine('会话文件结构异常（缺少 conversations 数组），已按空库启动')
+        }
       }
     } catch (err) {
-      const backup = `${STORE_PATH}.corrupt-${Date.now()}`
-      try {
-        fs.copyFileSync(STORE_PATH, backup)
-      } catch {}
-      console.error(`[store] 读取会话数据失败，已备份到 ${backup}:`, err.message)
+      quarantine(`读取会话数据失败：${err.message}`)
     }
     let changed = false
-    for (const conv of this.data.conversations) {
+    const usable = []
+    let dropped = 0
+    for (const conv of Array.isArray(this.data.conversations) ? this.data.conversations : []) {
+      if (!conv || typeof conv !== 'object' || Array.isArray(conv) || typeof conv.id !== 'string') {
+        dropped += 1
+        continue
+      }
+      // A conversation without a messages array used to make every list call
+      // throw (500) because downstream code reads `conv.messages.length`.
+      if (!Array.isArray(conv.messages)) {
+        conv.messages = []
+        changed = true
+      }
       if (conv.engine !== 'codex') conv.engine = 'dsr'
       if (!PERMISSION_VALUES.has(conv.permission)) {
         conv.permission = DEFAULT_PERMISSION
@@ -109,31 +138,77 @@ export class ConversationStore {
       if (conv.deletedAt && Date.now() - conv.deletedAt > TRASH_RETENTION_MS) {
         conv.__purge = true
       }
-      for (const msg of conv.messages || []) {
+      const messages = []
+      for (const msg of conv.messages) {
+        if (!msg || typeof msg !== 'object' || Array.isArray(msg)) {
+          dropped += 1
+          continue
+        }
         if (msg.status === 'running') {
           msg.status = 'interrupted'
           msg.error = msg.error || '服务重启，生成被中断'
           changed = true
         }
         if (!Array.isArray(msg.attachments)) delete msg.attachments
+        messages.push(msg)
       }
+      if (messages.length !== conv.messages.length) {
+        conv.messages = messages
+        changed = true
+      }
+      usable.push(conv)
     }
+    if (usable.length !== this.data.conversations.length) {
+      this.data.conversations = usable
+      changed = true
+    }
+    if (dropped && !quarantinePath) quarantine(`跳过 ${dropped} 条损坏记录`)
     const purged = this.data.conversations.filter((conv) => conv.__purge)
     if (purged.length) {
       this.data.conversations = this.data.conversations.filter((conv) => !conv.__purge)
       for (const conv of purged) this.removeWorkspace(conv)
       changed = true
     }
+    // Never let a failed load turn into an "empty" daily backup: the only copy
+    // of the day's data would be replaced by the very state we failed to read.
+    this.loadRecovered = Boolean(quarantinePath)
     if (changed) this.scheduleSave()
+    this.cleanStaleTempFiles()
   }
 
   scheduleSave() {
     if (this.saveTimer) return
     this.saveTimer = setTimeout(() => {
       this.saveTimer = null
-      void this.flush()
+      void this.flush().catch((error) => console.error('[store] 会话数据后台写入失败:', error.message))
     }, 150)
     if (this.saveTimer.unref) this.saveTimer.unref()
+  }
+
+  // A crash or `kill -9` between `open()` and `rename()` leaves a zero-byte
+  // `<store>.<pid>.<rand>.tmp` behind forever. They are never read, but they
+  // accumulate and look like data corruption to anyone browsing data/.
+  cleanStaleTempFiles() {
+    const dir = path.dirname(STORE_PATH)
+    const prefix = `${path.basename(STORE_PATH)}.`
+    const cutoff = Date.now() - 3_600_000
+    let names = []
+    try {
+      names = fs.readdirSync(dir)
+    } catch {
+      return 0
+    }
+    let removed = 0
+    for (const name of names) {
+      if (!name.startsWith(prefix) || !name.endsWith('.tmp')) continue
+      const absolute = path.join(dir, name)
+      try {
+        if (fs.statSync(absolute).mtimeMs > cutoff) continue
+        fs.rmSync(absolute, { force: true })
+        removed += 1
+      } catch {}
+    }
+    return removed
   }
 
   async flush() {
@@ -183,6 +258,12 @@ export class ConversationStore {
       try {
         await fs.promises.access(target)
       } catch {
+        // After a failed load the in-memory store is empty; copying it here
+        // would replace the day's only recovery point with that empty state.
+        if (this.loadRecovered && this.data.conversations.length === 0) {
+          console.error('[store] 数据恢复中，跳过空库日备份')
+          return
+        }
         await fs.promises.copyFile(STORE_PATH, target)
         await fs.promises.chmod(target, 0o600)
         const files = (await fs.promises.readdir(backupDir)).filter((name) => /^conversations-\d{4}-\d{2}-\d{2}\.json$/.test(name)).sort()
@@ -446,22 +527,37 @@ export class ConversationStore {
   }
 
   purgeFromBackups(id) {
-    try {
+    // Asynchronous + atomic. The synchronous version read, parsed and rewrote
+    // every daily backup on the request path: on a 156 MB store that froze the
+    // whole server for ~1.7 s (every stream, share view and health check), and
+    // an in-place write meant a crash mid-rewrite truncated the only recovery
+    // copy. Purging a conversation must never block the event loop.
+    void (async () => {
       const backupDir = path.join(DATA_DIR, 'backups')
-      if (!fs.existsSync(backupDir)) return
-      for (const name of fs.readdirSync(backupDir)) {
+      let names
+      try {
+        names = await fs.promises.readdir(backupDir)
+      } catch {
+        return
+      }
+      for (const name of names) {
         if (!/^conversations-\d{4}-\d{2}-\d{2}\.json$/.test(name)) continue
         const file = path.join(backupDir, name)
+        const tmp = `${file}.${process.pid}.${crypto.randomBytes(4).toString('hex')}.tmp`
         try {
-          const payload = JSON.parse(fs.readFileSync(file, 'utf8'))
+          const payload = JSON.parse(await fs.promises.readFile(file, 'utf8'))
           if (!Array.isArray(payload.conversations)) continue
           const filtered = payload.conversations.filter((conv) => conv.id !== id)
           if (filtered.length === payload.conversations.length) continue
           payload.conversations = filtered
-          fs.writeFileSync(file, JSON.stringify(payload), { mode: 0o600 })
-        } catch {}
+          await fs.promises.writeFile(tmp, JSON.stringify(payload), { mode: 0o600 })
+          await fs.promises.rename(tmp, file)
+        } catch (error) {
+          await fs.promises.rm(tmp, { force: true }).catch(() => {})
+          console.error(`[store] 清理备份失败 ${name}:`, error.message)
+        }
       }
-    } catch {}
+    })().catch(() => {})
   }
 
   purge(id) {
@@ -629,7 +725,9 @@ export class ConversationStore {
     if (payload.version !== undefined && payload.version !== 1) throw invalid('不支持这个备份版本')
     const list = payload.conversations
     if (!list.length) return { imported: 0, skipped: 0 }
-    this.assertCapacity(list.length)
+    // Capacity is checked after duplicate detection (below): re-importing a
+    // backup into a full store used to be rejected even though every item
+    // would have been skipped as a duplicate.
     const importKeys = new Map()
     for (const conv of this.data.conversations) {
       if (conv.importKey) importKeys.set(conv.importKey, conv.id)
@@ -747,6 +845,7 @@ export class ConversationStore {
       importKeys.set(signature, conv.id)
       return conv
     })
+    this.assertCapacity(built.filter(Boolean).length)
     const imported = built.filter(Boolean)
     this.data.conversations.unshift(...imported.reverse())
     this.scheduleSave()

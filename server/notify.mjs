@@ -190,13 +190,17 @@ export class Notifier {
     return this.settings
   }
 
+  // Validate into a candidate first and only then commit it. Assigning before
+  // the check meant a rejected PATCH still disabled the live notifier while
+  // config.json (and the UI after a reload) kept saying notifications were on.
   update(raw) {
-    const next = this.apply(raw)
+    const next = normalizeNotify(raw)
     if (raw?.enabled === true && !next.channels.some((channel) => channel.enabled)) {
       const error = new Error('启用通知前需要先填写接收号码')
       error.status = 400
       throw error
     }
+    this.settings = next
     return next
   }
 

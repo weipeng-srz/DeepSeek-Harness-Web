@@ -18,21 +18,20 @@
 
 :root {
   --side-cta: #0071e3;
-  --side-cta-hover: #0077ed;
+  --side-cta-hover: #0066cc;
   --side-cta-fg: #ffffff;
-  --side-row-hover: color-mix(in srgb, var(--text) 5%, transparent);
 }
 
 :root[data-theme="dark"] {
   --side-cta: #0a6fe8;
-  --side-cta-hover: #1a7cf0;
+  --side-cta-hover: #0a63d0;
   --side-cta-fg: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --side-cta: #0a6fe8;
-    --side-cta-hover: #1a7cf0;
+    --side-cta-hover: #0a63d0;
     --side-cta-fg: #ffffff;
   }
 }
@@ -96,7 +95,7 @@
   border-radius: 5px;
   background: var(--hover);
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
@@ -277,7 +276,7 @@
   border-radius: 0;
   background: none;
   color: var(--text-3);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   line-height: 1;
 }
@@ -331,7 +330,9 @@
   font-size: var(--type-meta);
   font-weight: 500;
   line-height: 32px;
+  overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -462,6 +463,7 @@
 
 #sidebar .conv-item {
   gap: 2px;
+  min-height: 46px;
   padding: 7px 3px 7px 9px;
   border-radius: 10px;
 }
@@ -513,8 +515,7 @@
   justify-self: end;
 }
 
-#sidebar .conv-preview,
-#sidebar .conv-snippet {
+#sidebar .conv-preview {
   grid-column: 1 / -1;
   grid-row: 2;
   display: -webkit-box;
@@ -527,13 +528,35 @@
   -webkit-line-clamp: 1;
 }
 
-#sidebar .conv-preview:empty,
-#sidebar .conv-snippet:empty {
+#sidebar .conv-preview:empty {
   display: none;
 }
 
 #sidebar .conv-snippet {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  align-items: baseline;
   gap: 5px;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: calc(var(--type-copy) - 1px);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+#sidebar .conv-snippet .conv-hit {
+  flex: none;
+}
+
+#sidebar .conv-snippet .conv-hit-text {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 #sidebar .conv-meta .project-badge {
@@ -745,8 +768,8 @@
   }
 
   #sidebar .conv-toolbar .sidebar-tool {
-    min-height: 36px;
-    padding: 0 9px;
+    min-height: 44px;
+    padding: 0 10px;
   }
 
   #sidebar .conv-load-more {
@@ -769,4 +792,147 @@ body.text-large #sidebar #projectSelect {
 body.text-large #sidebar .conv-meta,
 body.text-large #sidebar .conv-group {
   font-size: var(--type-meta);
+}
+
+
+/* iOS zooms the whole page when a focused field is below 16px. Kept last so
+   it wins over the 13.5px desktop search rule above. */
+@media (max-width: 1023px) {
+  #sidebar .conv-search input {
+    font-size: 16px;
+  }
+}
+
+/* ── accessibility & phone polish (audit round) ─────────────────────────
+   1. The conversation title stays reachable whenever the sidebar is not
+      visible: on phones/tablets always, on desktop only when collapsed.
+      It was globally display:none, so a phone user had no idea which
+      conversation was open.
+   2. A transparent fixed topbar let scrolled message text run behind the
+      icons at 320px; once the thread scrolls, the bar gets a real backing.
+   3. Small secondary controls get a 44px touch target on coarse pointers.
+   4. Muted text on the active row reaches 4.5:1 in both themes.
+   5. The backup action group keeps its labels on one line.
+   ───────────────────────────────────────────────────────────────────── */
+
+@media (max-width: 1023px) {
+  html body .topbar-title {
+    display: flex !important;
+    align-items: center;
+    gap: 0;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  html body .topbar-title .topbar-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    max-width: 100%;
+  }
+
+  html body .topbar-title .topbar-sub {
+    display: none;
+  }
+}
+
+@media (min-width: 1024px) {
+  html body.sidebar-collapsed .topbar-title {
+    display: flex !important;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  html body.sidebar-collapsed .topbar-title .topbar-name {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
+
+@media (max-width: 640px) {
+  /* reading content may still slide under the bar, but not *through* it */
+  html body .topbar.is-scrolled {
+    background: color-mix(in srgb, var(--bg) 88%, transparent) !important;
+    -webkit-backdrop-filter: saturate(1.6) blur(14px) !important;
+    backdrop-filter: saturate(1.6) blur(14px) !important;
+    border-bottom: 1px solid color-mix(in srgb, var(--border) 74%, transparent) !important;
+  }
+
+  /* the title is the orientation cue; keep it while scrolling */
+  html body .topbar.is-scrolled .topbar-title {
+    opacity: 0.96 !important;
+    transform: none !important;
+    pointer-events: auto !important;
+  }
+}
+
+@media (pointer: coarse) {
+  #sidebar .conv-item {
+    min-height: 44px;
+  }
+
+  #sidebar .conv-toolbar .sidebar-tool {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  #sidebar .conv-more {
+    width: 44px;
+    height: 44px;
+  }
+
+  .status-btn,
+  #statusBtn,
+  .model-chip,
+  #dshModelBarBtn,
+  #dshModelFloatBtn {
+    min-height: 44px;
+  }
+}
+
+/* Selected-row secondary text was 4.40:1 (light) and 4.11:1 (dark). */
+:root {
+  --text-3: #64646a;
+}
+
+:root[data-theme="dark"] {
+  --text-3: #a8a8ae;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --text-3: #a8a8ae;
+  }
+}
+
+/* 导出/导入 must never break to one character per line. */
+html body .settings-actions {
+  flex-wrap: nowrap;
+}
+
+html body .settings-actions .ghost-btn {
+  flex: 0 0 auto;
+  min-width: 56px;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  /* The model pill floats 34px into the scroll area (it is anchored to the
+     composer, not to the content), so the last line of a page could end up
+     underneath it. Reserve that height in the scroller itself. */
+  html body .scroll-area {
+    padding-bottom: 44px !important;
+  }
+}
+
+/* Phone conversation-actions sheet: a real modal layer behind the sheet so a
+   tap outside dismisses it instead of reaching the sidebar underneath. */
+.conv-popover-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 319; /* just under .conv-popover (320) */
+  background: rgba(0, 0, 0, 0.28);
+  -webkit-backdrop-filter: blur(1px);
+  backdrop-filter: blur(1px);
 }

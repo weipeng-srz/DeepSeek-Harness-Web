@@ -8,6 +8,24 @@
 (function () {
   'use strict'
 
+  // See app.js: localStorage throws when site data is blocked, and these
+  // modules run before login. Degrade to memory instead of breaking the page.
+  const storage = (() => {
+    try {
+      const real = window.localStorage
+      real.setItem('__dsh_probe__', '1')
+      real.removeItem('__dsh_probe__')
+      return real
+    } catch {
+      const memory = new Map()
+      return {
+        getItem: (key) => (memory.has(key) ? memory.get(key) : null),
+        setItem: (key, value) => { memory.set(key, String(value)) },
+        removeItem: (key) => { memory.delete(key) },
+      }
+    }
+  })()
+
   const PROVIDER_KEY = 'dsh.model.provider'
   const MODEL_KEY = 'dsh.model.id'
   const EFFORT_KEY = 'dsh.model.effort'
@@ -43,7 +61,7 @@
 
   function readCachedCatalog() {
     try {
-      const raw = JSON.parse(localStorage.getItem(CATALOG_KEY) || 'null')
+      const raw = JSON.parse(storage.getItem(CATALOG_KEY) || 'null')
       if (!raw || !Array.isArray(raw.groups) || !raw.groups.length) return null
       // A live catalog is stable for hours. The static fallback (Desktop app
       // closed / bridge still booting) can be replaced at any moment, so it
@@ -59,7 +77,7 @@
 
   function writeCachedCatalog(value) {
     try {
-      localStorage.setItem(CATALOG_KEY, JSON.stringify(value))
+      storage.setItem(CATALOG_KEY, JSON.stringify(value))
     } catch {}
   }
 
@@ -109,25 +127,25 @@
   /* ── selection ─────────────────────────────────────────────────────── */
 
   function storedPick() {
-    const provider = localStorage.getItem(PROVIDER_KEY)
-    const model = localStorage.getItem(MODEL_KEY)
-    const effort = localStorage.getItem(EFFORT_KEY)
+    const provider = storage.getItem(PROVIDER_KEY)
+    const model = storage.getItem(MODEL_KEY)
+    const effort = storage.getItem(EFFORT_KEY)
     return provider && model ? { provider, model, effort } : null
   }
 
   function remember(provider, modelId, effortId) {
     try {
-      if (provider) localStorage.setItem(PROVIDER_KEY, provider)
-      if (modelId) localStorage.setItem(MODEL_KEY, modelId)
-      localStorage.setItem(EFFORT_KEY, effortId || '')
+      if (provider) storage.setItem(PROVIDER_KEY, provider)
+      if (modelId) storage.setItem(MODEL_KEY, modelId)
+      storage.setItem(EFFORT_KEY, effortId || '')
     } catch {}
   }
 
   function forget() {
     try {
-      localStorage.removeItem(PROVIDER_KEY)
-      localStorage.removeItem(MODEL_KEY)
-      localStorage.removeItem(EFFORT_KEY)
+      storage.removeItem(PROVIDER_KEY)
+      storage.removeItem(MODEL_KEY)
+      storage.removeItem(EFFORT_KEY)
     } catch {}
   }
 
@@ -211,7 +229,7 @@
     const cached = cachedEngine(currentConversationId())
     if (cached) return cached !== 'codex'
     // app.js persists the engine on selection and on conversation load.
-    if (localStorage.getItem('dsh.engine') === 'codex') return false
+    if (storage.getItem('dsh.engine') === 'codex') return false
     // Only positive DSH evidence counts. Treating "no Codex text" as DSH is
     // what used to keep the DSH picker on a Codex chat during a route change.
     if (badge && /原生|Headless/.test(badge.textContent || '')) return true
@@ -221,7 +239,7 @@
   function cachedEngine(id) {
     if (!id) return null
     try {
-      const raw = JSON.parse(localStorage.getItem('dsh.cache.v1') || 'null')
+      const raw = JSON.parse(storage.getItem('dsh.cache.v1') || 'null')
       if (!raw) return null
       const current = raw.current
       if (current?.id === id && (current.engine === 'codex' || current.engine === 'dsr')) {
@@ -292,7 +310,15 @@
 
   /* ── data loading ──────────────────────────────────────────────────── */
 
+  function authedNow() {
+    const shell = document.getElementById('shell')
+    return Boolean(shell && !shell.hidden)
+  }
+
   async function loadCatalog(force = false) {
+    // render() can run before login; without this guard every repaint on the
+    // login page fired an authenticated request (401 in the console).
+    if (!authedNow()) return
     if (state.loading) return
     if (!force && Date.now() - state.catalogAttemptAt < 5000) return
     const freshWindow = state.catalog?.source === 'live' ? 60_000 : 5_000
@@ -908,10 +934,15 @@
       }
     })
     window.addEventListener('popstate', () => void refreshCurrent(true))
+    // Idle polling was one summary request every 4 s per module. The metadata
+    // only changes when a turn finishes or the model changes — both of which
+    // already trigger a refresh — so slow the safety net down and skip it in a
+    // background tab.
     setInterval(() => {
-      if (!document.hidden && dsrContext()) void refreshCurrent()
+      if (document.hidden) return
+      if (dsrContext()) void refreshCurrent()
       render()
-    }, 4000)
+    }, 15000)
   }
 
   function ensureStyles() {
@@ -921,6 +952,19 @@
     link.href = '/css/dsh-models.css?v=2'
     link.dataset.dshModelsCss = '1'
     document.head.appendChild(link)
+  }
+
+
+  // Never call an authenticated endpoint before the shell is on screen: the
+  // login page used to fire /api/*/models and log two 401s every load.
+  function whenAuthed(run, attempt = 0) {
+    const shell = document.getElementById('shell')
+    if (shell && !shell.hidden) {
+      run()
+      return
+    }
+    if (attempt >= 30) return
+    setTimeout(() => whenAuthed(run, attempt + 1), 200)
   }
 
   function init() {
@@ -938,8 +982,10 @@
     }
     render()
     watchDom()
-    void loadCatalog()
-    void refreshCurrent(true)
+    whenAuthed(() => {
+      void loadCatalog()
+      void refreshCurrent(true)
+    })
   }
 
   if (document.readyState === 'loading') {
