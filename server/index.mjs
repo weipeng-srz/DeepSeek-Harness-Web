@@ -15,6 +15,7 @@ import {
   PUBLIC_DIR,
   SECRET,
   MODEL,
+  PROVIDER,
   NATIVE_ENABLED,
   NATIVE_WORKSPACE_TITLE,
   SHARED_WORKSPACE,
@@ -31,6 +32,7 @@ import { AuditLog } from './audit.mjs'
 import { MemoryStore } from './memory-store.mjs'
 import { startDshRun } from './dsh.mjs'
 import { nativeBridge } from './native.mjs'
+import { staticDshCatalog, providerDisplayName } from './dsh-models.mjs'
 import { codexBridge, effortLabel } from './codex-bridge.mjs'
 import { codexAvailable, ensureCodexHttpProvider, readCodexDefaults } from './codex.mjs'
 import { Notifier } from './notify.mjs'
@@ -344,6 +346,8 @@ const CSS_BUNDLE_FILES = [
   'css/visual.css',
   'css/memory.css',
   'css/projects.css',
+  'css/evolution.css',
+  'css/sidebar.css',
 ]
 let cssBundleCache = { key: '', raw: null, gzip: null, etag: '' }
 
@@ -498,6 +502,120 @@ function codexDeepLink(threadId) {
   return id ? `codex://threads/${id}` : null
 }
 
+// ── DSH engine model selection — mirrors the Desktop model selector ──────
+//
+// The live catalog comes from the bridge (chat/listModels: the same LLM
+// registry projection the Desktop GUI renders). When the Desktop app is
+// closed the static parse of cordis.patch.yml keeps the picker truthful for
+// headless runs. A conversation pins its own provider/model/effort; without
+// a pin it follows the Desktop default selection.
+
+function safeDshId(value) {
+  return typeof value === 'string' && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : ''
+}
+
+let dshCatalogCache = { at: 0, value: null }
+
+/** Sync best-effort catalog: last known live catalog, else the static parse. */
+function dshCatalog() {
+  const cached = dshCatalogCache.value
+  if (cached && Array.isArray(cached.groups) && cached.groups.length) return cached
+  return staticDshCatalog()
+}
+
+/** Live catalog through the bridge with a 30s cache; static parse fallback. */
+async function dshCatalogLive(force = false) {
+  if (!force && dshCatalogCache.value && Date.now() - dshCatalogCache.at < 30_000) {
+    return dshCatalogCache.value
+  }
+  let remote = null
+  if (NATIVE_ENABLED) {
+    try {
+      remote = await nativeBridge.listModels()
+    } catch {}
+  }
+  if (remote && Array.isArray(remote.groups) && remote.groups.length) {
+    dshCatalogCache = { at: Date.now(), value: { ...remote, source: 'live' } }
+    return dshCatalogCache.value
+  }
+  return staticDshCatalog()
+}
+
+function resolveDshSelection(conv = {}) {
+  const catalog = dshCatalog()
+  const groups = Array.isArray(catalog.groups) ? catalog.groups : []
+  const all = []
+  for (const group of groups) {
+    for (const model of group.models || []) {
+      all.push({ ...model, provider: group.id, providerName: group.name })
+    }
+  }
+  const def = catalog.default || {}
+  const wantProvider = safeDshId(conv.dshProvider)
+  const wantModel = safeDshId(conv.dshModel)
+  // A pinned conversation stays pinned even while the live catalog is not
+  // loaded yet (server just started, Desktop bridge reconnecting): falling
+  // back to the default here would silently switch the user's model.
+  const pinned = Boolean(wantProvider && wantModel)
+  let entry = null
+  if (pinned) {
+    entry = all.find((item) => item.provider === wantProvider && item.id === wantModel) || null
+  }
+  const explicit = pinned
+  if (!entry && !pinned && def.provider && def.model) {
+    entry = all.find((item) => item.provider === def.provider && item.id === def.model) || null
+  }
+  const provider = entry?.provider || wantProvider || def.provider || PROVIDER
+  const model = entry?.id || wantModel || def.model || MODEL
+  const efforts = Array.isArray(entry?.reasoning?.efforts) ? entry.reasoning.efforts : []
+  let effort = safeDshId(conv.dshEffort)
+  if (efforts.length && !efforts.some((item) => item.id === effort)) {
+    effort = safeDshId(entry?.reasoning?.defaultEffort) || safeDshId(efforts[0]?.id)
+  }
+  // Only drop an effort we can prove the model no longer supports; without a
+  // catalog entry the stored value is the best available hint.
+  if (entry && !efforts.length) effort = ''
+  return {
+    provider,
+    model,
+    effort,
+    modelName: entry?.name || wantModel || model,
+    providerName: providerDisplayName(provider, groups),
+    effortName: efforts.find((item) => item.id === effort)?.name || effort,
+    entry,
+    catalog,
+    explicit,
+  }
+}
+
+/**
+ * Per-run headless model override: a minimal patch overlay replacing the
+ * agent-default-model selection. Returns null when the conversation simply
+ * follows the Desktop default (the generated base patch already carries it).
+ */
+function writeDshRunPatch(conv, selection) {
+  if (!selection?.explicit || !selection.provider || !selection.model) return null
+  try {
+    const dir = path.join(DATA_DIR, 'tmp')
+    fs.mkdirSync(dir, { recursive: true })
+    const safeId = String(conv?.id || 'run').replace(/[^A-Za-z0-9_-]/g, '')
+    const file = path.join(dir, `headless-model-${safeId}.patch.yml`)
+    const lines = [
+      '# Generated by dsh-chat: per-run model override for one headless session.',
+      '- id: agent-default-model',
+      '  config:',
+      `    provider: "${selection.provider}"`,
+      `    model: "${selection.model}"`,
+    ]
+    if (selection.effort) lines.push(`    reasoningEffort: "${selection.effort}"`)
+    fs.writeFileSync(file, lines.join('\n') + '\n')
+    return file
+  } catch (error) {
+    console.warn('[dsh] 写入模型 patch 失败：', error.message)
+    return null
+  }
+}
+
 function permissionOrder(value) {
   return { 'read-only': 0, 'workspace-write': 1, 'danger-full-access': 2, auto: 3 }[value] ?? 9
 }
@@ -540,6 +658,7 @@ async function permissionCatalog() {
 function convSummary(conv) {
   const engine = conv.engine === 'codex' ? 'codex' : 'dsr'
   const selection = engine === 'codex' ? resolveCodexSelection(conv) : null
+  const dshSelection = engine === 'codex' ? null : resolveDshSelection(conv)
   return {
     id: conv.id,
     title: conv.title,
@@ -552,6 +671,13 @@ function convSummary(conv) {
     codexEffort: selection?.effort || null,
     codexEffortName: selection?.effortName || null,
     codexDeepLink: codexDeepLink(conv.codexThreadId),
+    dshProvider: dshSelection?.provider || null,
+    dshModel: dshSelection?.model || null,
+    dshModelName: dshSelection?.modelName || null,
+    dshProviderName: dshSelection?.providerName || null,
+    dshEffort: dshSelection?.effort || null,
+    dshEffortName: dshSelection?.effortName || null,
+    dshModelExplicit: Boolean(dshSelection?.explicit),
     engine,
     permission: normalizePermission(conv.permission),
     pinned: Boolean(conv.pinned),
@@ -1731,6 +1857,29 @@ async function handleChat(req, res, owner, restId) {
     beforeFiles = snapshotWorkspace(workspaceDir)
     store.touch(conv)
     hub.send({ t: 'session', sessionId: conv.dshSessionId })
+    // Apply the conversation's model selection to the host session before the
+    // prompt goes out (same route as the Desktop's session/selectModel). An
+    // older bridge without chat/setModel stays silent — the run proceeds with
+    // the session's existing route.
+    const dshSelection = resolveDshSelection(conv)
+    try {
+      const applied = await nativeBridge.setModel(conv.dshSessionId, {
+        provider: dshSelection.provider,
+        model: dshSelection.model,
+        ...(dshSelection.effort ? { reasoningEffort: dshSelection.effort } : {}),
+      })
+      if (applied && applied.ok === false && applied.reason !== 'bridge-unavailable') {
+        hub.send({ t: 'notice', text: `模型切换未生效（${applied.reason}），将继续使用原模型。` })
+      }
+    } catch (error) {
+      const message = String(error?.message || error)
+      if (!/unknown method/i.test(message)) {
+        hub.send({ t: 'notice', text: `模型切换未生效：${message}` })
+      }
+    }
+    assistant.model = dshSelection.modelName
+    assistant.dshEffort = dshSelection.effortName || null
+    hub.send({ t: 'meta', model: dshSelection.modelName, effort: dshSelection.effortName || null })
     const run = nativeBridge.startRun({
       sessionId: conv.dshSessionId,
       prompt: nativePrompt,
@@ -1759,6 +1908,13 @@ async function handleChat(req, res, owner, restId) {
     fs.mkdirSync(conv.workspace, { recursive: true })
     workspaceDir = conv.workspace
     beforeFiles = snapshotWorkspace(workspaceDir)
+    // Headless parity: the CLI installs agent-default-model at startup, so a
+    // per-run patch overlay switches the model for this run only.
+    const dshSelection = resolveDshSelection(conv)
+    const modelPatch = writeDshRunPatch(conv, dshSelection)
+    assistant.model = dshSelection.modelName
+    assistant.dshEffort = dshSelection.effortName || null
+    hub.send({ t: 'meta', model: dshSelection.modelName, effort: dshSelection.effortName || null })
     let sessionId = conv.dshSessionId
     let attempt = 0
     while (attempt < 2) {
@@ -1780,6 +1936,7 @@ async function handleChat(req, res, owner, restId) {
         sessionId,
         cwd: conv.workspace,
         permission: conv.permission,
+        modelPatch,
         onEvent,
       })
       hub.kill = () => run.kill()
@@ -1842,7 +1999,7 @@ async function handleChat(req, res, owner, restId) {
     threadId: conv.engine === 'codex' ? conv.codexThreadId || null : null,
     deepLink: conv.engine === 'codex' ? codexDeepLink(conv.codexThreadId) : null,
     model: assistant.model || null,
-    effort: assistant.codexEffort || null,
+    effort: assistant.codexEffort || assistant.dshEffort || null,
     engine: conv.engine === 'codex' ? 'codex' : 'dsr',
     files: assistant.files,
   })
@@ -2319,6 +2476,22 @@ async function handleApi(req, res, url) {
     })
   }
 
+  if (rest[0] === 'dsh' && rest[1] === 'models' && req.method === 'GET') {
+    const force = url.searchParams.get('refresh') === '1'
+    const catalog = await dshCatalogLive(force)
+    const selection = resolveDshSelection({})
+    return sendJson(res, 200, {
+      groups: catalog.groups || [],
+      failures: catalog.failures || [],
+      default: catalog.default || null,
+      defaultProvider: selection.provider,
+      defaultModel: selection.model,
+      defaultEffort: selection.effort || null,
+      source: catalog.source || 'fallback',
+      native: Boolean(NATIVE_ENABLED) && catalog.source === 'live',
+    })
+  }
+
   if (rest[0] === 'backup' && req.method === 'GET') {
     const projectBackup = projects.export()
     const backup = store.backup(owner)
@@ -2404,6 +2577,11 @@ async function handleApi(req, res, url) {
           })
           conv.codexModel = selection.model
           conv.codexEffort = selection.effort
+          store.touch(conv)
+        } else if (safeDshId(body.dshProvider) && safeDshId(body.dshModel)) {
+          conv.dshProvider = safeDshId(body.dshProvider)
+          conv.dshModel = safeDshId(body.dshModel)
+          conv.dshEffort = safeDshId(body.dshEffort) || null
           store.touch(conv)
         }
         return sendJson(res, 201, { conversation: convSummary(conv) })
@@ -2512,6 +2690,43 @@ async function handleApi(req, res, url) {
           const run = activeRuns.get(conv.id)
           if (run) run.send({ t: 'meta', model: selection.modelName, effort: selection.effortName })
         }
+      }
+      if (
+        conv.engine !== 'codex' &&
+        (body.dshModel !== undefined || body.dshProvider !== undefined || body.dshEffort !== undefined)
+      ) {
+        const wantProvider = body.dshProvider === undefined ? conv.dshProvider : body.dshProvider
+        const wantModel = body.dshModel === undefined ? conv.dshModel : body.dshModel
+        const wantEffort = body.dshEffort === undefined ? conv.dshEffort : body.dshEffort
+        const provider = wantProvider ? safeDshId(wantProvider) : ''
+        const model = wantModel ? safeDshId(wantModel) : ''
+        const effort = wantEffort ? safeDshId(wantEffort) : ''
+        if ((wantProvider || wantModel) && (!provider || !model)) {
+          return sendJson(res, 400, { error: '模型标识不合法' })
+        }
+        if (!provider && !model) {
+          // 跟随桌面端默认模型
+          conv.dshProvider = null
+          conv.dshModel = null
+          conv.dshEffort = null
+        } else {
+          conv.dshProvider = provider
+          conv.dshModel = model
+          conv.dshEffort = effort || null
+        }
+        store.touch(conv)
+        const selection = resolveDshSelection(conv)
+        if (conv.dshSessionId && NATIVE_ENABLED) {
+          void nativeBridge
+            .setModel(conv.dshSessionId, {
+              provider: selection.provider,
+              model: selection.model,
+              ...(selection.effort ? { reasoningEffort: selection.effort } : {}),
+            })
+            .catch(() => {})
+        }
+        const run = activeRuns.get(conv.id)
+        if (run) run.send({ t: 'meta', model: selection.modelName, effort: selection.effortName || null })
       }
       if (typeof body.title === 'string') {
         const title = body.title.replace(/\s+/g, ' ').trim()
@@ -2966,6 +3181,17 @@ server.listen(Number(config.port), config.host, () => {
           ? '  原生桥接   已连接（网页与桌面版共享同一份会话列表）'
           : '  原生桥接   未连接（headless 兜底；安装并重启桌面版后自动连接）',
       )
+      if (!ok) return
+      // Prime the model catalog so conversation summaries and runs resolve a
+      // pinned provider/model before the first /api/dsh/models request.
+      void dshCatalogLive(true).then((catalog) => {
+        const count = (catalog.groups || []).reduce((total, group) => total + (group.models?.length || 0), 0)
+        console.log(
+          catalog.source === 'live'
+            ? `  DSH 模型   已读取桌面目录（${count} 个模型）`
+            : `  DSH 模型   使用本地回退目录（${count} 个模型）`,
+        )
+      })
     })
   }
   if (codexAvailable()) {

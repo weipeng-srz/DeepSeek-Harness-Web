@@ -24,6 +24,7 @@ export function startDshRun({
   sessionId = null,
   cwd,
   permission = 'workspace-write',
+  modelPatch = null,
   timeoutMs = Math.max(1, Number(config.maxRunMinutes) || 30) * 60_000,
   onEvent = () => {},
 }) {
@@ -33,8 +34,12 @@ export function startDshRun({
     'headless',
     '--patch',
     GENERATED_PATCH,
-    '--json',
   ]
+  // Per-run model override: the headless CLI installs the agent-default-model
+  // selection at startup, so a second patch layer switches the model for this
+  // run only — mirroring what the native bridge applies per session.
+  if (modelPatch) args.push('--patch', modelPatch)
+  args.push('--json')
   if (sessionId) args.push('--session-id', sessionId)
   args.push('-')
 

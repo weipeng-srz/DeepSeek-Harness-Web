@@ -531,3 +531,79 @@ body {
   color: #e5484d;
   font-size: 12px;
 }
+
+/* ── 2026 evolution: one reading language with the app ─────────────── */
+
+.share-actions .share-btn {
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 12px;
+}
+
+.share-main {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 30px 22px 64px;
+}
+
+.share-msg {
+  position: relative;
+  padding: 20px 0 22px;
+  border-top: 1px solid var(--border);
+}
+
+.share-msg:first-child {
+  border-top: 0;
+}
+
+.share-msg.user {
+  margin-left: -12px;
+  padding-left: 14px;
+  border-left: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
+  border-radius: 0 10px 10px 0;
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.share-role {
+  margin-bottom: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+}
+
+.share-msg.user .share-role {
+  color: color-mix(in srgb, var(--accent) 78%, var(--text));
+}
+
+.share-text {
+  font-size: 15.5px;
+  line-height: 1.78;
+}
+
+@media (max-width: 640px) {
+  .share-top {
+    height: 58px;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .share-actions .share-btn {
+    padding: 0 12px;
+    font-size: 13px;
+  }
+
+  .share-main {
+    padding: 20px 16px 48px;
+  }
+
+  .share-msg.user {
+    margin-left: -6px;
+    padding-left: 10px;
+  }
+
+  .share-notice {
+    padding: 10px 12px;
+    font-size: 12px;
+  }
+}

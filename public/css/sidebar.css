@@ -1,0 +1,772 @@
+/* ─────────────────────────────────────────────────────────────────────
+   Sidebar v2 — navigation, filters and conversation list in one calmer
+   column.
+
+   Goals
+   • fewer competing boxes: one primary action, one search field, one
+     borderless tool rail, one project filter, one list.
+   • a two-line conversation row (title + time / preview) so scanning is
+     faster and roughly ten conversations fit where six did.
+   • project filtering moved from an overflowing chip rail to a native
+     select, which scales to any number of projects and is keyboard and
+     screen-reader friendly by default.
+   • larger targets on touch, consistent focus rings, sticky date groups.
+
+   Loaded last; selectors are scoped with #sidebar so they beat the
+   accumulated per-feature layers without needing !important.
+   ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  --side-cta: #0071e3;
+  --side-cta-hover: #0077ed;
+  --side-cta-fg: #ffffff;
+  --side-row-hover: color-mix(in srgb, var(--text) 5%, transparent);
+}
+
+:root[data-theme="dark"] {
+  --side-cta: #0a6fe8;
+  --side-cta-hover: #1a7cf0;
+  --side-cta-fg: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --side-cta: #0a6fe8;
+    --side-cta-hover: #1a7cf0;
+    --side-cta-fg: #ffffff;
+  }
+}
+
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-w: 320px;
+  }
+}
+
+@media (min-width: 1024px) and (max-width: 1279px) {
+  :root {
+    --sidebar-w: 304px;
+  }
+}
+
+/* ── frame ──────────────────────────────────────────────────────────── */
+
+#sidebar {
+  padding: calc(12px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom));
+}
+
+@media (max-width: 1023px) {
+  #sidebar {
+    width: min(336px, 90vw);
+    padding: calc(14px + env(safe-area-inset-top)) 14px calc(12px + env(safe-area-inset-bottom));
+  }
+}
+
+/* ── brand + collapse ───────────────────────────────────────────────── */
+
+#sidebar .sidebar-head {
+  height: 40px;
+  margin-bottom: 6px;
+  padding: 0 0 0 4px;
+}
+
+#sidebar .brand {
+  gap: 8px;
+  min-width: 0;
+  font-size: 14.5px;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+
+#sidebar .brand-logo {
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+}
+
+#sidebar .brand-logo svg {
+  width: 22px;
+  height: 22px;
+}
+
+#sidebar .brand-tag {
+  flex: none;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 5px;
+  background: var(--hover);
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+#sidebar .sidebar-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+#sidebar .sidebar-collapse {
+  display: none;
+  width: 34px;
+  height: 34px;
+  min-width: 34px;
+  min-height: 34px;
+  border-radius: 8px;
+  color: var(--text-3);
+  opacity: 0.78;
+}
+
+#sidebar .sidebar-collapse svg {
+  width: 17px;
+  height: 17px;
+}
+
+#sidebar .sidebar-collapse:hover {
+  background: var(--hover);
+  color: var(--text);
+  opacity: 1;
+}
+
+@media (min-width: 1024px) {
+  #sidebar .sidebar-collapse {
+    display: grid;
+  }
+}
+
+/* ── primary action ─────────────────────────────────────────────────── */
+
+#sidebar .new-chat {
+  gap: 9px;
+  height: 44px;
+  margin: 0 0 10px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--side-cta);
+  color: var(--side-cta-fg);
+  font-size: var(--type-copy);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14);
+  transition: background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+#sidebar .new-chat:hover {
+  background: var(--side-cta-hover);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--side-cta) 32%, transparent);
+  transform: none;
+}
+
+#sidebar .new-chat:active {
+  transform: scale(0.995);
+}
+
+#sidebar .new-chat svg {
+  width: 17px;
+  height: 17px;
+  color: currentColor;
+  stroke-width: 2.2;
+}
+
+/* ── search ─────────────────────────────────────────────────────────── */
+
+#sidebar .conv-search {
+  height: 38px;
+  margin: 0 0 12px;
+  padding: 0 8px 0 10px;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--hover);
+  transition: background 0.15s var(--ease), border-color 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+#sidebar .conv-search > svg {
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+}
+
+#sidebar .conv-search input {
+  height: 36px;
+  font-size: var(--type-copy);
+}
+
+#sidebar .conv-search input::placeholder {
+  color: var(--text-3);
+}
+
+#sidebar .conv-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent-blue) 55%, var(--border));
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+/* ── tool rail: 记忆 / 收藏 / 提示词 / 项目 ────────────────────────── */
+
+#sidebar .sidebar-links {
+  position: static;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 2px;
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+#sidebar .sidebar-links::before {
+  content: none;
+}
+
+#sidebar .sidebar-link {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 38px;
+  padding: 0 4px;
+  border-radius: 9px;
+  color: var(--text-2);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 0.12s var(--ease), color 0.12s var(--ease);
+}
+
+#sidebar .sidebar-link:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#sidebar .sidebar-link:active {
+  background: var(--active-bg);
+}
+
+#sidebar .sidebar-link svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  color: var(--text-3);
+}
+
+#sidebar .sidebar-link:hover svg {
+  color: var(--text-2);
+}
+
+#sidebar .sidebar-link > span:not(.sidebar-link-count) {
+  max-width: none;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+#sidebar .sidebar-link-count {
+  position: static;
+  align-self: flex-start;
+  margin: 10px 0 0 -1px;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--text-3);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+}
+
+/* ── project filter ─────────────────────────────────────────────────── */
+
+#sidebar .project-filter {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 34px;
+  margin: 0 0 8px;
+  padding: 0 2px 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-2);
+  transition: border-color 0.15s var(--ease), background 0.15s var(--ease), box-shadow 0.15s var(--ease);
+}
+
+#sidebar .project-filter:hover {
+  background: var(--hover);
+}
+
+#sidebar .project-filter:focus-within {
+  border-color: color-mix(in srgb, var(--accent-blue) 52%, var(--border));
+  background: var(--bg-elevated);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 14%, transparent);
+}
+
+#sidebar .project-filter-icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  color: var(--text-3);
+}
+
+#sidebar #projectSelect {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  outline: none;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  line-height: 32px;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+#sidebar .project-filter-chevron {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-right: 3px;
+  color: var(--text-3);
+  pointer-events: none;
+}
+
+#sidebar .project-filter-add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+
+#sidebar .project-filter-add:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#sidebar .project-filter-add svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* ── list header ────────────────────────────────────────────────────── */
+
+#sidebar .conv-toolbar {
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 28px;
+  margin: 0 0 4px;
+  padding: 0 4px;
+}
+
+#sidebar .conv-heading {
+  color: var(--text-2);
+  font-size: var(--type-meta);
+  font-weight: 650;
+  letter-spacing: 0.03em;
+}
+
+#sidebar .conv-toolbar .conv-result-count {
+  order: 3;
+  flex: 1 0 100%;
+  margin: 2px 0 0;
+  padding: 0;
+  color: var(--text-3);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+  white-space: normal;
+}
+
+#sidebar .conv-toolbar-actions {
+  gap: 2px;
+  margin-left: auto;
+}
+
+#sidebar .sidebar-tool {
+  flex: none;
+  min-width: 0;
+  min-height: 28px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-3);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#sidebar .sidebar-tool:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#sidebar .sidebar-tool.active {
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: var(--accent-blue);
+}
+
+/* ── conversation list ──────────────────────────────────────────────── */
+
+#sidebar .conv-scroll {
+  margin: 0 -2px;
+  padding: 2px 2px 8px;
+  overscroll-behavior: contain;
+}
+
+#sidebar .conv-list {
+  gap: 2px;
+}
+
+#sidebar .conv-group {
+  position: sticky;
+  top: -2px;
+  z-index: 2;
+  margin: 8px 0 2px;
+  padding: 7px 9px 5px;
+  background: var(--sidebar-bg);
+  color: var(--text-3);
+  font-size: var(--type-meta);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+#sidebar .conv-group:first-child {
+  margin-top: 0;
+}
+
+#sidebar .conv-group.pinned {
+  color: var(--accent-blue);
+}
+
+#sidebar .conv-item {
+  gap: 2px;
+  padding: 7px 3px 7px 9px;
+  border-radius: 10px;
+}
+
+#sidebar .conv-item:hover {
+  background: var(--hover);
+}
+
+#sidebar .conv-item.active {
+  background: var(--active-bg);
+}
+
+#sidebar .conv-item.active .conv-title {
+  font-weight: 600;
+}
+
+#sidebar .conv-main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
+  min-width: 0;
+  padding: 0;
+}
+
+#sidebar .conv-title {
+  grid-column: 1;
+  grid-row: 1;
+  display: block;
+  color: var(--text);
+  font-size: var(--type-copy);
+  font-weight: 500;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+}
+
+#sidebar .conv-meta {
+  grid-column: 2;
+  grid-row: 1;
+  max-width: 110px;
+  margin: 0;
+  color: var(--text-3);
+  font-size: 11px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: clip;
+  justify-self: end;
+}
+
+#sidebar .conv-preview,
+#sidebar .conv-snippet {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-3);
+  font-size: calc(var(--type-copy) - 1px);
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+}
+
+#sidebar .conv-preview:empty,
+#sidebar .conv-snippet:empty {
+  display: none;
+}
+
+#sidebar .conv-snippet {
+  gap: 5px;
+}
+
+#sidebar .conv-meta .project-badge {
+  margin: 0 1px 0 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: inherit;
+  vertical-align: 0;
+}
+
+#sidebar .conv-meta .project-badge-text {
+  display: none;
+}
+
+#sidebar .conv-meta .project-badge-emoji {
+  font-size: 11px;
+  line-height: 1;
+}
+
+#sidebar .conv-pin-dot {
+  width: 13px;
+  height: 13px;
+  margin-right: 3px;
+  vertical-align: -1px;
+}
+
+#sidebar .conv-unread {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+#sidebar .conv-more {
+  position: static;
+  flex: none;
+  align-self: center;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--text-3);
+  opacity: 0;
+  transition: opacity 0.14s var(--ease), background 0.14s var(--ease), color 0.14s var(--ease);
+}
+
+#sidebar .conv-more svg {
+  width: 16px;
+  height: 16px;
+}
+
+#sidebar .conv-item:hover .conv-more,
+#sidebar .conv-item.active .conv-more,
+#sidebar .conv-item:focus-within .conv-more,
+#sidebar .conv-more:focus-visible {
+  opacity: 1;
+}
+
+#sidebar .conv-more:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#sidebar .conv-item.selecting .conv-main {
+  padding-left: 34px;
+}
+
+#sidebar .conv-item.selecting .conv-more {
+  display: none;
+}
+
+#sidebar .conv-empty {
+  margin: 28px 12px;
+  color: var(--text-3);
+  font-size: var(--type-copy);
+  line-height: 1.6;
+}
+
+#sidebar .conv-load-more {
+  width: calc(100% - 4px);
+  min-height: 38px;
+  margin: 10px 2px 6px;
+  border-radius: 10px;
+  font-size: var(--type-meta);
+}
+
+/* ── footer: one compact status row, no secondary box ──────────────── */
+
+#sidebar .sidebar-foot {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 8px 2px 0;
+  border-top: 1px solid var(--border);
+}
+
+#sidebar .model-chip {
+  width: 100%;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 6px;
+  gap: 7px;
+  border-radius: 8px;
+  color: var(--text-2);
+  font-size: 11.5px;
+}
+
+#sidebar .model-chip:hover {
+  background: var(--hover);
+}
+
+#sidebar #modelName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#sidebar .model-chip-chevron {
+  flex: none;
+  width: 13px;
+  height: 13px;
+  margin-left: auto;
+  color: var(--text-3);
+  opacity: 0.72;
+}
+
+#sidebar .foot-actions {
+  width: 100%;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+
+#sidebar .foot-actions .icon-btn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 10px;
+  color: var(--text-3);
+}
+
+#sidebar .foot-actions .icon-btn:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#sidebar .foot-actions svg {
+  width: 18px;
+  height: 18px;
+}
+
+#sidebar #logoutBtn {
+  margin-left: 0;
+  box-shadow: none;
+}
+
+#sidebar .foot-label {
+  display: none;
+}
+
+/* ── touch: comfortable targets without changing the visual language ── */
+
+@media (pointer: coarse) {
+  #sidebar .new-chat {
+    height: 48px;
+  }
+
+  #sidebar .conv-search {
+    height: 44px;
+  }
+
+  #sidebar .conv-search input {
+    height: 42px;
+  }
+
+  #sidebar .sidebar-link {
+    min-height: 44px;
+  }
+
+  #sidebar .project-filter {
+    height: 44px;
+  }
+
+  #sidebar #projectSelect {
+    height: 42px;
+    line-height: 42px;
+  }
+
+  #sidebar .project-filter-add {
+    width: 36px;
+    height: 36px;
+  }
+
+  #sidebar .conv-item {
+    padding-top: 9px;
+    padding-bottom: 9px;
+  }
+
+  #sidebar .conv-more {
+    width: 32px;
+    height: 32px;
+    opacity: 0.66;
+  }
+
+  #sidebar .conv-toolbar .sidebar-tool {
+    min-height: 36px;
+    padding: 0 9px;
+  }
+
+  #sidebar .conv-load-more {
+    min-height: 44px;
+  }
+
+  #sidebar .foot-actions .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+/* Keep the text-size preference honest for the denser list. */
+body.text-large #sidebar .sidebar-link,
+body.text-large #sidebar .sidebar-tool,
+body.text-large #sidebar #projectSelect {
+  font-size: var(--type-copy);
+}
+
+body.text-large #sidebar .conv-meta,
+body.text-large #sidebar .conv-group {
+  font-size: var(--type-meta);
+}

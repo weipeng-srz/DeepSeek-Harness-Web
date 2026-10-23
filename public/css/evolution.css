@@ -1,0 +1,1260 @@
+/* ─────────────────────────────────────────────────────────────────────
+   DSH Chat · evolution layer
+   Round 1: visual system & first-screen order.
+
+   Loaded last. It does not introduce new features; it turns the accumulated
+   per-feature overrides back into one readable scale and fixes measured
+   layout defects (first-screen fold, mobile composer width, touch targets,
+   settings footer, small metadata type).
+   ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* type scale — five readable steps instead of 16 near-identical sizes */
+  --type-display: clamp(40px, 4.2vw, 52px);
+  --type-title: 20px;
+  --type-heading: 16px;
+  --type-body: 15.5px;
+  --type-copy: 13.5px;
+  --type-meta: 12px;
+  --type-micro: 11px;
+
+  /* spacing / shape */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 24px;
+
+  /* one focus language */
+  --ring-color: color-mix(in srgb, var(--accent-blue) 72%, transparent);
+  --ring-soft: 0 0 0 3px color-mix(in srgb, var(--accent-blue) 22%, transparent);
+  --ring-strong: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--accent-blue);
+
+  /* one sidebar width for layout, transform and every floating rail */
+  --sidebar-w: 290px;
+
+  /* a clear three-step text hierarchy (all still ≥4.5:1 on the surfaces) */
+  --text-2: #4f4f55;
+  --text-3: #6a6a70;
+}
+
+:root[data-theme="dark"] {
+  --text-2: #c6c6cc;
+  --text-3: #9b9ba1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --text-2: #c6c6cc;
+    --text-3: #9b9ba1;
+  }
+}
+
+/* The reading-size preference must move every step, not only the 20
+   selectors listed in projects.css. Variables inherit from body. */
+body.text-large {
+  --type-body: 16px;
+  --type-copy: 14.5px;
+  --type-meta: 13px;
+  --type-micro: 12.5px;
+}
+
+body.text-large .scenario-desc,
+body.text-large .settings-desc,
+body.text-large .settings-foot,
+body.text-large .settings-storage summary,
+body.text-large .settings-storage-info,
+body.text-large .archive-row-meta,
+body.text-large .bookmark-meta,
+body.text-large .memory-privacy,
+body.text-large .find-count,
+body.text-large .conv-result-count {
+  font-size: var(--type-copy);
+}
+
+/* ── 1 · metadata type: no more 9.5 / 10 / 10.5px body text ─────────── */
+
+html body .conv-meta,
+html body .conv-group,
+html body .conv-heading,
+html body .project-badge-text,
+html body .conv-snippet .conv-hit,
+html body .scenario-need,
+html body .tool-badge,
+html body .tool-label,
+html body .msg-sources-label,
+html body .msg-sources a,
+html body .msg-time,
+html body .msg-meta,
+html body .msg-usage-btn,
+html body .engine-label,
+html body .engine-hint,
+html body .scenario-note,
+html body .foot-label,
+html body .palette-group,
+html body .shortcut-group,
+html body .memory-source,
+html body .settings-sync-state,
+html body .connection-note,
+html body .brand-tag,
+html body .topbar-sub,
+html body .composer-hint,
+html body .char-count,
+html body .sheet-count {
+  font-size: var(--type-meta);
+  line-height: 1.45;
+  letter-spacing: 0;
+}
+
+html body .scenario-desc,
+html body .settings-foot,
+html body .settings-storage summary,
+html body .settings-storage-info,
+html body .audit-list,
+html body .archive-row-meta,
+html body .bookmark-meta,
+html body .memory-privacy,
+html body .chat-info-hint,
+html body .find-count,
+html body .conv-result-count {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+html body .sidebar-tool,
+html body .settings-label + .settings-desc,
+html body .settings-desc {
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+/* Keep the badge readable without making the tool row taller than 44px. */
+html body .tool-badge {
+  min-height: 22px;
+  padding: 0 8px;
+}
+
+html body .sidebar-links {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 17px;
+  padding: 4px;
+  gap: 3px;
+  border: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-2) 62%, transparent);
+}
+
+html body .sidebar-links::before {
+  content: "资料";
+  position: absolute;
+  top: -15px;
+  left: 4px;
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* Four equal tabs, icon over label: the count badge no longer competes with
+   the label for width, so 「提示词」 cannot be squeezed into two lines. */
+html body .sidebar-link {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 6px 2px 5px;
+  line-height: 1.15;
+  white-space: nowrap;
+  border-radius: 10px;
+}
+
+html body .sidebar-link svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+html body .sidebar-link > span:not(.sidebar-link-count) {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html body .sidebar-link-count {
+  position: absolute;
+  top: 3px;
+  right: 5px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+}
+
+html body .sidebar-foot {
+  gap: 2px;
+  padding: 6px 2px 2px;
+}
+
+html body .model-chip {
+  min-height: 30px;
+}
+
+html body .foot-actions {
+  padding: 2px;
+  min-height: 44px;
+}
+
+html body .sidebar-link span {
+  white-space: nowrap;
+}
+
+/* ── 2 · one sidebar width; no 8px sliver when collapsed ───────────── */
+
+@media (min-width: 1024px) {
+  .sidebar {
+    width: var(--sidebar-w);
+  }
+  body.sidebar-collapsed .sidebar {
+    margin-left: calc(-1 * var(--sidebar-w));
+  }
+  body.sidebar-collapsed .main {
+    margin-left: 0;
+  }
+}
+
+/* ── 3 · first screen: all five entries above the composer at 1440×900 ─ */
+
+@media (min-width: 1024px) and (min-height: 720px) {
+  #emptyState.empty {
+    justify-content: flex-start;
+    padding-top: 10px;
+    padding-bottom: 8px;
+  }
+
+  .hero {
+    padding-top: 2px;
+  }
+
+  .hero-orb {
+    width: 46px;
+    height: 46px;
+    margin-bottom: 10px;
+  }
+
+  .hero-orb-inner {
+    inset: 12px;
+  }
+
+  .hero h1 {
+    margin-top: 10px;
+    font-size: var(--type-display);
+    line-height: 1.06;
+    letter-spacing: -0.05em;
+  }
+
+  .hero .empty-sub {
+    margin-top: 10px;
+    font-size: 15.5px;
+    line-height: 1.5;
+  }
+
+  .hero-actions {
+    margin-top: 10px;
+  }
+
+  .scenario-grid {
+    margin-top: 16px;
+    gap: 10px;
+  }
+
+  .scenario-card {
+    padding: 14px;
+    border-radius: 18px;
+  }
+
+  .scenario-card.featured {
+    min-height: 142px;
+    padding: 15px 18px;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 156px);
+  }
+
+  .scenario-card:not(.featured) {
+    min-height: 118px;
+  }
+
+  .scenario-copy {
+    padding-top: 10px;
+    gap: 3px;
+  }
+
+  .scenario-card.featured .scenario-copy {
+    padding-top: 10px;
+  }
+
+  .scenario-card:not(.featured) .scenario-art {
+    width: 70px;
+    height: 44px;
+    opacity: 0.3;
+  }
+
+  .scenario-card.featured .scenario-art {
+    min-height: 88px;
+  }
+
+  .scenario-title {
+    font-size: 14.5px;
+  }
+
+  .scenario-card.featured .scenario-title {
+    font-size: 19px;
+  }
+
+  .scenario-card.featured .scenario-desc {
+    font-size: 12.5px;
+  }
+
+  .scenario-note {
+    margin-top: 7px;
+  }
+
+  /* At this height the topbar already carries the project name; the
+     extra project strip would sit under the composer. */
+  .empty-project {
+    margin-top: 9px;
+  }
+
+  .empty-hint {
+    margin-top: 8px;
+  }
+}
+
+/* A very short desktop window gets the reading area first. */
+@media (min-width: 1024px) and (max-height: 760px) {
+  .scenario-note,
+  #emptyState .empty-project {
+    display: none;
+  }
+  .hero-orb {
+    width: 40px;
+    height: 40px;
+  }
+  .hero h1 {
+    margin-top: 6px;
+  }
+}
+
+/* Centering an over-tall empty state clips its top (320×640). Start at the
+   top instead; the page can scroll, but the first impression is intact. */
+@media (max-width: 1023px) {
+  #emptyState.empty {
+    justify-content: flex-start;
+  }
+}
+
+/* ── 4 · mobile composer: give the text back to the input ──────────── */
+
+@media (max-width: 640px) {
+  .composer-row {
+    padding: 4px;
+    gap: 2px;
+  }
+
+  .composer-tool,
+  .send-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+  }
+
+  /* The permission level is still one tap away, but the label moves to
+     the aria-label / title; the shield and its tone carry the state. */
+  #permissionBtn {
+    width: auto;
+    min-width: 62px;
+    padding: 0 8px;
+  }
+
+  #permissionBtn #permissionLabel {
+    display: inline;
+  }
+
+  #permissionBtn[data-tone="danger"] {
+    background: color-mix(in srgb, var(--danger) 16%, transparent);
+    border-color: color-mix(in srgb, var(--danger) 48%, transparent);
+  }
+
+  #permissionBtn[data-tone="safe"] {
+    background: color-mix(in srgb, var(--success) 12%, transparent);
+    border-color: color-mix(in srgb, var(--success) 40%, transparent);
+  }
+
+  #micBtn {
+    display: none;
+  }
+
+  #input {
+    min-width: 0;
+    max-height: 96px;
+    overflow-y: auto;
+  }
+
+  .composer-wrap {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .files-bar {
+    margin-bottom: 4px;
+  }
+
+  .engine-bar {
+    min-height: 32px;
+    margin-bottom: 4px;
+  }
+}
+
+/* 320px: two rows. The textarea gets the full width; tools move below. */
+@media (max-width: 360px) {
+  /* The engine switch is a desktop/tablet control; at 320 it costs 50px of
+     reading area. It remains available from 361px up and via the command
+     palette / chat info on the narrowest screens. */
+  #engineBar {
+    display: none;
+  }
+
+  .composer-wrap {
+    padding-bottom: 3px;
+  }
+
+  .composer-row {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+
+  #input {
+    order: -1;
+    flex: 1 1 100%;
+    width: 100%;
+    min-height: 44px;
+  }
+
+  #uploadBtn {
+    order: 1;
+  }
+
+  #permissionBtn {
+    order: 2;
+    width: auto;
+    min-width: 68px;
+    padding: 0 10px;
+  }
+
+  #permissionBtn #permissionLabel {
+    display: inline;
+  }
+
+  #sendBtn {
+    order: 3;
+    margin-left: auto;
+  }
+}
+
+/* ── 5 · thumb-sized controls on touch / narrow screens ────────────── */
+
+@media (pointer: coarse), (max-width: 1023px) {
+  html body .sidebar-link {
+    min-height: 54px;
+  }
+
+  html body .model-chip {
+    min-height: 44px;
+  }
+
+  .conv-search {
+    min-height: 44px;
+  }
+
+  .conv-search input {
+    min-height: 44px;
+  }
+
+  .sidebar-tool {
+    min-height: 36px;
+    padding: 0 10px;
+  }
+
+  .conv-toolbar .sidebar-tool {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 9px;
+    font-size: 12px;
+  }
+
+  .project-chip {
+    height: 44px;
+  }
+
+  .settings-actions button {
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 44px;
+    white-space: nowrap;
+  }
+
+  .model-chip {
+    min-height: 44px;
+  }
+
+  .foot-actions .icon-btn {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-actions .icon-btn,
+  .topbar > #menuBtn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* With three right-hand actions, centering across the whole bar would
+     overlap them at 320. Let the title own the middle grid column. */
+  .topbar-title {
+    position: static !important;
+    left: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 44px !important;
+    height: 44px;
+    transform: none !important;
+  }
+
+  .topbar-actions {
+    background: color-mix(in srgb, var(--bg) 92%, transparent);
+  }
+
+  .sidebar-tool {
+    min-height: 44px;
+  }
+
+  .conv-toolbar {
+    min-height: 44px;
+  }
+
+  .conv-toolbar-actions {
+    gap: 2px;
+  }
+
+  .conv-search {
+    margin-top: 2px;
+  }
+
+  .scenario-need {
+    font-size: 11.5px;
+  }
+
+  .scenario-desc {
+    font-size: 12px;
+  }
+
+  .scenario-card:not(.featured) {
+    min-height: 88px;
+  }
+}
+
+/* ── 6 · settings: the footer must not eat the switches ────────────── */
+
+.settings-footwrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 12px;
+  max-height: 38vh;
+  padding: 8px 2px calc(10px + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.settings-foot {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 11.5px;
+}
+
+.settings-storage {
+  flex: 0 0 auto;
+  margin-top: 0;
+}
+
+.settings-storage summary {
+  min-height: 32px;
+}
+
+.settings-storage-info {
+  flex: 1 1 100%;
+  margin-left: 0;
+}
+
+.settings-body {
+  padding-bottom: 16px;
+}
+
+#permissionBtn {
+  font-weight: 600;
+}
+
+#permissionBtn[data-tone="standard"] {
+  background: var(--surface-2);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+#permissionBtn[data-tone="danger"] {
+  color: var(--danger);
+}
+
+/* Small accent text on the light surface needs a darker blue than links. */
+html body .memory-source.auto {
+  color: #0062c4;
+}
+
+:root[data-theme="dark"] .memory-source.auto {
+  color: #7cbcff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .memory-source.auto {
+    color: #7cbcff;
+  }
+}
+
+/* Long sheet lists end above the home indicator instead of under it. */
+.sheet-panel:not(.settings-panel) {
+  padding-bottom: calc(4px + env(safe-area-inset-bottom));
+}
+
+.archive-list,
+.projects-list,
+.bookmark-list,
+.prompt-list,
+.memory-list,
+.file-list,
+.share-sheet-body,
+.shortcuts-list {
+  padding-bottom: 14px;
+}
+
+@media (max-width: 360px) {
+  #engineInfoBtn {
+    display: none;
+  }
+}
+
+/* Destructive actions must not look like restore/open. */
+html body .archive-actions {
+  gap: 8px;
+}
+
+html body .archive-actions button.danger {
+  border-color: color-mix(in srgb, var(--danger) 34%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+}
+
+html body .archive-actions button.danger:hover {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 52%, var(--border));
+}
+
+/* Project filter rail: only the filters scroll; the new-project action stays
+   outside the rail so it can never cover the active chip. */
+html body .project-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 0 8px;
+}
+
+html body .project-bar[hidden] {
+  display: none;
+}
+
+html body .project-chips {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px;
+  scroll-padding-right: 4px;
+  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 14px), transparent 100%);
+}
+
+html body .project-chip {
+  max-width: 160px;
+}
+
+html body .project-chip > span:not(.project-chip-emoji):not(.project-chip-count) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html body .project-add-chip {
+  position: static;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px dashed color-mix(in srgb, var(--border-strong) 72%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  box-shadow: none;
+}
+
+html body .project-add-chip:hover {
+  border-color: color-mix(in srgb, var(--text-3) 48%, var(--border));
+  background: var(--hover);
+  color: var(--text);
+}
+
+html body .project-add-chip svg {
+  width: 16px;
+  height: 16px;
+}
+
+@media (pointer: coarse), (max-width: 1023px) {
+  html body .project-add-chip {
+    width: 44px;
+    height: 44px;
+  }
+}
+
+html body .project-chip.active {
+  outline: 2px solid color-mix(in srgb, var(--accent-blue) 58%, transparent);
+  outline-offset: 1px;
+}
+
+/* Softer, theme-aware search hit instead of a solid yellow block. */
+html body .conv-title mark,
+html body .conv-snippet mark,
+html body .quick-item mark {
+  padding: 0 2px;
+  border-radius: 4px;
+  background: color-mix(in srgb, #ffd60a 52%, transparent);
+  color: inherit;
+}
+
+:root[data-theme="dark"] .conv-title mark,
+:root[data-theme="dark"] .conv-snippet mark,
+:root[data-theme="dark"] .quick-item mark {
+  background: color-mix(in srgb, #ffd60a 26%, transparent);
+  color: var(--text);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .conv-title mark,
+  :root:not([data-theme="light"]) .conv-snippet mark,
+  :root:not([data-theme="light"]) .quick-item mark {
+    background: color-mix(in srgb, #ffd60a 26%, transparent);
+    color: var(--text);
+  }
+}
+
+/* iOS zooms any focused input below 16px. */
+@media (max-width: 1023px) {
+  #convSearch {
+    font-size: 16px;
+  }
+}
+
+/* Current project marker in the project sheet. */
+html body .project-current {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  color: color-mix(in srgb, var(--accent-blue) 78%, var(--text));
+  font-size: 11px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+
+/* Group the four footer preferences and separate logout. */
+html body .foot-actions {
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 55%, transparent);
+}
+
+html body #logoutBtn {
+  margin-left: 4px;
+  box-shadow: inset 1px 0 0 color-mix(in srgb, var(--border) 80%, transparent);
+}
+
+/* ── 7 · visible close affordance on the command palette ───────────── */
+
+.palette-card {
+  position: relative;
+}
+
+.palette-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 3;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.palette-close:hover,
+.palette-close:focus-visible {
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+  color: var(--text);
+}
+
+.palette-close svg {
+  width: 18px;
+  height: 18px;
+}
+
+.palette-search {
+  padding-right: 54px;
+}
+
+.palette-foot {
+  font-size: var(--type-meta);
+}
+
+/* ── 8 · focus language: input / search / chips ───────────────────── */
+
+html body .composer-inner:focus-within {
+  border-color: color-mix(in srgb, var(--accent-blue) 72%, var(--border));
+  box-shadow: var(--ring-soft), inset 0 1px 0 color-mix(in srgb, #ffffff 8%, transparent);
+}
+
+html body .conv-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent-blue) 68%, var(--border));
+  box-shadow: var(--ring-soft);
+}
+
+html body .topbar-title:focus-visible,
+html body .palette-close:focus-visible,
+html body .sidebar-link:focus-visible,
+html body .sidebar-tool:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+/* ── 9 · primary / secondary CTA hierarchy on the welcome screen ───── */
+
+.hero-link {
+  color: var(--text);
+  font-weight: 650;
+}
+
+.hero-link.muted {
+  color: var(--text-3);
+  font-weight: 550;
+}
+
+.hero-link.muted:hover {
+  color: var(--text-2);
+}
+
+/* ── 10 · motion: one quiet entrance, no 1s stagger ────────────────── */
+
+.hero-orb {
+  animation: none !important;
+}
+
+.scenario-card {
+  animation-delay: 0ms !important;
+  animation-duration: 240ms !important;
+}
+
+.empty-eyebrow,
+.hero h1,
+.hero .empty-sub,
+.hero-actions {
+  animation-duration: 220ms !important;
+}
+
+@media (max-width: 720px) {
+  .scenario-card,
+  .hero-orb,
+  .empty-eyebrow,
+  .hero h1,
+  .hero .empty-sub,
+  .hero-actions {
+    animation: none !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scenario-card,
+  .hero-orb,
+  .empty-eyebrow,
+  .hero h1,
+  .hero .empty-sub,
+  .hero-actions {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+body.sidebar-open .scroll-bottom,
+body.sheet-open .scroll-bottom {
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ── 11 · floating back-to-bottom clears the last interactive row ──── */
+
+.scroll-bottom {
+  bottom: calc(100% + 60px);
+}
+
+.thread {
+  scroll-padding-bottom: 72px;
+}
+
+/* ── 12 · topbar remains readable when content scrolls under it ─────── */
+
+/* The chat header no longer carries a conversation title: the active row in
+   the sidebar already names it, and 会话信息 keeps the full title, model,
+   permission and context one tap away. Hiding the button also keeps the
+   topbarName/topbarSub nodes the rest of the app reads from. */
+html body .topbar-title {
+  display: none !important;
+}
+
+@media (max-width: 1023px) {
+  .topbar {
+    background: color-mix(in srgb, var(--bg) 94%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--border) 82%, transparent);
+  }
+}
+
+/* Phones: the topbar is the floating overlay defined in visual.css §21 —
+   transparent, fixed, and only the controls take pointer events. The scroll
+   area keeps its measured clearance, so the first message still clears the
+   controls while reading content can run under them to the very top edge.
+   The rules below only tune the sheets/thread in that same breakpoint. */
+@media (max-width: 640px) {
+  .settings-footwrap {
+    max-height: 96px;
+  }
+
+  .settings-body {
+    padding-bottom: 28px;
+  }
+
+  .thread {
+    padding-bottom: 18px !important;
+  }
+
+  .settings-row {
+    scroll-margin-bottom: 28px;
+  }
+}
+
+/* ── 12a · stored tool runs collapse into one row ─────────────────── */
+
+html body .tool-group {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--border) 86%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-2) 34%, transparent);
+}
+
+html body .tool-group-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 13px;
+  color: var(--text-2);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+html body .tool-group-summary::-webkit-details-marker {
+  display: none;
+}
+
+html body .tool-group-summary::before {
+  content: "▸";
+  margin-right: 8px;
+  color: var(--text-3);
+  font-size: 11px;
+  transition: transform 0.15s var(--ease);
+}
+
+html body .tool-group[open] .tool-group-summary::before {
+  transform: rotate(90deg);
+}
+
+html body .tool-group-label {
+  flex: 1;
+}
+
+html body .tool-group-meta {
+  color: var(--text-3);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+
+html body .tool-group[data-failed="true"] .tool-group-meta {
+  color: var(--danger);
+}
+
+html body .tool-group-body .tool-card {
+  margin: 0;
+  border: 0;
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 0;
+  background: transparent;
+}
+
+html body .tool-group-body .tool-card:first-child {
+  border-top: 0;
+}
+
+/* Reading: code, tables and diff follow the user's reading scale. */
+html body .md table {
+  font-size: calc(13.5px * var(--reading-scale));
+  font-variant-numeric: tabular-nums;
+}
+
+html body .md code,
+html body .code-block pre,
+html body .md pre {
+  font-size: calc(12.8px * var(--reading-scale));
+}
+
+html body .diff-code {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+html body .tool-diff {
+  overflow-x: auto;
+}
+
+/* On phones, keep the primary message actions and leave the secondary ones
+   to desktop / the command palette. */
+@media (max-width: 640px) {
+  .tool-group-summary,
+  .tool-head {
+    padding-right: 58px;
+  }
+
+  .msg.assistant .msg-actions [aria-label="编辑回答文字"],
+  .msg.assistant .msg-actions [aria-label="导出这条回答"],
+  .msg.assistant .msg-actions [aria-label="复制这条消息的链接"],
+  .msg.assistant .msg-actions .msg-usage-btn,
+  .msg.assistant .msg-actions [aria-label="收藏这条回答"] {
+    display: none;
+  }
+}
+
+/* Printing: default is the answer, not the execution log. */
+@media print {
+  body:not(.print-full) .tool-card,
+  body:not(.print-full) .tool-group,
+  body:not(.print-full) .think,
+  body:not(.print-full) .msg-actions {
+    display: none !important;
+  }
+}
+
+/* ── 12b · tool status: one glance, four distinct states ───────────── */
+
+html body .tool-card[data-status="running"] .tool-badge {
+  background: color-mix(in srgb, var(--accent-blue) 14%, transparent);
+  color: color-mix(in srgb, var(--accent-blue) 82%, var(--text));
+  animation: none;
+}
+
+html body .tool-card[data-status="done"] .tool-badge,
+html body .tool-card[data-status="success"] .tool-badge {
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: color-mix(in srgb, var(--success) 72%, var(--text));
+}
+
+html body .tool-card[data-status="error"] .tool-badge,
+html body .tool-card[data-status="failed"] .tool-badge {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+html body .tool-card[data-status="interrupted"] .tool-badge,
+html body .tool-card[data-status="stopped"] .tool-badge {
+  background: color-mix(in srgb, #b26a00 14%, transparent);
+  color: color-mix(in srgb, #b26a00 82%, var(--text));
+}
+
+:root[data-theme="dark"] .tool-card[data-status="done"] .tool-badge,
+:root[data-theme="dark"] .tool-card[data-status="success"] .tool-badge {
+  color: #9af0b8;
+}
+
+:root[data-theme="dark"] .tool-card[data-status="running"] .tool-badge {
+  color: #9fd0ff;
+}
+
+:root[data-theme="dark"] .tool-card[data-status="interrupted"] .tool-badge,
+:root[data-theme="dark"] .tool-card[data-status="stopped"] .tool-badge {
+  color: #ffcf8a;
+}
+
+/* Inputs need their own visible focus, not only the parent capsule. */
+html body #input:focus-visible,
+html body #convSearch:focus-visible,
+html body .settings-input:focus-visible,
+html body #sharePassword:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--accent-blue);
+}
+
+html body .reconnect-bar {
+  pointer-events: auto;
+}
+
+html body .reconnect-retry {
+  pointer-events: auto;
+}
+
+html body .skip-link:focus,
+html body .skip-link:focus-visible {
+  top: 8px;
+}
+
+@media (max-width: 640px) {
+  #engineInfoBtn {
+    display: none;
+  }
+
+  /* Keep a compact conversation title while scrolling; hiding the only
+     context indicator made the page feel anonymous. */
+  .topbar.is-scrolled .topbar-title {
+    opacity: 0.94;
+    transform: none !important;
+    pointer-events: auto !important;
+  }
+
+  .topbar.is-scrolled .topbar-sub {
+    display: none;
+  }
+
+  .topbar.is-scrolled .topbar-name {
+    font-size: 13.5px;
+  }
+}
+
+/* ── 13 · reading scale must also move headings ───────────────────── */
+
+.md h1 {
+  font-size: calc(21px * var(--reading-scale));
+}
+
+.md h2 {
+  font-size: calc(19px * var(--reading-scale));
+}
+
+.md h3 {
+  font-size: calc(17px * var(--reading-scale));
+}
+
+.md h4 {
+  font-size: calc(16px * var(--reading-scale));
+}
+
+/* ── 14 · forced-colors: gradient text must not disappear ─────────── */
+
+@media (forced-colors: active) {
+  .hero-gradient {
+    background: none !important;
+    -webkit-background-clip: border-box !important;
+    background-clip: border-box !important;
+    color: CanvasText !important;
+  }
+}
+
+/* ── 15 · share page: one visual language, not a second product ─────── */
+
+.share-page,
+.share-shell {
+  --share-measure: 720px;
+}
+
+/* Final cascade guard: the settings footer must stay compact on phones even
+   though the base rule later declares 38vh. */
+@media (max-width: 640px) {
+  .settings-footwrap {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 10px;
+    max-height: none;
+    overflow: visible;
+  }
+
+  .settings-foot,
+  .settings-storage-info {
+    grid-column: 1 / -1;
+  }
+}
+
+/* At 320 the helper/char row is the last 18px of reading area; the count is
+   still available at 361px and above. */
+@media (max-width: 360px) {
+  .composer-foot {
+    display: none;
+  }
+}
+
+/* Final cascade guard: keep the last 58px of a tool row free for the
+   floating back-to-bottom control on phones. */
+@media (max-width: 640px) {
+  html body .tool-group-summary,
+  html body .tool-head {
+    padding-right: 58px;
+  }
+}

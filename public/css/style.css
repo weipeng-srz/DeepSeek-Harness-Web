@@ -179,10 +179,20 @@ svg {
 
 /* ── layout ─────────────────────────────────────────────────────────── */
 
+/* iOS 主屏 PWA（viewport-fit=cover + black-translucent）：布局视口覆盖状态栏
+   和底部手势区，.shell 铺满整屏；贴边的界面各自用 env(safe-area-inset-*)
+   让出刘海/Home 指示条（.topbar、.sidebar、.composer-wrap、.sheet-panel）。 */
+html,
+body {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
 .shell {
   display: flex;
   height: 100vh;
   height: 100dvh;
+  min-height: 100dvh;
   overflow: hidden;
 }
 

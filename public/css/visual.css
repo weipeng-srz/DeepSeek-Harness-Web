@@ -1856,46 +1856,56 @@
    21 · phone chat layout (≤ 640px only)
    只作用于手机宽度；桌面与平板（> 640px）的几何完全不变。
 
-   01 侧边栏入口收成一颗小圆按钮，不再是整块 44px 的空心点击区。
+   01 顶栏改成悬浮控件：去掉横幅底色、模糊与分隔线，正文可以贴到屏幕顶端。
    02 右上「新对话 + 场景菜单」合并成一颗小胶囊，两个图标共用一枚外壳。
    03 输入框贴着屏幕底部，去掉手机上没用的键盘快捷键提示。
    04 省下来的高度全部让给对话正文：更窄的页边、更紧凑的间距。
    ───────────────────────────────────────────────────────────────────── */
 
-@media (max-width: 640px) {
+@media screen and (max-width: 640px) {
   :root {
-    --topbar-h-phone: 50px;
+    /* 只用来对齐标题与浮层基准线，不再当作固定的顶栏高度 */
+    --topbar-h-phone: 60px;
     --page-gutter: 10px;
   }
 
-  /* ── 01 · 顶栏改成悬浮控件，不再是一条横幅 ────────────────────── */
+  /* ── 01 · 顶栏改成固定在视口顶部的悬浮控件 ────────────────────── */
 
   .topbar {
-    position: absolute !important;
+    position: fixed !important;
     inset: 0 0 auto 0 !important;
     z-index: 30;
     grid-template-columns: 40px minmax(0, 1fr) auto !important;
     gap: 8px;
-    height: calc(var(--topbar-h-phone) + env(safe-area-inset-top)) !important;
-    padding: env(safe-area-inset-top) 10px 0 !important;
+    /* 高度随内容走，不写死；只在刘海/灵动岛下方留 10px 呼吸位 */
+    height: auto !important;
+    padding: calc(env(safe-area-inset-top) + 10px) 10px 6px !important;
     background: transparent !important;
     border-bottom: 0 !important;
     box-shadow: none !important;
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
+    /* 让出整条顶带：从最上方开始滑动也能滚正文，只有控件本身接手势 */
+    pointer-events: none !important;
   }
 
-  /* 正文从屏幕顶端开始排版；控件浮在上方，第一行仍然完整可见 */
+  .topbar > * {
+    pointer-events: auto;
+  }
+
+  /* 首条消息要让开悬浮控件：高度由 JS 量出顶栏实际高度写入 --topbar-clearance，
+     不写死；这段内边距在滚动容器里，滚动时会一起移出，仍然是全屏阅读。 */
   .scroll-area {
-    padding-top: calc(54px + env(safe-area-inset-top)) !important;
+    padding-top: var(--topbar-clearance, calc(env(safe-area-inset-top) + 56px)) !important;
   }
 
   .thread {
     padding-top: 10px !important;
   }
 
+  /* 阅读进度贴到屏幕最顶沿，避免在悬浮控件下沿再留一条“横幅边” */
   .read-progress {
-    top: calc(env(safe-area-inset-top) + 50px) !important;
+    top: env(safe-area-inset-top) !important;
   }
 
   /* 往下读的时候标题让位，顶部只剩两颗小控件 */
@@ -1977,12 +1987,23 @@
   /* 标题留在正中间，同时和左右两颗控件都留出呼吸位 */
   .topbar-title {
     max-width: calc(100% - 204px) !important;
-    min-height: 40px !important;
-    padding: 2px 14px 2px 4px !important;
+    min-height: 36px !important;
+    height: 36px;
+    padding: 0 15px !important;
+    border: 1px solid color-mix(in srgb, var(--border-strong) 45%, transparent);
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--surface-2) 86%, transparent);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  }
+
+  .topbar-title::after {
+    right: 8px;
   }
 
   .topbar-name {
-    font-size: 14.5px;
+    font-size: 14px;
   }
 
   /* ── 03 · 输入框尽量贴近页面底部 ──────────────────────────────── */
@@ -2051,7 +2072,7 @@
 }
 
 /* 不支持实时模糊 / 降低透明度时，胶囊退化为实色，避免出现半透明脏块 */
-@media (max-width: 640px) and (prefers-reduced-transparency: reduce) {
+@media screen and (max-width: 640px) and (prefers-reduced-transparency: reduce) {
   .topbar-actions {
     background: var(--surface-2);
     -webkit-backdrop-filter: none;
@@ -2060,7 +2081,7 @@
 }
 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  @media (max-width: 640px) {
+  @media screen and (max-width: 640px) {
     .topbar-actions {
       background: var(--surface-2);
     }

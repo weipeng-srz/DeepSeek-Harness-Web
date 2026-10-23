@@ -3,6 +3,10 @@
   'use strict'
 
   const $ = (sel, root = document) => root.querySelector(sel)
+
+  // The app owns scroll restoration; the browser's heuristic jumps to the
+  // previous conversation's offset when a new empty chat is opened.
+  try { if ('scrollRestoration' in history) history.scrollRestoration = 'manual' } catch {}
   const icon = (id, cls = '') =>
     `<svg class="${cls}" aria-hidden="true"><use href="#${id}"></use></svg>`
 
@@ -24,6 +28,7 @@
     shell: $('#shell'),
     sidebar: $('#sidebar'),
     sidebarClose: $('#sidebarClose'),
+    sidebarCollapse: $('#sidebarCollapse'),
     scrim: $('#scrim'),
     menuBtn: $('#menuBtn'),
     newChat: $('#newChat'),
@@ -170,8 +175,9 @@
     settingsBtn: $('#settingsBtn'),
     notifyToggle: $('#notifyToggle'),
     projectsBtn: $('#projectsBtn'),
-    projectBar: $('#projectBar'),
-    projectChips: $('#projectChips'),
+    projectFilter: $('#projectFilter'),
+    projectSelect: $('#projectSelect'),
+    newProjectBtn: $('#newProjectBtn'),
     projectCountBadge: $('#projectCountBadge'),
     projectsSheet: $('#projectsSheet'),
     projectsList: $('#projectsList'),
@@ -328,6 +334,7 @@
     search: '',
     currentId: null,
     navigationRequest: 0,
+    navigating: null,
     messages: [],
     streaming: null,
     files: [],
@@ -421,9 +428,25 @@
     const layers = [els.filesSheet, els.scenarioSheet, els.filePreview,
       els.statsModal, els.confirmModal, els.palette, els.shortcutsSheet,
       els.renameModal, els.settingsSheet, els.bookmarksSheet, els.promptSheet,
-      els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet, els.shareSheet, els.versionsSheet, els.templateModal, els.exportSheet, els.regenerateModal, els.editAnswerModal, els.trashSheet]
+      els.memorySheet, els.archiveSheet, els.quickSwitcher, els.projectsSheet, els.moveSheet, els.shareSheet, els.versionsSheet, els.templateModal, els.exportSheet, els.regenerateModal, els.editAnswerModal, els.trashSheet]
     const codexModal = document.querySelector('.codex-pop[aria-modal="true"]')
     if (els.shell) els.shell.inert = layers.some((layer) => layer && !layer.hidden) || Boolean(codexModal)
+  }
+
+  // Opening a sheet must move focus into it. The first close control is the
+  // stable target: list rows may be replaced by the async load that follows.
+  function focusSheetClose(sheet) {
+    if (!sheet || sheet.hidden) return
+    const close = sheet.querySelector('.sheet-head button[aria-label^="关闭"], .sheet-head .icon-btn, .modal-actions button')
+    if (close) {
+      close.focus({ preventScroll: true })
+      return
+    }
+    const panel = sheet.querySelector('.sheet-panel, .modal-card, .quick-card, .palette-card')
+    if (panel) {
+      panel.tabIndex = -1
+      panel.focus({ preventScroll: true })
+    }
   }
 
   document.addEventListener('dsh:overlay-change', lockShell)
@@ -553,7 +576,7 @@
       iconId = opts.tone === 'error' ? 'i-alert' : 'i-check',
       actionLabel = '',
       onAction = null,
-      duration = actionLabel ? 6000 : 2800,
+      duration = actionLabel ? 6000 : opts.tone === 'error' ? 5000 : 2800,
     } = opts
 
     els.toast.replaceChildren()
@@ -2646,6 +2669,8 @@
       els.sidebar.inert = !open
       els.sidebar.setAttribute('aria-hidden', open ? 'false' : 'true')
       els.menuBtn.setAttribute('aria-expanded', String(open))
+      const main = document.querySelector('.main')
+      if (main) main.inert = open
     }
   }
 
@@ -2745,7 +2770,7 @@
     if (routeId) {
       await openConversation(routeId, { skipStop: true, fromRoute: true })
       if (state.currentId === routeId) return
-      showToast('链接里的对话不存在，已打开上次的对话', { tone: 'error' })
+      showToast('链接里的对话暂时无法打开，已回到上次的对话', { tone: 'error' })
     }
     const target = saved && state.conversations.some((conv) => conv.id === saved) ? saved : null
     if (target) {
@@ -2755,14 +2780,26 @@
     } else {
       showEmptyChat()
     }
+    // Never leave a Codex/other conversation URL pointing at a different
+    // conversation: the header would then show the wrong engine/model.
+    if (routeId && state.currentId && state.currentId !== routeId) {
+      pushRoute(state.currentId, { replace: true })
+    }
   }
 
   function setModelLabels() {
     const codex = state.currentEngine === 'codex'
     const native = Boolean(state.native)
-    els.modelName.textContent = codex ? 'Codex' : state.model
-    els.topbarSub.textContent = codex ? 'Codex · app-server' : state.model
-    els.modelName.title = codex ? 'Codex Desktop app-server（workspace-write 沙箱）' : state.model
+    // The DSH model picker (dsh-models.js) provides the friendly per-chat
+    // label; fall back to the configured default model id.
+    let dshLabel = null
+    if (!codex) {
+      try { dshLabel = window.__dshChatModelLabel?.() || null } catch { dshLabel = null }
+    }
+    const modelLabel = dshLabel || state.model
+    els.modelName.textContent = codex ? 'Codex' : modelLabel
+    els.topbarSub.textContent = codex ? 'Codex · app-server' : modelLabel
+    els.modelName.title = codex ? 'Codex Desktop app-server（workspace-write 沙箱）' : modelLabel
     els.modeBadge.textContent = codex ? 'Codex' : native ? '原生' : 'Headless'
     els.modeBadge.classList.toggle('headless', !native && !codex)
     els.modeBadge.classList.toggle('codex', codex)
@@ -2779,7 +2816,7 @@
           : 'Headless 兜底'
     }
     if (els.detailEngine) els.detailEngine.textContent = codex ? 'Codex' : 'DSH'
-    if (els.detailModel) els.detailModel.textContent = codex ? 'Codex app-server' : state.model
+    if (els.detailModel) els.detailModel.textContent = codex ? 'Codex app-server' : dshLabel || state.model
     if (els.heroStatus) {
       els.heroStatus.textContent = codex
         ? 'Codex 桌面在线'
@@ -2846,7 +2883,19 @@
     if (!els.chatInfo || els.chatInfo.hidden) return
     els.chatInfo.hidden = true
     els.chatInfoBtn?.setAttribute('aria-expanded', 'false')
-    if (restoreFocus) els.chatInfoBtn?.focus({ preventScroll: true })
+    if (restoreFocus) {
+      // The header title is gone; return to the row that owns 会话信息, or to
+      // the composer when the sidebar is closed on a phone.
+      const more = document.querySelector('#convList .conv-item.active .conv-more')
+      const moreRect = more?.getBoundingClientRect()
+      const moreVisible = Boolean(moreRect && moreRect.width > 0 && moreRect.right > 0)
+      const target = els.chatInfoBtn?.getClientRects().length
+        ? els.chatInfoBtn
+        : moreVisible
+          ? more
+          : els.input
+      target?.focus({ preventScroll: true })
+    }
   }
 
   async function loadChatContextInfo() {
@@ -2880,7 +2929,11 @@
     const title = (els.topbarName.textContent || 'DSH Chat').trim()
     els.chatInfoFullTitle.textContent = title
     els.chatInfoEngine.textContent = codex ? 'Codex' : 'DSH'
-    els.chatInfoModel.textContent = codex ? 'Codex app-server' : state.model
+    let infoDshLabel = null
+    if (!codex) {
+      try { infoDshLabel = window.__dshChatModelLabel?.() || null } catch { infoDshLabel = null }
+    }
+    els.chatInfoModel.textContent = codex ? 'Codex app-server' : infoDshLabel || state.model
     els.chatInfoMode.textContent = codex
       ? 'Codex app-server · 独立工作区'
       : native
@@ -3315,6 +3368,11 @@
       }
       setConnection('online')
       const routeId = routeConversationId()
+      // A focus/visibility resume can fire while the boot route is still
+      // loading. Never start a second navigation for the same conversation:
+      // the second request used to cancel the first, after which boot fell
+      // back to the previous chat while keeping the new URL in the address bar.
+      if (state.navigating && state.navigating.id === routeId) return
       if (routeId && routeId !== state.currentId && !state.streaming) {
         await openConversation(routeId, { fromRoute: true })
         return
@@ -3466,11 +3524,24 @@
   }, true)
   els.convSearchClear.addEventListener('click', invalidateConversationSearch, true)
 
+  let searchRestoredFromUrl = false
   async function refreshConversations() {
     const version = ++conversationRefreshVersion
     invalidateConversationPage()
     const data = await api(`/api/conversations?limit=60${projectQuerySuffix()}`)
     if (version !== conversationRefreshVersion) return
+    if (!searchRestoredFromUrl) {
+      searchRestoredFromUrl = true
+      try {
+        const q = new URL(location.href).searchParams.get('q')?.trim()
+        if (q) {
+          els.convSearch.value = q
+          state.search = q
+          els.convSearchClear.hidden = false
+          scheduleSearch()
+        }
+      } catch {}
+    }
     const incoming = data.conversations || []
     state.conversations = incoming
     if (state.currentId && !incoming.some((conv) => conv.id === state.currentId)) {
@@ -3559,7 +3630,13 @@
       state.searchHasMore = Boolean(data.hasMore)
       renderConversations()
     } catch (error) {
-      if (!silent && version === conversationSearchVersion && state.search.trim() === query) showToast(error.message || '搜索失败', { tone: 'error' })
+      if (!silent && version === conversationSearchVersion && state.search.trim() === query) {
+        if (els.convResultCount) {
+          els.convResultCount.hidden = false
+          els.convResultCount.textContent = '搜索失败 · 按 Enter 重试'
+        }
+        showToast(error.message || '搜索失败', { tone: 'error' })
+      }
     } finally {
       if (version === conversationSearchVersion) {
         conversationSearchPending = false
@@ -3572,6 +3649,10 @@
     invalidateConversationSearch()
     conversationSearchPending = true
     els.convLoadMore.disabled = true
+    if (els.convResultCount) {
+      els.convResultCount.hidden = false
+      els.convResultCount.textContent = '搜索中…'
+    }
     clearTimeout(state.searchTimer)
     state.searchTimer = setTimeout(() => void runSearch(), 240)
   }
@@ -3668,6 +3749,10 @@
       meta.prepend(badge, document.createTextNode(' · '))
     }
     main.append(meta)
+
+    const projectName = project?.name ? `项目：${project.name}` : ''
+    const stateLabel = conv.running ? '正在生成' : relativeTime(conv.updatedAt)
+    main.setAttribute('aria-label', [conv.title || '新对话', projectName, stateLabel, count ? `${count} 条消息` : '', conv.archived ? '已归档' : ''].filter(Boolean).join('，'))
 
     main.addEventListener('dblclick', (event) => {
       event.preventDefault()
@@ -3796,7 +3881,8 @@
     if (els.convHeading) els.convHeading.hidden = Boolean(query)
     if (query) {
       els.convResultCount.hidden = false
-      els.convResultCount.textContent = `搜索结果 · ${state.searchTotal}${state.searchHasMore ? ' · 继续输入以缩小范围' : ''}`
+      const project = activeProject()
+      els.convResultCount.textContent = `搜索结果 · ${state.searchTotal}${project ? ` · 项目：${project.name}` : ''}${state.searchHasMore ? ' · 继续输入以缩小范围' : ''}`
     } else {
       els.convResultCount.hidden = true
     }
@@ -3873,60 +3959,38 @@
       els.projectCountBadge.hidden = !count
       els.projectCountBadge.textContent = String(count)
     }
-    if (els.projectBar) {
-      els.projectBar.hidden = state.projects.length === 0
-      els.projectChips.replaceChildren()
-      if (state.projects.length) {
-        const all = document.createElement('button')
-        all.type = 'button'
-        all.className = 'project-chip' + (!state.activeProjectId ? ' active' : '')
-        all.dataset.projectId = ''
-        all.setAttribute('aria-pressed', String(!state.activeProjectId))
-        all.textContent = '全部'
-        els.projectChips.appendChild(all)
-        for (const project of state.projects.filter((item) => !item.archivedAt)) {
-          const chip = document.createElement('button')
-          chip.type = 'button'
-          chip.className = 'project-chip' + (state.activeProjectId === project.id ? ' active' : '')
-          chip.dataset.projectId = project.id
-          chip.setAttribute('aria-pressed', String(state.activeProjectId === project.id))
-          chip.title = project.instructions ? `${project.name} · ${project.conversationCount} 个对话` : `${project.name} · ${project.conversationCount} 个对话`
-          const emoji = document.createElement('span')
-          emoji.className = 'project-chip-emoji'
-          emoji.textContent = project.emoji || '📁'
-          const name = document.createElement('span')
-          name.textContent = project.name
-          const count = document.createElement('span')
-          count.className = 'project-chip-count'
-          count.textContent = String(project.conversationCount || 0)
-          chip.append(emoji, name, count)
-          els.projectChips.appendChild(chip)
-        }
-        if (state.projectCounts.unfiled > 0) {
-          const unfiled = document.createElement('button')
-          unfiled.type = 'button'
-          unfiled.className = 'project-chip' + (state.activeProjectId === '__unfiled__' ? ' active' : '')
-          unfiled.dataset.projectId = '__unfiled__'
-          unfiled.setAttribute('aria-pressed', String(state.activeProjectId === '__unfiled__'))
-          unfiled.title = `${state.projectCounts.unfiled} 个未归类对话`
-          const name = document.createElement('span')
-          name.textContent = '未归类'
-          const count = document.createElement('span')
-          count.className = 'project-chip-count'
-          count.textContent = String(state.projectCounts.unfiled)
-          unfiled.append(name, count)
-          els.projectChips.appendChild(unfiled)
-        }
-        const add = document.createElement('button')
-        add.type = 'button'
-        add.className = 'project-chip project-add-chip'
-        add.dataset.action = 'new-project'
-        add.setAttribute('aria-label', '新建项目')
-        add.textContent = '+ 项目'
-        els.projectChips.appendChild(add)
+    const projects = state.projects.filter((project) => !project.archivedAt)
+    if (els.projectFilter) els.projectFilter.hidden = projects.length === 0
+    if (els.projectSelect) {
+      const options = [new Option('全部对话', '')]
+      for (const project of projects) {
+        const count = Number(project.conversationCount) || 0
+        const option = new Option(
+          `${project.emoji || '📁'}  ${project.name}${count ? ` · ${count}` : ''}`,
+          project.id,
+        )
+        option.title = `${project.name} · ${count} 个对话`
+        options.push(option)
       }
+      if (state.projectCounts.unfiled > 0) {
+        const option = new Option(`未归类 · ${state.projectCounts.unfiled}`, '__unfiled__')
+        option.title = `${state.projectCounts.unfiled} 个未归类对话`
+        options.push(option)
+      }
+      // Keep a filter pointing at an archived project selectable rather than
+      // silently showing "全部对话" while the list is still filtered.
+      const current = state.activeProjectId && state.activeProjectId !== '__unfiled__' ? projectById(state.activeProjectId) : null
+      if (current && current.archivedAt && !projects.includes(current)) {
+        options.push(new Option(`📁  ${current.name} · 已归档`, current.id))
+      }
+      els.projectSelect.replaceChildren(...options)
+      els.projectSelect.value = state.activeProjectId || ''
     }
     updateEmptyProject()
+    if (els.convSearch) {
+      const current = activeProject()
+      els.convSearch.placeholder = current ? `在「${current.name}」中搜索` : '搜索标题与消息'
+    }
     if (els.convList) {
       // Project badges are rendered per row; refresh only when a project name
       // or color changed, not on every keystroke in the search box.
@@ -3970,12 +4034,11 @@
     renderProjects()
     void loadProjects({ silent: true }).then(() => {
       if (!els.projectsSheet.hidden && els.projectEditor.hidden) renderProjects()
-    })
-    requestAnimationFrame(() => {
-      els.projectsList.querySelector('.project-row-main')?.focus({ preventScroll: true })
+      if (!els.projectsSheet.hidden && !els.projectsSheet.contains(document.activeElement)) focusSheetClose(els.projectsSheet)
     })
     document.body.classList.add('sheet-open')
     lockShell()
+    focusSheetClose(els.projectsSheet)
   }
 
   function closeProjects({ restoreFocus = true } = {}) {
@@ -4017,6 +4080,12 @@
       const name = document.createElement('span')
       name.className = 'project-row-name'
       name.textContent = project.name
+      if (state.activeProjectId === project.id) {
+        const current = document.createElement('span')
+        current.className = 'project-current'
+        current.textContent = '当前'
+        name.appendChild(current)
+      }
       if (project.pinned) {
         const pin = document.createElement('span')
         pin.className = 'conv-pin-dot'
@@ -4090,8 +4159,11 @@
     }
     syncProjectColorSelection(project?.color || 'blue')
     updateProjectBudget()
-    requestAnimationFrame(() => els.projectName.focus({ preventScroll: true }))
+    // The form is the scroll container on phones (the editor itself no longer
+    // scrolls), so reset both to start the editor at the top.
+    if (els.projectForm) els.projectForm.scrollTop = 0
     els.projectEditor.scrollTop = 0
+    requestAnimationFrame(() => els.projectName.focus({ preventScroll: true }))
   }
 
   function updateProjectBudget() {
@@ -5248,11 +5320,15 @@
       }],
       ['share', 'i-share', '分享只读链接', () => openShareSheet(id)],
       ['export', 'i-download', '导出…', () => openExportSheet(id)],
-      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); void printConversation(false) }],
-      ['print-clean', 'i-file', '打印（仅正文）', () => { closeConvMenu({ restoreFocus: false }); void printConversation(true) }],
+      ['print', 'i-file', '打印 / 保存 PDF', () => { closeConvMenu({ restoreFocus: false }); void printConversation(true) }],
+      ['print-clean', 'i-file', '打印（含工具与思考）', () => { closeConvMenu({ restoreFocus: false }); void printConversation(false) }],
       ['link', 'i-external', '复制对话链接', () => void copyConversationLink(id)],
       ['duplicate', 'i-copy', '创建副本', () => void duplicateConversation(id)],
-      ['stats', 'i-info', '对话统计', () => void openStats(id)],
+      ['stats', 'i-chart', '对话统计', () => void openStats(id)],
+      ...(id === state.currentId ? [['info', 'i-info', '会话信息', () => {
+        if (!desktopQuery.matches) closeSidebar()
+        openChatInfo()
+      }]] : []),
       ['summarize', 'i-spark', '总结这段对话', () => void summarizeConversation(id)],
       ['archive', 'i-archive', '归档对话', () => void archiveConversation(id)],
       null,
@@ -5531,14 +5607,42 @@
         label: conv.title || '新对话',
         desc: `${conv.preview || '暂无预览'} · ${relativeTime(conv.updatedAt)}`,
         icon: conv.running ? 'i-spark' : 'i-logo',
-        group: '对话',
+        group: '最近对话',
         run: () => openConversation(conv.id),
       }))
   }
 
+  const PALETTE_RECENT_KEY = 'dsh.palette.recent'
+  function paletteRecentIds() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(PALETTE_RECENT_KEY) || '[]')
+      return Array.isArray(parsed) ? parsed.filter((id) => COMMANDS.some((command) => command.id === id)).slice(0, 3) : []
+    } catch {
+      return []
+    }
+  }
+  function rememberPaletteCommand(id) {
+    if (!COMMANDS.some((command) => command.id === id)) return
+    try {
+      const list = [id, ...paletteRecentIds().filter((item) => item !== id)]
+      localStorage.setItem(PALETTE_RECENT_KEY, JSON.stringify(list.slice(0, 6)))
+    } catch {}
+  }
   function paletteCommandItems(query) {
     const lower = query.trim().toLowerCase()
-    if (!lower) return COMMANDS.map((command) => ({ ...command, group: '命令' }))
+    if (!lower) {
+      const recent = paletteRecentIds()
+        .map((id) => COMMANDS.find((command) => command.id === id))
+        .filter(Boolean)
+        .map((command) => ({ ...command, group: '最近' }))
+      const priority = ['new', 'projects', 'share', 'export', 'files', 'permission', 'theme', 'shortcuts']
+      const rest = priority
+        .filter((id) => !recent.some((command) => command.id === id))
+        .map((id) => COMMANDS.find((command) => command.id === id))
+        .filter(Boolean)
+        .map((command) => ({ ...command, group: '命令' }))
+      return [...recent, ...rest]
+    }
     return COMMANDS.filter((command) => {
       return (
         command.label.toLowerCase().includes(lower) ||
@@ -5551,7 +5655,11 @@
   function renderPalette() {
     if (!els.paletteResults || !els.paletteInput) return
     const query = els.paletteInput.value
-    const items = [...paletteCommandItems(query), ...paletteConversationItems(query)]
+    const commands = paletteCommandItems(query)
+    const conversations = paletteConversationItems(query)
+    // Empty state: the last conversations are the primary navigation target;
+    // commands are a secondary, shorter list. With a query, commands first.
+    const items = query.trim() ? [...commands, ...conversations] : [...conversations, ...commands]
     state.paletteItems = items
     state.paletteIndex = Math.min(state.paletteIndex, Math.max(0, items.length - 1))
     els.paletteResults.replaceChildren()
@@ -5621,6 +5729,7 @@
   function runPaletteItem(index) {
     const item = state.paletteItems[index]
     if (!item) return
+    if (!String(item.id).startsWith('conv:')) rememberPaletteCommand(item.id)
     closePalette({ restoreFocus: false })
     item.run()
   }
@@ -6039,6 +6148,7 @@
 
     const view = {
       el,
+      body,
       blocksEl,
       statusEl,
       statusText: $('.status-text', statusEl),
@@ -6707,7 +6817,10 @@
           link.title = url
           sources.appendChild(link)
         }
-        view.el.appendChild(sources)
+        // Sources belong to the answer body. Appending them to the article put
+        // them in the avatar/body flex row, where their wide chip row squeezed
+        // .msg-body down to 0 px and the answer rendered one character per line.
+        view.body.appendChild(sources)
       }
       const actions = document.createElement('div')
       actions.className = 'msg-actions'
@@ -6888,6 +7001,16 @@
     topbarEl.classList.toggle('is-scrolled', els.scrollArea.scrollTop > 8)
   }
 
+  /* The first message must clear the floating top bar. Its height depends on
+     the status-bar inset and the current font scale, so measure it instead of
+     hardcoding a band; +8 keeps a comfortable gap above the date separator. */
+  function syncTopbarClearance() {
+    if (!topbarEl) topbarEl = document.querySelector('.topbar')
+    if (!topbarEl) return
+    const height = Math.round(topbarEl.getBoundingClientRect().height)
+    if (height > 0) document.documentElement.style.setProperty('--topbar-clearance', `${height + 8}px`)
+  }
+
   function updateScrollButton() {
     const el = els.scrollArea
     const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120
@@ -6936,9 +7059,19 @@
     () => {
       updateScrollButton()
       updateReadProgress()
+      syncTopbarClearance()
     },
     { passive: true },
   )
+
+  /* The bar changes height when the safe-area inset changes (orientation,
+     standalone launch) or the text scale changes; keep the clearance in sync. */
+  syncTopbarClearance()
+  if (topbarEl && typeof ResizeObserver === 'function') {
+    // border-box: the safe-area inset only changes the bar's padding, which the
+    // default content-box observation would miss.
+    new ResizeObserver(syncTopbarClearance).observe(topbarEl, { box: 'border-box' })
+  }
 
   function showEmptyChat({ updateRoute = true } = {}) {
     state.navigationRequest += 1
@@ -6975,8 +7108,14 @@
     setModelLabels()
     updateEngineBar()
     updatePermissionUI()
-    state.stick = true
+    state.stick = false
     if (els.scrollArea) els.scrollArea.scrollTop = 0
+    requestAnimationFrame(() => {
+      if (els.scrollArea && !els.emptyState.hidden) els.scrollArea.scrollTop = 0
+    })
+    setTimeout(() => {
+      if (!state.currentId && els.scrollArea && !els.emptyState.hidden) els.scrollArea.scrollTop = 0
+    }, 320)
     updateScrollButton()
     updateReadProgress()
     restoreDraft()
@@ -7183,6 +7322,47 @@
     })
   }
 
+  // Stored answers often contain long runs of tool cards before the prose.
+  // Collapse each run into one expandable row so the first screen is the
+  // answer, not the execution log. Live views still stream individual cards.
+  function groupStoredToolCards(container) {
+    const children = [...container.children]
+    let run = []
+    const flush = () => {
+      if (run.length >= 2) {
+        const details = document.createElement('details')
+        details.className = 'tool-group'
+        const statuses = run.map((card) => card.dataset.status || '')
+        const failed = statuses.some((status) => status === 'error' || status === 'failed')
+        const done = statuses.filter((status) => status === 'done' || status === 'success' || status === 'completed').length
+        details.open = false
+        const summary = document.createElement('summary')
+        summary.className = 'tool-group-summary'
+        const label = document.createElement('span')
+        label.className = 'tool-group-label'
+        label.textContent = `工具调用 · ${run.length} 步`
+        const meta = document.createElement('span')
+        meta.className = 'tool-group-meta'
+        meta.textContent = failed ? '有失败 · 点开' : done === run.length ? '全部完成' : '已完成'
+        details.dataset.failed = String(failed)
+        summary.append(label, meta)
+        const body = document.createElement('div')
+        body.className = 'tool-group-body'
+        const placeholder = document.createComment('tool-group')
+        container.insertBefore(placeholder, run[0])
+        run.forEach((card) => body.appendChild(card))
+        details.append(summary, body)
+        container.replaceChild(details, placeholder)
+      }
+      run = []
+    }
+    for (const child of children) {
+      if (child.classList?.contains('tool-card')) run.push(child)
+      else flush()
+    }
+    flush()
+  }
+
   function renderAssistantMessage(msg, options = {}) {
     const view = createAssistantView()
     view.el.setAttribute('aria-label', '助手的回答')
@@ -7210,6 +7390,7 @@
     } else if (msg.text) {
       view.addText(msg.text, true)
     }
+    groupStoredToolCards(view.blocksEl)
     if (msg.status === 'running') {
       view.streaming = true
       view.el.classList.remove('stored')
@@ -7280,6 +7461,8 @@
 
   async function openConversation(id, options = {}) {
     const request = ++state.navigationRequest
+    const nav = { id, request }
+    state.navigating = nav
     if (state.streaming) detachStreaming()
     saveScrollPosition()
     saveDraftNow()
@@ -7357,6 +7540,8 @@
         return
       }
       showToast(err.message)
+    } finally {
+      if (state.navigating === nav) state.navigating = null
     }
   }
 
@@ -7370,6 +7555,13 @@
 
   els.newChat.addEventListener('click', newChat)
   els.newChatTop.addEventListener('click', newChat)
+  document.querySelector('#searchTop')?.addEventListener('click', () => {
+    if (window.innerWidth < 1024) openPalette()
+    else {
+      els.convSearch.focus()
+      els.convSearch.select()
+    }
+  })
 
   els.projectsBtn?.addEventListener('click', openProjects)
   els.projectNewBtn?.addEventListener('click', () => openProjectEditor(''))
@@ -7406,12 +7598,10 @@
       showToast(error.message || '归档失败', { tone: 'error' })
     }
   })
-  els.projectBar?.addEventListener('click', (event) => {
-    const chip = event.target.closest('.project-chip')
-    if (!chip) return
-    if (chip.dataset.action === 'new-project') return openProjects()
-    void setProjectFilter(chip.dataset.projectId || '', { close: false })
+  els.projectSelect?.addEventListener('change', () => {
+    void setProjectFilter(els.projectSelect.value || '', { close: false })
   })
+  els.newProjectBtn?.addEventListener('click', () => openProjects())
   els.projectsSheet?.addEventListener('click', (event) => {
     if (event.target.closest('[data-projects-close]')) closeProjects()
   })
@@ -7508,6 +7698,7 @@
   })
   els.menuBtn.addEventListener('click', toggleSidebar)
   els.sidebarClose.addEventListener('click', closeSidebar)
+  els.sidebarCollapse?.addEventListener('click', closeSidebar)
   els.scrim.addEventListener('click', closeSidebar)
   els.filesBtn.addEventListener('click', openFilesSheet)
   els.filesSheet.addEventListener('click', (event) => {
@@ -7840,6 +8031,7 @@
     { id: 'scenario', label: '浏览场景', desc: '网页总结 / 股票 / 日报', icon: 'i-spark', run: () => openScenarioSheet() },
     { id: 'files', label: '对话文件', desc: '查看本轮与历史文件', icon: 'i-paperclip', run: () => openFilesSheet() },
     { id: 'permission', label: '切换权限', desc: '只读 / 标准 / 完全权限', icon: 'i-shield', run: () => openPermissionMenu() },
+    { id: 'info', label: '会话信息', desc: '完整标题、模型、权限与本次注入的上下文', icon: 'i-info', run: () => setTimeout(() => openChatInfo(), 0) },
     { id: 'theme', label: '切换主题', desc: '跟随系统 / 浅色 / 深色', icon: 'i-sun', run: () => cycleTheme() },
     { id: 'shortcuts', label: '键盘快捷键', desc: '查看全部快捷键', icon: 'i-keyboard', run: () => openShortcutsSheet() },
     { id: 'notify', label: '完成通知', desc: '页面在后台时提醒回答已完成', icon: 'i-alert', run: () => void enableNotifications() },
@@ -7963,7 +8155,7 @@
     lockShell(true)
     applyPrefs()
     void updateStorageInfo()
-    els.settingsSheet.querySelector('[data-settings-close]')?.focus()
+    focusSheetClose(els.settingsSheet)
   }
 
   function closeSettings() {
@@ -8122,7 +8314,7 @@
     lockShell(true)
     updateMemoryUI()
     renderMemory()
-    els.memorySheet.querySelector('[data-memory-close]')?.focus()
+    focusSheetClose(els.memorySheet)
     await loadMemory()
   }
 
@@ -8719,7 +8911,7 @@
     els.bookmarksSheet.hidden = false
     lockShell(true)
     renderBookmarks()
-    els.bookmarksSheet.querySelector('[data-bookmarks-close]')?.focus()
+    focusSheetClose(els.bookmarksSheet)
   }
 
   function closeBookmarks() {
@@ -8779,7 +8971,7 @@
     els.promptSheet.hidden = false
     lockShell(true)
     renderPrompts()
-    els.promptSheet.querySelector('[data-prompts-close]')?.focus()
+    focusSheetClose(els.promptSheet)
   }
 
   function closePrompts() {
@@ -9073,6 +9265,7 @@
   async function openTrash() {
     els.trashSheet.hidden = false
     lockShell()
+    focusSheetClose(els.trashSheet)
     els.trashList.replaceChildren()
     els.trashList.innerHTML = '<p class="archive-empty">正在加载…</p>'
     try {
@@ -9234,7 +9427,7 @@
     } catch (error) {
       els.archiveList.innerHTML = '<p class="archive-empty">加载失败，请稍后重试</p>'
     }
-    els.archiveSheet.querySelector('[data-archive-close]')?.focus()
+    focusSheetClose(els.archiveSheet)
   }
 
   function closeArchive() {
@@ -9293,11 +9486,12 @@
       })
       const remove = document.createElement('button')
       remove.type = 'button'
+      remove.className = 'danger'
       remove.textContent = '删除'
       remove.addEventListener('click', () => {
         askConfirm({
           title: `删除「${conv.title || '这个对话'}」？`,
-          body: '归档中的对话会被永久删除，可在 8 秒内撤销。',
+          body: '会移入最近删除，30 天内可恢复；8 秒内可撤销。',
           okLabel: '删除',
           onOk: async () => {
             try {
@@ -9726,7 +9920,7 @@
     const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName || '') || target?.isContentEditable
     if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key.toLowerCase() === 'p') {
       event.preventDefault()
-      void printConversation(false)
+      openQuickSwitcher()
       return
     }
     if (event.key === '?' && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
@@ -9745,9 +9939,9 @@
       els.convSearch.select()
       return
     }
-    if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'p') {
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
       event.preventDefault()
-      openQuickSwitcher()
+      void printConversation(true)
       return
     }
     if ((event.metaKey || event.ctrlKey) && event.key === '/') {
@@ -10006,15 +10200,27 @@
   els.convSearch.addEventListener('input', () => {
     state.search = els.convSearch.value
     els.convSearchClear.hidden = !state.search.trim()
+    try {
+      const url = new URL(location.href)
+      if (state.search.trim()) url.searchParams.set('q', state.search.trim())
+      else url.searchParams.delete('q')
+      history.replaceState(history.state, '', url)
+    } catch {}
     if (!state.search.trim()) {
       state.searchResults = []
       state.searchTotal = 0
       state.searchHasMore = false
       clearTimeout(state.searchTimer)
+      els.convResultCount.hidden = true
       renderConversations()
       return
     }
     scheduleSearch()
+  })
+  els.convSearch.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || !state.search.trim()) return
+    event.preventDefault()
+    void runSearch()
   })
 
   els.convSearch.addEventListener('keydown', (event) => {
@@ -10768,21 +10974,23 @@
 
   async function printConversation(textOnly = false) {
     if (state.hasEarlier) await loadAllMessages()
-    if (textOnly) {
-      document.body.classList.add('print-text-only')
-      const done = () => {
-        document.body.classList.remove('print-text-only')
-        window.removeEventListener('afterprint', done)
-      }
-      window.addEventListener('afterprint', done)
-    } else {
-      document.body.classList.remove('print-text-only')
+    document.body.classList.toggle('print-text-only', textOnly)
+    document.body.classList.toggle('print-full', !textOnly)
+    const done = () => {
+      document.body.classList.remove('print-text-only', 'print-full')
+      window.removeEventListener('afterprint', done)
     }
+    window.addEventListener('afterprint', done)
     setTimeout(() => window.print(), 80)
   }
 
   let printState = null
+  let printGroupState = []
   window.addEventListener('beforeprint', () => {
+    printGroupState = [...document.querySelectorAll('.tool-group')].map((group) => [group, group.open])
+    if (document.body.classList.contains('print-full')) {
+      document.querySelectorAll('.tool-group').forEach((group) => { group.open = true })
+    }
     if (state.hasEarlier) void loadAllMessages()
     if (!state.currentId || !state.messages.length) return
     printState = { end: state.threadEnd, stick: state.stick, window: state.threadWindow }

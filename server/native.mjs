@@ -461,6 +461,42 @@ export class NativeBridge {
     }
   }
 
+  /**
+   * The Desktop model-selector catalog (provider groups + reasoning efforts +
+   * default selection), live from the host's LLM registry. null when the
+   * bridge is unavailable so callers can fall back to the static patch parse.
+   */
+  async listModels() {
+    if (!(await this.ensure())) return null
+    try {
+      return await this.call('chat/listModels', {}, 15000)
+    } catch (error) {
+      console.warn('[native] 读取模型目录失败：', error.message)
+      return null
+    }
+  }
+
+  /**
+   * Install a Session-local model selection (validated host-side through
+   * llm.resolveCallConfig). Takes effect from the session's next request.
+   */
+  async setModel(sessionId, selection) {
+    if (!sessionId || !selection?.provider || !selection?.model) {
+      return { ok: false, reason: 'invalid-selection' }
+    }
+    if (!(await this.ensure())) return { ok: false, reason: 'bridge-unavailable' }
+    return this.call(
+      'chat/setModel',
+      {
+        sessionId,
+        provider: selection.provider,
+        model: selection.model,
+        ...(selection.reasoningEffort ? { reasoningEffort: selection.reasoningEffort } : {}),
+      },
+      10000,
+    )
+  }
+
   async abort(sessionId) {
     if (!this.socket || this.socket.destroyed) return { ok: false }
     try {
