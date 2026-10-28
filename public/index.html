@@ -22,7 +22,7 @@
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icon-180.png" />
-    <link rel="stylesheet" href="/css/bundle.css?v=82" />
+    <link rel="stylesheet" href="/css/bundle.css?v=92" />
   </head>
   <body>
     <a class="skip-link" href="#input">跳到输入框</a>
@@ -343,37 +343,6 @@
 
       <div class="main">
         <h1 id="chatHeading" class="sr-only">DSH Chat</h1>
-        <header class="topbar">
-          <button id="menuBtn" class="icon-btn" type="button" aria-label="切换侧栏" title="切换侧栏" aria-expanded="false" aria-controls="sidebar">
-            <svg><use href="#i-menu" /></svg>
-          </button>
-          <button
-            id="chatInfoBtn"
-            class="topbar-title"
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-            aria-controls="chatInfo"
-            aria-label="会话信息"
-            title="查看完整标题、模型与运行方式"
-          >
-            <span id="topbarName" class="topbar-name">DSH Chat</span>
-            <span id="topbarSub" class="topbar-sub">DeepSeek Harness</span>
-            <span class="sr-only">，点按查看完整标题与运行方式</span>
-          </button>
-          <div class="topbar-actions">
-            <button id="searchTop" class="icon-btn only-mobile" type="button" aria-label="搜索对话与命令" title="搜索对话与命令">
-              <svg aria-hidden="true"><use href="#i-search" /></svg>
-            </button>
-            <button id="scenarioBtn" class="icon-btn" type="button" aria-label="浏览场景">
-              <svg><use href="#i-spark" /></svg>
-            </button>
-            <button id="newChatTop" class="icon-btn" type="button" aria-label="新对话">
-              <svg><use href="#i-plus" /></svg>
-            </button>
-          </div>
-        </header>
-
         <div id="chatInfo" class="chat-info" role="dialog" aria-labelledby="chatInfoHeading" hidden>
           <header class="chat-info-head">
             <span id="chatInfoHeading" class="chat-info-heading">会话信息</span>
@@ -427,6 +396,36 @@
         </div>
 
         <main id="scrollArea" class="scroll-area">
+          <header class="topbar">
+            <button id="menuBtn" class="icon-btn" type="button" aria-label="切换侧栏" title="切换侧栏" aria-expanded="false" aria-controls="sidebar">
+              <svg><use href="#i-menu" /></svg>
+            </button>
+            <button
+              id="chatInfoBtn"
+              class="topbar-title"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+              aria-controls="chatInfo"
+              aria-label="会话信息"
+              title="查看完整标题、模型与运行方式"
+            >
+              <span id="topbarName" class="topbar-name">DSH Chat</span>
+              <span id="topbarSub" class="topbar-sub">DeepSeek Harness</span>
+              <span class="sr-only">，点按查看完整标题与运行方式</span>
+            </button>
+            <div class="topbar-actions">
+              <button id="searchTop" class="icon-btn only-mobile" type="button" aria-label="搜索对话与命令" title="搜索对话与命令">
+                <svg aria-hidden="true"><use href="#i-search" /></svg>
+              </button>
+              <button id="scenarioBtn" class="icon-btn" type="button" aria-label="浏览场景">
+                <svg><use href="#i-spark" /></svg>
+              </button>
+              <button id="newChatTop" class="icon-btn" type="button" aria-label="新对话">
+                <svg><use href="#i-plus" /></svg>
+              </button>
+            </div>
+          </header>
           <section id="emptyState" class="empty">
             <div class="hero">
               <div class="hero-orb" aria-hidden="true">
@@ -1261,8 +1260,9 @@
 
     <noscript><p class="noscript">请启用 JavaScript 后使用 DSH Chat。</p></noscript>
     <script defer src="/js/markdown.js?v=33"></script>
-    <script defer src="/js/app.js?v=75"></script>
-    <script defer src="/js/codex.js?v=4"></script>
-    <script defer src="/js/dsh-models.js?v=8"></script>
+    <script defer src="/js/motion.js?v=3"></script>
+    <script defer src="/js/app.js?v=82"></script>
+    <script defer src="/js/codex.js?v=8"></script>
+    <script defer src="/js/dsh-models.js?v=13"></script>
   </body>
 </html>

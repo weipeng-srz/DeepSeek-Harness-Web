@@ -411,30 +411,6 @@
   padding: 28px 18px;
 }
 
-.skeleton-line {
-  height: 13px;
-  margin: 0 0 12px;
-  border-radius: 6px;
-  background: linear-gradient(
-    90deg,
-    var(--surface-2) 20%,
-    color-mix(in srgb, var(--surface-2) 55%, var(--bg)) 45%,
-    var(--surface-2) 70%
-  );
-  background-size: 220% 100%;
-  animation: skeleton-shimmer 1.3s ease-in-out infinite;
-}
-
-.skeleton-line.w60 { width: 60%; }
-.skeleton-line.w80 { width: 80%; }
-.skeleton-line.w40 { width: 40%; }
-.skeleton-line.block { height: 74px; margin-top: 18px; border-radius: 12px; }
-
-@keyframes skeleton-shimmer {
-  from { background-position: 120% 0; }
-  to { background-position: -80% 0; }
-}
-
 /* ── message actions / timestamps / usage ───────────────────────────── */
 
 .msg-actions {

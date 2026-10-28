@@ -804,51 +804,16 @@ body.text-large #sidebar .conv-group {
 }
 
 /* ── accessibility & phone polish (audit round) ─────────────────────────
-   1. The conversation title stays reachable whenever the sidebar is not
-      visible: on phones/tablets always, on desktop only when collapsed.
-      It was globally display:none, so a phone user had no idea which
-      conversation was open.
+   1. The top bar intentionally shows no conversation title (product
+      decision): the title, model and permission live in 会话信息, and the
+      transcript can use the full height. topbarName/topbarSub stay in the
+      DOM because the rest of the app reads them for document/share titles.
    2. A transparent fixed topbar let scrolled message text run behind the
       icons at 320px; once the thread scrolls, the bar gets a real backing.
    3. Small secondary controls get a 44px touch target on coarse pointers.
    4. Muted text on the active row reaches 4.5:1 in both themes.
    5. The backup action group keeps its labels on one line.
    ───────────────────────────────────────────────────────────────────── */
-
-@media (max-width: 1023px) {
-  html body .topbar-title {
-    display: flex !important;
-    align-items: center;
-    gap: 0;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  html body .topbar-title .topbar-name {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-    max-width: 100%;
-  }
-
-  html body .topbar-title .topbar-sub {
-    display: none;
-  }
-}
-
-@media (min-width: 1024px) {
-  html body.sidebar-collapsed .topbar-title {
-    display: flex !important;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  html body.sidebar-collapsed .topbar-title .topbar-name {
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-}
 
 @media (max-width: 640px) {
   /* reading content may still slide under the bar, but not *through* it */
@@ -885,8 +850,7 @@ body.text-large #sidebar .conv-group {
   .status-btn,
   #statusBtn,
   .model-chip,
-  #dshModelBarBtn,
-  #dshModelFloatBtn {
+  #dshModelBarBtn {
     min-height: 44px;
   }
 }

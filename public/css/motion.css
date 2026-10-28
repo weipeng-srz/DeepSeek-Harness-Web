@@ -1,0 +1,210 @@
+/* DSH Chat motion layer — compacted to stay inside the 320KB CSS budget.
+   Expand the declarations before editing; section order is the cascade order. */
+:root{--m-out:cubic-bezier(0.22,1,0.36,1);--m-in-out:cubic-bezier(0.65,0,0.35,1);--m-spring:cubic-bezier(0.34,1.32,0.64,1);--m-drawer:cubic-bezier(0.32,0.72,0,1)}
+
+/* ── press feedback ─────────────────────────────────────────────────── */
+ .send-btn,.new-chat,.primary-btn,.icon-btn,.composer-tool,.scenario-card,.scenario-row,.ghost-btn,.danger-btn,.batch-btn,.find-btn,.conv-popover-item,.sidebar-link,.toast-action,.share-primary,.project-save{-webkit-tap-highlight-color:transparent}
+.icon-btn{transition:background 0.16s var(--m-out),color 0.16s var(--m-out),scale 0.16s var(--m-spring)}
+.new-chat{transition:background 0.16s var(--m-out),border-color 0.16s var(--m-out),box-shadow 0.2s var(--m-out),scale 0.16s var(--m-spring)}
+.primary-btn{transition:opacity 0.16s var(--m-out),transform 0.12s var(--m-out),scale 0.16s var(--m-spring)}
+.send-btn{transition:opacity 0.16s var(--m-out),transform 0.12s var(--m-out),background 0.16s var(--m-out),box-shadow 0.2s var(--m-out),scale 0.16s var(--m-spring)}
+.composer-tool{transition:background 0.16s var(--m-out),color 0.16s var(--m-out),transform 0.12s var(--m-out),scale 0.16s var(--m-spring)}
+.conv-popover-item{transition:background 0.14s var(--m-out),color 0.14s var(--m-out),scale 0.14s var(--m-spring)}
+.conv-more{transition:background 0.14s var(--m-out),color 0.14s var(--m-out),opacity 0.14s var(--m-out),scale 0.14s var(--m-spring)}
+.think-toggle{transition:background 0.15s var(--m-out),border-color 0.15s var(--m-out),scale 0.14s var(--m-spring)}
+.scenario-card{transition:transform 0.28s var(--m-out),box-shadow 0.28s var(--m-out),border-color 0.2s var(--m-out),scale 0.2s var(--m-spring)}
+.scenario-row{transition:background 0.16s var(--m-out),border-color 0.16s var(--m-out),transform 0.16s var(--m-out),scale 0.16s var(--m-spring)}
+.ghost-btn,.danger-btn,.batch-btn,.find-btn,.toast-action,.share-primary,.project-save{transition:background 0.16s var(--m-out),color 0.16s var(--m-out),border-color 0.16s var(--m-out),opacity 0.16s var(--m-out),scale 0.14s var(--m-spring)}
+ .send-btn:not(:disabled):active{transform:none;scale:0.93}
+.primary-btn:not(:disabled):active{transform:none;scale:0.97}
+.new-chat:not(:disabled):active{scale:0.985}
+.icon-btn:not(:disabled):active{scale:0.9}
+.composer-tool:not(:disabled):active{scale:0.9}
+.send-btn.stop .icon-stop{animation:m-stop-pulse 1.8s var(--m-in-out) infinite}
+@keyframes m-stop-pulse{0%,100%{opacity:1;transform:scale(1)}
+50%{opacity:0.72;transform:scale(0.9)}
+}
+.scenario-card:active{transform:none;scale:0.985}
+.scenario-row:active{transform:none;scale:0.99}
+.conv-popover-item:active{scale:0.985}
+.conv-more:active{scale:0.88}
+.think-toggle:active{scale:0.96}
+.ghost-btn:not(:disabled):active,.danger-btn:not(:disabled):active,.batch-btn:not(:disabled):active,.find-btn:not(:disabled):active,.toast-action:active,.share-primary:not(:disabled):active,.project-save:not(:disabled):active{scale:0.97}
+ .permission-option,.msg-retry,.msg-usage-btn,.msg-version-btn,.load-earlier,.tool-copy,.code-copy,.table-copy,.sidebar-tool,.quick-close,.codex-pill,.dshm-pill,.question-item,.settings-option,.option{transition:background 0.16s var(--m-out),color 0.16s var(--m-out),border-color 0.16s var(--m-out),opacity 0.16s var(--m-out),transform 0.16s var(--m-out),scale 0.15s var(--m-spring)}
+.permission-option:active,.msg-retry:not(:disabled):active,.msg-usage-btn:active,.msg-version-btn:active,.load-earlier:active,.tool-copy:active,.code-copy:active,.table-copy:active,.sidebar-tool:active,.quick-close:active,.codex-pill:active,.dshm-pill:active,.question-item:active,.settings-option:active,.option:active{scale:0.96}
+ .conv-main:active,.command-item:active,.palette-item:active,.quick-item:active,.tool-head:active,.move-item:active{background:var(--active-bg)}
+@media (hover:hover){.icon-btn:not(:disabled):hover{scale:1.06}
+.composer-tool:not(:disabled):hover{scale:1.05}
+.conv-more:hover{scale:1.08}
+}
+ .send-btn,.new-chat,.primary-btn,.scenario-card,.scenario-row,.ghost-btn,.danger-btn,.sidebar-link,.batch-btn,.toast-action,.share-primary,.project-save{position:relative;overflow:hidden}
+.press-ripple{position:absolute;z-index:0;width:var(--ripple-size,120px);height:var(--ripple-size,120px);margin-top:calc(var(--ripple-size,120px) / -2);margin-left:calc(var(--ripple-size,120px) / -2);border-radius:50%;background:currentColor;opacity:0.18;transform:scale(0.1);pointer-events:none;animation:m-ripple 0.55s var(--m-out) forwards}
+@keyframes m-ripple{0%{transform:scale(0.1);opacity:0.22}
+55%{opacity:0.12}
+100%{transform:scale(1);opacity:0}
+}
+
+/* ── message entrance ───────────────────────────────────────────────── */
+ .msg{animation:m-msg-in 0.3s var(--m-out) both}
+@keyframes m-msg-in{from{opacity:0;transform:translateY(7px)}
+}
+
+/* ── content output ─────────────────────────────────────────────────── */
+ .msg.assistant:not(.stored) .blocks > .md,.msg.assistant:not(.stored) .blocks > .delta-text,.msg.assistant:not(.stored) .tool-card,.msg.assistant:not(.stored) .think{animation:m-rise-in 0.3s var(--m-out) both}
+.msg-sources,.msg-files,.msg-edited-badge,.notice,.msg-error{animation:m-rise-in 0.3s var(--m-out) both}
+.msg-sources a{animation:m-fade-in 0.32s var(--m-out) both}
+.msg-sources a:nth-child(2){animation-delay:0.03s}
+.msg-sources a:nth-child(3){animation-delay:0.06s}
+.msg-sources a:nth-child(4){animation-delay:0.09s}
+.msg-sources a:nth-child(5){animation-delay:0.12s}
+@media (hover:hover) and (min-width:641px){.msg-actions{transform:translateY(3px);transition:opacity 0.18s var(--m-out),transform 0.24s var(--m-out)}
+.msg:hover .msg-actions,.msg-actions:focus-within{transform:translateY(0)}
+}
+.usage-pop{transform-origin:bottom center;animation:m-pop-up 0.22s var(--m-spring) both}
+.code-copy.copied{animation:m-copy-pop 0.3s var(--m-spring)}
+@keyframes m-copy-pop{0%{scale:0.92}
+60%{scale:1.06}
+100%{scale:1}
+}
+.tool-card{position:relative;transition:border-color 0.22s var(--m-out),box-shadow 0.22s var(--m-out)}
+.tool-card[data-status="running"]{border-color:color-mix(in srgb,var(--accent-blue) 24%,var(--border))}
+.tool-card[data-status="running"]::after{content:"";position:absolute;top:0;left:0;width:36%;height:2px;background:linear-gradient(90deg,transparent,var(--accent-blue),transparent);animation:m-scan 1.8s var(--m-in-out) infinite;pointer-events:none}
+html body .tool-card[data-status="running"] .tool-badge{animation:m-status-pulse 1.6s var(--m-in-out) infinite}
+.tool-card.open .tool-body{animation:m-fade-in 0.2s var(--m-out) both}
+@keyframes m-scan{from{transform:translateX(-120%)}
+to{transform:translateX(320%)}
+}
+@keyframes m-status-pulse{0%,100%{opacity:0.68}
+50%{opacity:1}
+}
+.permission-option{animation:m-option-in 0.3s var(--m-out) both}
+.permission-option:nth-child(2){animation-delay:0.03s}
+.permission-option:nth-child(3){animation-delay:0.06s}
+.permission-option:nth-child(4){animation-delay:0.09s}
+@keyframes m-option-in{from{opacity:0;transform:translateY(5px)}
+}
+
+/* ── conversation skeleton ──────────────────────────────────────────── */
+ .thread-skeleton{padding-top:32px;animation:m-fade-in 0.24s var(--m-out) both}
+.sk-row{display:flex;gap:12px;margin-bottom:26px;animation:m-rise-in 0.46s var(--m-out) both}
+.sk-row.sk-user{justify-content:flex-end;animation-delay:0.03s}
+.sk-row.sk-assistant{animation-delay:0.09s}
+.sk-bubble{width:min(46%,340px);height:54px;border-radius:20px}
+.sk-avatar{flex:none;width:30px;height:30px;margin-top:1px;border-radius:50%}
+.sk-copy{flex:1;min-width:0;max-width:680px;padding-top:3px}
+.skeleton-line,.sk-block{position:relative;overflow:hidden;background:var(--surface-2)}
+ .thread-skeleton .skeleton-line{animation:none;background-size:auto}
+.skeleton-line{height:13px;margin:0 0 13px;border-radius:7px}
+.skeleton-line.w80{width:80%}
+.skeleton-line.w60{width:60%}
+.skeleton-line.w40{width:40%}
+.skeleton-line.block{width:100%;height:48px;margin:18px 0 20px;border-radius:13px}
+.skeleton-line::after,.sk-block::after{content:"";position:absolute;inset:0;background:linear-gradient( 100deg,transparent 18%,color-mix(in srgb,var(--text) 8%,transparent) 46%,color-mix(in srgb,var(--text) 4%,transparent) 58%,transparent 82% );transform:translateX(-115%);animation:m-shimmer 1.7s var(--m-in-out) infinite}
+.sk-copy .skeleton-line:nth-child(1)::after{animation-delay:0.02s}
+.sk-copy .skeleton-line:nth-child(2)::after{animation-delay:0.1s}
+.sk-copy .skeleton-line:nth-child(3)::after{animation-delay:0.18s}
+.sk-copy .skeleton-line:nth-child(4)::after{animation-delay:0.26s}
+.sk-copy .skeleton-line:nth-child(5)::after{animation-delay:0.34s}
+.sk-bubble::after,.sk-avatar::after{animation-delay:0.06s}
+.sk-avatar::after{border-radius:50%}
+@keyframes m-shimmer{0%{transform:translateX(-115%)}
+60%,100%{transform:translateX(115%)}
+}
+@keyframes m-fade-in{from{opacity:0}
+}
+@keyframes m-rise-in{from{opacity:0;transform:translateY(8px)}
+}
+
+/* ── thinking ───────────────────────────────────────────────────────── */
+ .gen-status{gap:9px}
+.gen-status .dots{align-items:center;gap:4px;height:9px}
+.gen-status .dots i{width:5px;height:5px;background:var(--accent-blue);box-shadow:0 0 9px color-mix(in srgb,var(--accent-blue) 42%,transparent);animation:m-think-dot 1.25s var(--m-in-out) infinite}
+.gen-status .dots i:nth-child(2){animation-delay:0.14s}
+.gen-status .dots i:nth-child(3){animation-delay:0.28s}
+.gen-status .status-text{animation:m-breathe 2.2s ease-in-out infinite;font-variant-numeric:tabular-nums}
+@keyframes m-think-dot{0%,72%,100%{opacity:0.28;transform:translateY(0) scale(0.8)}
+32%{opacity:1;transform:translateY(-3px) scale(1)}
+}
+@keyframes m-breathe{0%,100%{opacity:0.68}
+50%{opacity:1}
+}
+.delta-think{position:relative;animation:m-rise-in 0.3s var(--m-out) both}
+.delta-think-label > span:last-child{background:linear-gradient( 90deg,var(--text-3) 10%,var(--text) 46%,var(--text-3) 82% );background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:m-think-sheen 2.6s linear infinite}
+@keyframes m-think-sheen{from{background-position:120% 0}
+to{background-position:-120% 0}
+}
+.think-live-dot{background:var(--accent-blue);box-shadow:0 0 0 0 color-mix(in srgb,var(--accent-blue) 40%,transparent);animation:m-think-beacon 1.8s var(--m-out) infinite}
+@keyframes m-think-beacon{0%{opacity:1;box-shadow:0 0 0 0 color-mix(in srgb,var(--accent-blue) 38%,transparent)}
+70%{opacity:0.9;box-shadow:0 0 0 7px color-mix(in srgb,var(--accent-blue) 0%,transparent)}
+100%{opacity:1;box-shadow:0 0 0 0 color-mix(in srgb,var(--accent-blue) 0%,transparent)}
+}
+ .think-body{display:block;max-height:0;margin:0;padding:0 13px;overflow:hidden;opacity:0;transition:max-height 0.32s var(--m-out),opacity 0.2s var(--m-out),margin 0.32s var(--m-out),padding 0.32s var(--m-out)}
+.think.open .think-body{max-height:300px;margin:7px 0 4px;padding:9px 13px;overflow-y:auto;opacity:1}
+
+/* ── menus, popovers and sheets ─────────────────────────────────────── */
+ .conv-popover{transform-origin:top right;animation:m-menu-in 0.22s var(--m-spring) both}
+ .conv-popover:not(.sheet-mode){max-height:min(62vh,540px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--border-strong) transparent}
+.conv-popover.is-closing{animation:m-menu-out 0.14s var(--m-out) both;pointer-events:none}
+.conv-popover.sheet-mode{transform-origin:bottom center;animation:m-sheet-in 0.34s var(--m-drawer) both}
+.conv-popover.sheet-mode.is-closing{animation:m-sheet-out 0.18s var(--m-out) both}
+.conv-popover-backdrop{animation:m-scrim-in 0.24s var(--m-out) both}
+.conv-popover-backdrop.is-closing{animation:m-scrim-out 0.16s var(--m-out) both;pointer-events:none}
+#commandMenu{transform-origin:bottom center;animation:m-pop-up 0.2s var(--m-spring) both}
+#permissionMenu{transform-origin:50% 100%;
+ animation:m-permission-in 0.26s var(--m-spring) both}
+@keyframes m-permission-in{from{opacity:0;transform:translate(-50%,18px) scale(0.97)}
+to{opacity:1;transform:translate(-50%,0) scale(1)}
+}
+.palette-card,.quick-card{animation:m-dialog-in 0.26s var(--m-spring) both}
+.palette-backdrop{animation:m-scrim-in 0.22s var(--m-out) both}
+.sheet-panel{animation:m-sheet-in 0.36s var(--m-drawer) both}
+.sheet-backdrop{animation:m-scrim-in 0.24s var(--m-out) both}
+.modal{animation:m-scrim-in 0.2s var(--m-out) both}
+.modal-card{animation:m-dialog-in 0.26s var(--m-spring) both}
+ html body .dshm-pop,html body .codex-pop{transform-origin:bottom right;animation:m-pop-up 0.22s var(--m-spring) both}
+@keyframes m-menu-in{from{opacity:0;transform:translateY(-6px) scale(0.95)}
+}
+@keyframes m-menu-out{to{opacity:0;transform:translateY(-4px) scale(0.97)}
+}
+@keyframes m-pop-up{from{opacity:0;transform:translateY(6px) scale(0.97)}
+}
+@keyframes m-dialog-in{from{opacity:0;transform:translateY(8px) scale(0.97)}
+}
+@keyframes m-sheet-in{from{opacity:0.55;transform:translateY(34px)}
+}
+@keyframes m-sheet-out{to{opacity:0;transform:translateY(22px)}
+}
+@keyframes m-scrim-in{from{opacity:0}
+}
+@keyframes m-scrim-out{to{opacity:0}
+}
+
+/* ── drawer ─────────────────────────────────────────────────────────── */
+ @media (max-width:1023px){.sidebar{transition:transform 0.36s var(--m-drawer),box-shadow 0.36s var(--m-out)}
+body.sidebar-open .sidebar{box-shadow:26px 0 60px rgba(0,0,0,0.28)}
+.scrim{transition:opacity 0.24s var(--m-out)}
+}
+
+/* ── floating feedback ──────────────────────────────────────────────── */
+ .toast{transform:translate(-50%,12px) scale(0.96);transition:opacity 0.18s var(--m-out),transform 0.32s var(--m-spring)}
+.toast.show{transform:translate(-50%,0) scale(1)}
+
+/* ── overlay exits ──────────────────────────────────────────────────── */
+.m-exit-ghost{position:fixed;pointer-events:none;animation:none!important}
+.m-exit-ghost *{animation:none!important;pointer-events:none!important}
+.m-exit-ghost.m-exit-pop{animation:m-sheet-out 0.22s var(--m-out) both!important}
+.m-exit-ghost.m-exit-side,.m-exit-ghost.m-exit-fade,.m-exit-ghost.modal{animation:m-scrim-out 0.2s var(--m-out) both!important}
+.m-exit-ghost .sheet-backdrop,.m-exit-ghost .palette-backdrop{animation:m-scrim-out 0.2s var(--m-out) both!important}
+.m-exit-ghost .sheet-panel,.m-exit-ghost .palette-card,.m-exit-ghost .quick-card,.m-exit-ghost .modal-card{animation:m-sheet-out 0.24s var(--m-out) both!important}
+.gen-status.is-done{animation:m-menu-out 0.18s var(--m-out) both}
+.send-btn:not(.stop) .icon-send{animation:m-copy-pop 0.24s var(--m-spring)}
+
+/* ── reduced motion ─────────────────────────────────────────────────── */
+ @media (prefers-reduced-motion:reduce){.press-ripple{display:none}
+.thread-skeleton,.sk-row,.skeleton-line::after,.sk-block::after,.msg,.msg.assistant:not(.stored) .blocks > .md,.msg.assistant:not(.stored) .blocks > .delta-text,.msg.assistant:not(.stored) .tool-card,.msg.assistant:not(.stored) .think,.msg-sources,.msg-files,.msg-edited-badge,.notice,.msg-error,.usage-pop,.permission-option,.code-copy.copied,.send-btn.stop .icon-stop,.send-btn:not(.stop) .icon-send,.gen-status.is-done,.tool-card[data-status="running"]::after,html body .tool-card[data-status="running"] .tool-badge,.gen-status .dots i,.gen-status .status-text,.delta-think,.delta-think-label > span:last-child,.think-live-dot,.conv-popover,.conv-popover.sheet-mode,.conv-popover-backdrop,#commandMenu,#permissionMenu,.palette-card,.quick-card,.palette-backdrop,.sheet-panel,.sheet-backdrop,.modal,.modal-card{animation:none !important}
+.sidebar,.scrim,.toast,.think-body,.conv-popover,.tool-card,.msg-actions{transition-duration:0.001ms !important}
+.send-btn,.new-chat,.primary-btn,.icon-btn,.composer-tool,.scenario-card,.scenario-row,.conv-popover-item,.conv-more,.think-toggle,.ghost-btn,.danger-btn,.batch-btn,.find-btn,.toast-action,.share-primary,.project-save,.permission-option,.msg-retry,.msg-usage-btn,.msg-version-btn,.load-earlier,.tool-copy,.code-copy,.table-copy,.sidebar-tool,.quick-close,.codex-pill,.dshm-pill,.question-item,.settings-option,.option{transition:none !important}
+.send-btn:active,.new-chat:active,.primary-btn:active,.icon-btn:active,.composer-tool:active,.scenario-card:active,.scenario-row:active,.conv-popover-item:active,.permission-option:active,.msg-retry:active,.sidebar-tool:active,.codex-pill:active,.dshm-pill:active{scale:1}
+@media (hover:hover){.icon-btn:hover,.composer-tool:hover,.conv-more:hover{scale:1}
+}
+}

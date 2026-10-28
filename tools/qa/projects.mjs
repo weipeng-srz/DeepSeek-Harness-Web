@@ -40,14 +40,18 @@ try {
   })
   const conv = res.body.conversation
   record('create conversation in project', res.status === 201 && conv.projectId === project.id, conv.projectId)
-  record('project defaults override explicit request', conv.permission === 'read-only' && conv.engine === 'dsr', JSON.stringify({ permission: conv.permission, engine: conv.engine }))
+  record('explicit engine and permission win over project defaults', conv.permission === 'danger-full-access' && conv.engine === 'codex', JSON.stringify({ permission: conv.permission, engine: conv.engine }))
+  const defaultsConv = (await api('/api/conversations', { method: 'POST', body: JSON.stringify({ projectId: project.id }) })).body.conversation
+  record('project defaults fill omitted engine and permission', defaultsConv.engine === 'dsr' && defaultsConv.permission === 'read-only', JSON.stringify({ permission: defaultsConv.permission, engine: defaultsConv.engine }))
+  const unfiled = await api('/api/conversations', { method: 'POST', body: JSON.stringify({ engine: 'dsr', projectId: '__unfiled__' }) })
+  record('unfiled filter is treated as no project', unfiled.status === 201 && unfiled.body.conversation.projectId === null, JSON.stringify({ status: unfiled.status, projectId: unfiled.body.conversation?.projectId }))
   await api(`/api/projects/${project.id}`, { method: 'PATCH', body: JSON.stringify({ defaultPermission: 'workspace-write' }) })
 
   res = await api(`/api/conversations?projectId=${project.id}`)
-  record('filter conversations by project', res.body.total === 1 && res.body.conversations[0].id === conv.id, JSON.stringify({ total: res.body.total }))
+  record('filter conversations by project', res.body.total === 2 && res.body.conversations.some((item) => item.id === conv.id), JSON.stringify({ total: res.body.total }))
 
   res = await api('/api/projects')
-  record('project count includes conversation', res.body.projects[0].conversationCount === 1, String(res.body.projects[0].conversationCount))
+  record('project count includes conversation', res.body.projects[0].conversationCount === 2, String(res.body.projects[0].conversationCount))
 
   const other = await api('/api/conversations', { method: 'POST', body: JSON.stringify({ engine: 'dsr' }) })
   res = await api(`/api/projects/${project.id}`)

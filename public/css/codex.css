@@ -72,19 +72,6 @@
   margin-left: auto;
 }
 
-.codex-foot {
-  margin-left: auto;
-  min-height: 24px;
-  padding: 0 8px;
-  font-size: 12px;
-  border-color: transparent;
-  background: transparent;
-}
-
-.codex-foot:hover {
-  background: var(--surface-2);
-}
-
 .codex-open {
   color: var(--accent-blue);
 }
@@ -439,8 +426,7 @@
 }
 
 @media (max-width: 640px) {
-  .codex-inline,
-  .codex-foot {
+  .codex-inline {
     min-height: 44px;
     padding: 0 10px;
     font-size: 12px;

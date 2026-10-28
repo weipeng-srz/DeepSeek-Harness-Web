@@ -1,8 +1,9 @@
 /* DSH Chat · DSH engine model selection
    Mirrors the Desktop model selector for the DSH engine: the same live
    catalog (provider groups, reasoning efforts, Desktop default) with a
-   per-conversation pinned selection. The floating pill sits ABOVE the
-   composer without taking layout space, so the input box never moves.
+   per-conversation pinned selection. During a conversation a compact pill
+   sits on its own strip ABOVE the composer, in normal flow, so it never
+   covers the input or the last line of an answer.
    Self-contained like codex.js; loaded after it so both fetch wrappers
    chain (codex first, then this one). */
 (function () {
@@ -452,16 +453,39 @@
     return button
   }
 
+  /** Shared strip immediately above the composer. Codex creates it first and
+      this module reuses it, so both engines keep one consistent position. */
+  function ensureModelBar() {
+    let bar = $('#modelBar')
+    if (bar) return bar
+    const composer = $('#composer')
+    const parent = composer?.parentElement
+    if (!parent) return null
+    bar = el('div', 'model-bar')
+    bar.id = 'modelBar'
+    bar.hidden = true
+    parent.insertBefore(bar, composer)
+    return bar
+  }
+
+  /** The strip is in normal flow: it must disappear completely when neither
+      engine has a pill to show, otherwise it would reserve an empty row. */
+  function syncModelBarVisibility() {
+    const bar = $('#modelBar')
+    if (!bar) return
+    bar.hidden = ![...bar.querySelectorAll('.dshm-pill, .codex-pill')].some((pill) => !pill.hidden)
+  }
+
   function ensureControls() {
     const engineBar = $('#engineBar')
     if (engineBar && !$('#dshModelBarBtn')) {
       engineBar.appendChild(pillButton('dshModelBarBtn', 'dshm-pill dshm-inline', 'DSH 模型与思考强度'))
     }
-    const composer = $('#composer')
-    if (composer && !$('#dshModelFloatBtn')) {
-      // Floating above the input box: absolutely positioned so the composer
-      // keeps its exact height (the input never gets pushed around).
-      composer.appendChild(pillButton('dshModelFloatBtn', 'dshm-pill dshm-float', 'DSH 模型与思考强度'))
+    const bar = ensureModelBar()
+    if (bar && !$('#dshModelFootBtn')) {
+      // Compact pill above the input box, on its own row. Keeping it in flow
+      // avoids covering the composer outline or the last line of an answer.
+      bar.appendChild(pillButton('dshModelFootBtn', 'dshm-pill dshm-bar', 'DSH 模型与思考强度'))
     }
   }
 
@@ -501,7 +525,7 @@
     if (!dsr && state.popover) closePopover()
     const engineBarVisible = engineBarShown()
     const inline = $('#dshModelBarBtn')
-    const float = $('#dshModelFloatBtn')
+    const foot = $('#dshModelFootBtn')
     const current = selection()
     const label = current.model
       ? `${current.modelName}${current.effortName ? ` · ${current.effortName}` : ''}`
@@ -517,17 +541,15 @@
         ? `DSH 模型：${label}${current.isDefault ? '（跟随桌面端默认）' : ''}`
         : '正在读取模型目录…'
     }
-    if (float) {
-      float.hidden = !dsr || engineBarVisible
-      float.querySelector('.dshm-pill-text').textContent = shortLabel
-      float.disabled = !hasCatalog
-      float.title = hasCatalog
+    if (foot) {
+      foot.hidden = !dsr || engineBarVisible
+      foot.querySelector('.dshm-pill-text').textContent = shortLabel
+      foot.disabled = !hasCatalog
+      foot.title = hasCatalog
         ? `DSH 模型：${label}${current.isDefault ? '（跟随桌面端默认）' : ''}`
         : '正在读取模型目录…'
-      // The back-to-bottom button floats in the same corner; slide left of it.
-      const scrollBottom = $('#scrollBottom')
-      float.classList.toggle('shift-left', Boolean(scrollBottom && !scrollBottom.hidden))
     }
+    syncModelBarVisibility()
     if (state.popover) renderPopover(state.popover.__anchor)
     if (dsr) syncAppLabels()
     if (dsr && !hasCatalog && !state.loading) void loadCatalog()
@@ -587,13 +609,14 @@
     const pop = state.popover
     if (!pop) return
     const anchor = pop.__anchor
+    window.DSHMotion?.exitOverlay(pop)
     pop.remove()
     state.popover = null
     document.removeEventListener('pointerdown', onOutside, true)
     document.removeEventListener('keydown', onKey, true)
     document.removeEventListener('focusin', onModalFocus, true)
     window.removeEventListener('resize', onPopoverResize)
-    for (const id of ['dshModelBarBtn', 'dshModelFloatBtn']) {
+    for (const id of ['dshModelBarBtn', 'dshModelFootBtn']) {
       $(`#${id}`)?.setAttribute('aria-expanded', 'false')
     }
     document.dispatchEvent(new CustomEvent('dsh:overlay-change'))
@@ -609,7 +632,7 @@
   function onOutside(event) {
     const pop = state.popover
     if (!pop || topModal() !== pop || pop.contains(event.target)) return
-    if (event.target.closest('#dshModelBarBtn,#dshModelFloatBtn')) return
+    if (event.target.closest('#dshModelBarBtn,#dshModelFootBtn')) return
     event.preventDefault()
     const stopClick = click => { click.preventDefault(); click.stopImmediatePropagation() }
     document.addEventListener('click', stopClick, { capture: true, once: true })
@@ -846,12 +869,21 @@
     for (const property of ['left', 'top', 'right', 'bottom']) pop.style.removeProperty(property)
     if (sheet || !anchor?.isConnected) return
     const rect = anchor.getBoundingClientRect()
+    // The pill sits in the strip above the composer. Still use the whole
+    // composer as the boundary: when the strip is missing, a footer anchor
+    // must not put the panel over the textarea.
+    const composer = anchor.closest('.composer') || $('#composer')
+    const composerRect = composer?.getBoundingClientRect() || null
+    const anchorTop = composerRect ? Math.min(rect.top, composerRect.top) : rect.top
     const width = pop.offsetWidth || 360
     const height = pop.offsetHeight || 420
     let left = Math.min(rect.right - width, window.innerWidth - width - 12)
     left = Math.max(12, left)
-    let top = rect.top - height - 10
-    if (top < 12) top = Math.min(window.innerHeight - height - 12, rect.bottom + 10)
+    let top = anchorTop - height - 10
+    if (top < 12) {
+      const below = composerRect ? composerRect.bottom + 10 : rect.bottom + 10
+      top = Math.min(window.innerHeight - height - 12, below)
+    }
     pop.style.left = `${left}px`
     pop.style.top = `${Math.max(12, top)}px`
   }
@@ -949,7 +981,7 @@
     if (document.querySelector('link[data-dsh-models-css]')) return
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = '/css/dsh-models.css?v=2'
+    link.href = '/css/dsh-models.css?v=6'
     link.dataset.dshModelsCss = '1'
     document.head.appendChild(link)
   }

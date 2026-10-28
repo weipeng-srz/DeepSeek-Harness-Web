@@ -269,6 +269,28 @@
 
   /* ── controls ─────────────────────────────────────────────────────── */
 
+  /** Shared strip immediately above the composer (the DSH module reuses it). */
+  function ensureModelBar() {
+    let bar = $('#modelBar')
+    if (bar) return bar
+    const composer = $('#composer')
+    const parent = composer?.parentElement
+    if (!parent) return null
+    bar = el('div', 'model-bar')
+    bar.id = 'modelBar'
+    bar.hidden = true
+    parent.insertBefore(bar, composer)
+    return bar
+  }
+
+  /** Hide the strip when neither engine has a pill, so it never reserves an
+      empty row above the input. */
+  function syncModelBarVisibility() {
+    const bar = $('#modelBar')
+    if (!bar) return
+    bar.hidden = ![...bar.querySelectorAll('.dshm-pill, .codex-pill')].some((pill) => !pill.hidden)
+  }
+
   function ensureControls() {
     const engineBar = $('#engineBar')
     if (engineBar && !$('#codexSettingsBtn')) {
@@ -291,12 +313,12 @@
       engineBar.appendChild(button)
     }
 
-    const composerFoot = $('.composer-foot')
-    if (composerFoot && !$('#codexFootBtn')) {
+    const modelBar = ensureModelBar()
+    if (modelBar && !$('#codexFootBtn')) {
       const button = document.createElement('button')
       button.type = 'button'
       button.id = 'codexFootBtn'
-      button.className = 'codex-pill codex-foot'
+      button.className = 'codex-pill codex-bar'
       button.hidden = true
       button.setAttribute('aria-haspopup', 'dialog')
       button.setAttribute('aria-expanded', 'false')
@@ -308,7 +330,7 @@
         event.stopPropagation()
         togglePopover(button)
       })
-      composerFoot.appendChild(button)
+      modelBar.appendChild(button)
     }
 
     const topbarActions = $('.topbar-actions')
@@ -335,7 +357,11 @@
     ensureControls()
     const codex = codexContext()
     if (!codex && state.popover) closePopover()
-    const engineBarVisible = $('#engineBar') && !$('#engineBar').hidden
+    // 320px CSS hides the engine bar while leaving `hidden` false; using
+    // layout keeps the above-input pill available there instead of parking
+    // the control inside an invisible row.
+    const engineBar = $('#engineBar')
+    const engineBarVisible = Boolean(engineBar && !engineBar.hidden && engineBar.getClientRects().length)
     const inline = $('#codexSettingsBtn')
     const foot = $('#codexFootBtn')
     const open = $('#codexOpenBtn')
@@ -358,6 +384,7 @@
         ? '在 Codex 桌面端打开这个对话'
         : '发送第一条消息后可在 Codex 中打开'
     }
+    syncModelBarVisibility()
     const engineHint = $('#engineHint')
     if (engineHint && codex && model && engineBarVisible) {
       engineHint.textContent = `${model.name} · ${effort?.label || ''}`
@@ -409,6 +436,7 @@
     const pop = state.popover
     if (!pop) return
     const anchor = pop.__anchor
+    window.DSHMotion?.exitOverlay(pop)
     pop.remove()
     state.popover = null
     document.removeEventListener('pointerdown', onOutside, true)
@@ -602,12 +630,20 @@
     for (const property of ['left', 'top', 'right', 'bottom']) pop.style.removeProperty(property)
     if (sheet) return
     const rect = anchor.getBoundingClientRect()
+    // The Codex pill sits above the composer; anchor the panel above the whole
+    // input box so its bottom edge cannot cover the textarea.
+    const composer = anchor.closest('.composer') || $('#composer')
+    const composerRect = composer?.getBoundingClientRect() || null
+    const anchorTop = composerRect ? Math.min(rect.top, composerRect.top) : rect.top
     const width = pop.offsetWidth || 360
     const height = pop.offsetHeight || 420
     let left = Math.min(rect.left, window.innerWidth - width - 12)
     left = Math.max(12, left)
-    let top = rect.top - height - 10
-    if (top < 12) top = Math.min(window.innerHeight - height - 12, rect.bottom + 10)
+    let top = anchorTop - height - 10
+    if (top < 12) {
+      const below = composerRect ? composerRect.bottom + 10 : rect.bottom + 10
+      top = Math.min(window.innerHeight - height - 12, below)
+    }
     pop.style.left = `${left}px`
     pop.style.top = `${Math.max(12, top)}px`
   }
@@ -746,7 +782,7 @@
     if (document.querySelector('link[data-codex-css]')) return
     const link = document.createElement('link')
     link.rel = 'stylesheet'
-    link.href = '/css/codex.css?v=4'
+    link.href = '/css/codex.css?v=5'
     link.dataset.codexCss = '1'
     document.head.appendChild(link)
   }

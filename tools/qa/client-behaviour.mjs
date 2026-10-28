@@ -302,6 +302,93 @@ try {
     record('rejected send rolls back the optimistic bubble', !state.text.includes('这条会失败'), state.text.slice(0, 60))
     record('rejected send returns the text to the composer', state.input === '这条会失败', state.input)
   })
+
+  // 11. The DSH model picker belongs to a compact strip immediately above the
+  // composer. It used to float over the input's top edge; the panel then
+  // anchored to the pill and covered the textarea as well.
+  await withPage(sandbox, async (page) => {
+    await loginPage(page, sandbox)
+    await page.locator('.conv-item', { hasText: '对话甲' }).first().locator('.conv-main').click()
+    await sleep(900)
+    const layout = await page.evaluate(() => {
+      const pill = document.querySelector('#dshModelFootBtn')
+      const bar = document.querySelector('#modelBar')
+      const composer = document.querySelector('#composer')
+      if (!pill || !bar || !composer) return null
+      const p = pill.getBoundingClientRect()
+      const c = composer.getBoundingClientRect()
+      return {
+        inModelBar: pill.parentElement === bar,
+        barBeforeComposer: bar.nextElementSibling === composer,
+        barHidden: bar.hidden,
+        position: getComputedStyle(pill).position,
+        pillBottom: p.bottom,
+        pillHeight: p.height,
+        composerTop: c.top,
+      }
+    })
+    record(
+      'DSH model picker sits in the strip above the composer',
+      Boolean(layout && layout.inModelBar && layout.barBeforeComposer && !layout.barHidden && layout.position !== 'absolute' && layout.position !== 'fixed' && layout.pillHeight > 0),
+      JSON.stringify(layout),
+    )
+    record(
+      'DSH model picker stays above the input row',
+      Boolean(layout && layout.pillBottom <= layout.composerTop),
+      JSON.stringify(layout),
+    )
+  })
+
+  // 12. Conversation pages show no title and the transcript starts at the page
+  // top; the floating topbar must not shrink the scroll viewport.
+  await withPage(sandbox, async (page) => {
+    await loginPage(page, sandbox)
+    await page.locator('.conv-item', { hasText: '对话甲' }).first().locator('.conv-main').click()
+    await sleep(900)
+    const before = await page.evaluate(() => {
+      const sa = document.querySelector('#scrollArea').getBoundingClientRect()
+      const bar = document.querySelector('.topbar')
+      const thread = document.querySelector('#thread')
+      return {
+        title: getComputedStyle(document.querySelector('#chatInfoBtn')).display,
+        scrollTop: Math.round(sa.top),
+        topbarPosition: getComputedStyle(bar).position,
+        barTop: Math.round(bar.getBoundingClientRect().top),
+        barBottom: Math.round(bar.getBoundingClientRect().bottom),
+        threadTop: Math.round(thread.getBoundingClientRect().top),
+        threadPaddingTop: parseFloat(getComputedStyle(thread).paddingTop),
+      }
+    })
+    record('conversation page does not display the conversation title', before.title === 'none', JSON.stringify(before))
+    record(
+      'topbar is in flow and does not cover the transcript',
+      before.scrollTop === 0 && before.barTop === 0 && before.topbarPosition !== 'absolute' && before.topbarPosition !== 'fixed' && before.threadTop >= before.barBottom,
+      JSON.stringify(before),
+    )
+    const after = await page.evaluate(async () => {
+      const sa = document.querySelector('#scrollArea')
+      // Short seeded conversations do not overflow at 900px; give the test a
+      // deterministic scroll range without touching product data.
+      const spacer = document.createElement('div')
+      spacer.style.height = '1200px'
+      document.querySelector('#thread').appendChild(spacer)
+      sa.scrollTop = 220
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+      const bar = document.querySelector('.topbar')
+      return {
+        scrollTop: Math.round(sa.scrollTop),
+        scrolledClass: bar.classList.contains('is-scrolled'),
+        barTop: Math.round(bar.getBoundingClientRect().top),
+        barBottom: Math.round(bar.getBoundingClientRect().bottom),
+        threadTop: Math.round(document.querySelector('#thread').getBoundingClientRect().top),
+      }
+    })
+    record(
+      'scrolling keeps the topbar pinned while the transcript runs underneath',
+      after.scrollTop > 0 && after.scrolledClass && after.barTop === 0 && after.barBottom > 0 && after.threadTop < 0,
+      JSON.stringify(after),
+    )
+  })
 } finally {
   await sandbox.stop().catch(() => {})
 }

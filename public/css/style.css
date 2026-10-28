@@ -1273,6 +1273,25 @@ body.sidebar-open .scrim {
   );
 }
 
+/* Conversation-only model strip. It sits above the composer in normal flow so
+   it can never cover the input or the last line of a scrolled answer. */
+.model-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  /* Align with the composer's reading column, not the wider page column. */
+  max-width: var(--chat-measure, var(--content-inner));
+  min-width: 0;
+  margin: 0 auto 4px;
+  padding: 0 2px;
+}
+
+.model-bar[hidden],
+.model-bar:empty {
+  display: none;
+}
+
 .composer {
   max-width: var(--content-inner);
   margin: 0 auto;
@@ -2220,4 +2239,32 @@ body.sidebar-open .scrim {
     max-height: 40vh;
     max-height: 40dvh;
   }
+}
+
+/* ── conversation view: transcript owns the full height ─────────────── */
+
+/* The topbar is the first child of #scrollArea. On a conversation it stays
+   pinned to the top while the transcript scrolls underneath, but keeps a
+   transparent material: only the two control clusters sit above the text.
+   The title stays in 会话信息. */
+.main:has(#thread:not([hidden])) #scrollArea > .topbar,
+.main:has(#thread:not([hidden])) #scrollArea > .topbar.is-scrolled {
+  position: sticky !important;
+  inset: auto !important;
+  top: 0 !important;
+  z-index: 30;
+  background: transparent !important;
+  border-bottom-color: transparent !important;
+  box-shadow: none !important;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+  pointer-events: none !important;
+}
+
+.main:has(#thread:not([hidden])) #scrollArea > .topbar > * {
+  pointer-events: auto;
+}
+
+.main:has(#thread:not([hidden])) #scrollArea > #thread {
+  padding-top: 12px;
 }

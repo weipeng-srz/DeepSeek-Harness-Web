@@ -383,6 +383,7 @@ const CSS_BUNDLE_FILES = [
   'css/projects.css',
   'css/evolution.css',
   'css/sidebar.css',
+  'css/motion.css',
 ]
 let cssBundleCache = { key: '', raw: null, gzip: null, etag: '' }
 
@@ -2692,9 +2693,19 @@ async function handleApi(req, res, url) {
       }
       if (req.method === 'POST') {
         const body = await readJsonBody(req)
-        const engine = body.engine === 'codex' ? 'codex' : 'dsr'
-        const permission = normalizePermission(body.permission)
-        const projectId = typeof body.projectId === 'string' && body.projectId ? body.projectId : null
+        // An explicit engine/permission in the request wins. Project defaults
+        // only fill the fields the caller left out: the engine switch in the
+        // new-chat bar is a deliberate choice, so a project's default must not
+        // rewrite it (that used to make "Codex" silently create a DSH chat).
+        const requestedEngine = body.engine === 'codex' ? 'codex' : body.engine === 'dsr' ? 'dsr' : null
+        const requestedPermission =
+          body.permission === undefined || body.permission === null || body.permission === ''
+            ? null
+            : normalizePermission(body.permission)
+        const requestedProjectId =
+          typeof body.projectId === 'string' && body.projectId ? body.projectId : null
+        // "__unfiled__" is the sidebar's list filter; it is not a project row.
+        const projectId = requestedProjectId === '__unfiled__' ? null : requestedProjectId
         if (projectId && (!projects.get(projectId) || projects.get(projectId)?.deletedAt || !projects.ownedBy(projects.get(projectId), owner))) {
           return sendJson(res, 400, { error: '项目不存在或已删除' })
         }
@@ -2702,10 +2713,14 @@ async function handleApi(req, res, url) {
           return sendJson(res, 409, { error: '项目已归档，请先恢复项目再新建对话' })
         }
         const parentProject = projectId ? projects.get(projectId) : null
-        const finalEngine = parentProject?.defaultEngine === 'codex' ? 'codex' : parentProject?.defaultEngine === 'dsr' ? 'dsr' : engine
-        const finalPermission = parentProject?.defaultPermission
-          ? normalizePermission(parentProject.defaultPermission)
-          : permission
+        const finalEngine =
+          requestedEngine ||
+          (parentProject?.defaultEngine === 'codex' ? 'codex' : 'dsr')
+        const finalPermission =
+          requestedPermission ||
+          (parentProject?.defaultPermission
+            ? normalizePermission(parentProject.defaultPermission)
+            : DEFAULT_PERMISSION)
         const conv = store.create(owner, { engine: finalEngine, permission: finalPermission, projectId })
         if (finalEngine === 'codex') {
           const selection = resolveCodexSelection({

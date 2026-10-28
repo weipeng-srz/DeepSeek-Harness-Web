@@ -3988,6 +3988,20 @@
       : null
   }
 
+  /** Project defaults are the starting point for a fresh chat, never a lock:
+      the engine/permission switch in the composer still wins when a message is
+      sent. Applying them here keeps the engine bar, the DSH/Codex model picker
+      and the first request consistent. */
+  function projectChatDefaults(project = activeProject()) {
+    if (!project) return null
+    return {
+      engine: project.defaultEngine === 'codex' ? 'codex' : 'dsr',
+      permission: typeof project.defaultPermission === 'string' && project.defaultPermission
+        ? project.defaultPermission
+        : null,
+    }
+  }
+
   function projectQuerySuffix() {
     if (!state.activeProjectId) return ''
     if (state.activeProjectId === '__unfiled__') return '&unfiled=1'
@@ -5228,18 +5242,33 @@
     const el = state.convMenuEl
     const anchor = el.__anchor
     const wasSheet = el.classList.contains('sheet-mode')
+    const backdrop = el.__backdrop
     state.convMenuEl = null
-    el.__backdrop?.remove()
-    el.remove()
     if (wasSheet) lockShell(false)
     if (anchor) anchor.setAttribute('aria-expanded', 'false')
     if (restoreFocus && anchor?.isConnected) anchor.focus({ preventScroll: true })
+
+    // Let the popover leave the way it arrived. The element is already
+    // disconnected from the app state, so a second click can open a new menu
+    // while this one fades out.
+    const remove = () => {
+      el.remove()
+      backdrop?.remove()
+    }
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      remove()
+      return
+    }
+    el.classList.add('is-closing')
+    backdrop?.classList.add('is-closing')
+    setTimeout(remove, 190)
   }
 
   let usagePopoverEl = null
 
   function closeUsagePopover() {
     if (!usagePopoverEl) return
+    window.DSHMotion?.exitOverlay(usagePopoverEl)
     usagePopoverEl.remove()
     usagePopoverEl = null
   }
@@ -5505,6 +5534,11 @@
       if (top + height > window.innerHeight - 10) top = Math.max(10, rect.top - height - 6)
       menu.style.left = `${left}px`
       menu.style.top = `${top}px`
+      // Grow out of the trigger, even when the menu had to be clamped to the
+      // viewport edge (the common case for a long conversation menu).
+      const originX = Math.min(Math.max(rect.left + rect.width / 2 - left, 0), width)
+      const originY = Math.min(Math.max(rect.top + rect.height / 2 - top, 0), height)
+      menu.style.transformOrigin = `${originX}px ${originY}px`
     }
     requestAnimationFrame(() => menu.querySelector('.conv-popover-item')?.focus({ preventScroll: true }))
   }
@@ -6916,7 +6950,13 @@
       view.streaming = false
       view.clearAllLive()
       clearInterval(view.timer)
-      view.statusEl.hidden = true
+      if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        view.statusEl.hidden = true
+      } else {
+        view.statusEl.classList.add('is-done')
+        view.statusEl.setAttribute('aria-hidden', 'true')
+        window.setTimeout(() => { view.statusEl.hidden = true }, 180)
+      }
       // A finished message cannot keep tools spinning. Missing results stay unknown.
       for (const entry of view.toolCards.values()) {
         if (entry.card.dataset.status !== 'running') continue
@@ -7134,24 +7174,13 @@
 
   /* ── thread rendering ──────────────────────────────────────────────── */
 
-  /* On phones the top bar is a floating overlay with no background, so the
-     title steps aside once the thread is scrolled and content runs to the
-     very top edge. Desktop keeps the bar as-is (the class is inert there). */
+  /* The conversation topbar lives inside the scroll container, so it leaves
+     the viewport with the transcript. is-scrolled is only a styling cue. */
   let topbarEl = null
   function updateTopbarImmersive() {
     if (!topbarEl) topbarEl = document.querySelector('.topbar')
     if (!topbarEl || !els.scrollArea) return
     topbarEl.classList.toggle('is-scrolled', els.scrollArea.scrollTop > 8)
-  }
-
-  /* The first message must clear the floating top bar. Its height depends on
-     the status-bar inset and the current font scale, so measure it instead of
-     hardcoding a band; +8 keeps a comfortable gap above the date separator. */
-  function syncTopbarClearance() {
-    if (!topbarEl) topbarEl = document.querySelector('.topbar')
-    if (!topbarEl) return
-    const height = Math.round(topbarEl.getBoundingClientRect().height)
-    if (height > 0) document.documentElement.style.setProperty('--topbar-clearance', `${height + 8}px`)
   }
 
   function updateScrollButton() {
@@ -7202,19 +7231,10 @@
     () => {
       updateScrollButton()
       updateReadProgress()
-      syncTopbarClearance()
     },
     { passive: true },
   )
 
-  /* The bar changes height when the safe-area inset changes (orientation,
-     standalone launch) or the text scale changes; keep the clearance in sync. */
-  syncTopbarClearance()
-  if (topbarEl && typeof ResizeObserver === 'function') {
-    // border-box: the safe-area inset only changes the bar's padding, which the
-    // default content-box observation would miss.
-    new ResizeObserver(syncTopbarClearance).observe(topbarEl, { box: 'border-box' })
-  }
 
   function showEmptyChat({ updateRoute = true } = {}) {
     state.navigationRequest += 1
@@ -7227,8 +7247,15 @@
     closePermissionMenu({ restoreFocus: false })
     state.currentId = null
     setStagedContext(null)
-    state.currentEngine = state.engine
-    state.permission = state.permissionCatalog?.default || 'workspace-write'
+    const projectDefaults = projectChatDefaults()
+    // Entering a project (or starting a new chat inside one) starts from its
+    // saved defaults. Without this the bar kept the previous engine and the
+    // server's old project override turned an explicit Codex pick into DSH.
+    state.currentEngine = projectDefaults?.engine || state.engine
+    state.engine = state.currentEngine
+    if (projectDefaults?.engine) storage.setItem('dsh.engine', state.currentEngine)
+    state.permission =
+      projectDefaults?.permission || state.permissionCatalog?.default || 'workspace-write'
     state.messages = []
     state.hasEarlier = false
     state.totalMessages = 0
@@ -7568,11 +7595,20 @@
     const wrap = document.createElement('div')
     wrap.className = 'thread-skeleton'
     wrap.setAttribute('aria-hidden', 'true')
-    for (const width of ['w40', 'block', 'w80', 'w60', 'block', 'w80', 'w60']) {
-      const line = document.createElement('div')
-      line.className = `skeleton-line ${width}`
-      wrap.appendChild(line)
-    }
+    // One user question and one assistant answer: enough to convey the shape
+    // of the conversation without turning the loading state into noise.
+    wrap.innerHTML = `
+      <div class="sk-row sk-user"><div class="sk-block sk-bubble"></div></div>
+      <div class="sk-row sk-assistant">
+        <div class="sk-block sk-avatar"></div>
+        <div class="sk-copy">
+          <div class="skeleton-line w80"></div>
+          <div class="skeleton-line w60"></div>
+          <div class="skeleton-line block"></div>
+          <div class="skeleton-line w80"></div>
+          <div class="skeleton-line w40"></div>
+        </div>
+      </div>`
     els.thread.appendChild(wrap)
     els.emptyState.hidden = true
     els.thread.hidden = false
@@ -10502,7 +10538,16 @@
     if (state.currentId) return state.currentId
     const data = await api('/api/conversations', {
       method: 'POST',
-      body: JSON.stringify({ engine: state.engine, permission: state.permission, projectId: state.activeProjectId || undefined }),
+      body: JSON.stringify({
+        engine: state.engine,
+        permission: state.permission,
+        // "__unfiled__" is a list filter, not a project id; sending it made
+        // the first message fail with "项目不存在或已删除".
+        projectId:
+          state.activeProjectId && state.activeProjectId !== '__unfiled__'
+            ? state.activeProjectId
+            : undefined,
+      }),
     })
     const conv = data.conversation
     // A slow POST used to hijack navigation: if the user opened another

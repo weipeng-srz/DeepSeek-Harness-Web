@@ -79,7 +79,7 @@ server/index.mjs  ── 路由 + 鉴权 + 限流 + 原子写 + SSE hub
 | POST | `/api/login` `/api/logout` | 访问码登录（IP 级 8 次/分钟）、登出吊销全部 Cookie |
 | GET | `/api/me` | 能力与配置快照（模型、引擎、记忆、权限、baseUrl） |
 | GET | `/api/conversations` | 列表：`q` 全文检索、`limit/offset`、`archived`、`trash`、`projectId`、`unfiled` |
-| POST | `/api/conversations` | 新建（引擎/权限/项目默认值覆盖） |
+| POST | `/api/conversations` | 新建（显式引擎/权限优先；缺省时用项目默认值；`__unfiled__` 视为无项目） |
 | GET | `/api/conversations/:id` | 详情：`tail`/`before`/`limit` 分页，`full=1` 全量，`summary=1` 摘要 |
 | PATCH | `/api/conversations/:id` | 标题/置顶/项目/归档/记忆开关/引擎/模型 |
 | DELETE | `/api/conversations/:id` | 软删除（8 秒撤销） |

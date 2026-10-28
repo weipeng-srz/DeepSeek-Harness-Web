@@ -486,11 +486,6 @@
   }
 }
 
-/* Codex footer pill follows the right rail even when the hint is hidden. */
-.codex-foot {
-  margin-left: auto;
-}
-
 /* Popovers must clear the composer capsule, not sit on its border. */
 .permission-menu {
   bottom: calc(100% + 8px);
@@ -1869,11 +1864,11 @@
     --page-gutter: 10px;
   }
 
-  /* ── 01 · 顶栏改成固定在视口顶部的悬浮控件 ────────────────────── */
+  /* ── 01 · 顶栏随正文滚动，不再固定在视口 ──────────────────────── */
 
   .topbar {
-    position: fixed !important;
-    inset: 0 0 auto 0 !important;
+    position: static !important;
+    inset: auto !important;
     z-index: 30;
     grid-template-columns: 40px minmax(0, 1fr) auto !important;
     gap: 8px;
@@ -1891,12 +1886,6 @@
 
   .topbar > * {
     pointer-events: auto;
-  }
-
-  /* 首条消息要让开悬浮控件：高度由 JS 量出顶栏实际高度写入 --topbar-clearance，
-     不写死；这段内边距在滚动容器里，滚动时会一起移出，仍然是全屏阅读。 */
-  .scroll-area {
-    padding-top: var(--topbar-clearance, calc(env(safe-area-inset-top) + 56px)) !important;
   }
 
   .thread {
